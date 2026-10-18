@@ -36,7 +36,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m unittest discover -s tests -v
 4. Check MINERU_API_TOKEN configuration without displaying its value. If missing, direct me to https://mineru.net and explain how to set it locally.
 5. For sanmu-paper-reader, use Python 3.10+ to run python -m unittest discover -s tests -v from its skill directory. Its evidence tools have no third-party dependencies; check PDF/OCR/Zotero integrations only as needed.
-6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python -m unittest discover -s tests -v from its directory. The core has no third-party dependencies; check only whether API credentials are configured and connect Zotero as needed.
+6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python -m unittest discover -s tests -v from its directory. The core uses the standard library; check only whether API credentials are configured. For Zotero, run python scripts/zotero_local.py doctor as needed: no host MCP or cloud API key is required. Use doctor --apply within the authorized scope for the first local authorization dialog. Full-text acquisition prepares optional ScanSci in the user cache on demand, preferring an existing audited match, otherwise pinning 1.18.2 (new setup requires Python 3.11+). No manual ScanSci installation or Tor setup is required; institutional access uses the assistant's browser tool with an authorized session. The local Zotero app manages attachment sync; do not claim WebDAV completion without checking.
 7. Report installation paths, validation results, and any remaining configuration steps.
 ```
 
@@ -64,7 +64,7 @@ npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 | --- | --- | --- |
 | **sanmu-doc2md** | Turn papers, textbooks, and slides into a Markdown knowledge base with LaTeX formulas, high-resolution figures, and Zotero metadata. | [Usage guide](skills/sanmu-doc2md/README.en.md) |
 | **sanmu-paper-reader** | Evidence-grounded paper reading, cross-paper comparison, interdisciplinary transfer, cross-topic synthesis, and library questions, with materials and chemistry checks. | [Usage guide](skills/sanmu-paper-reader/README.en.md) |
-| **sanmu-paper-search** | Discover papers from topics, seeds or authors, verify metadata, expand citations, locate full text/SI, and match Zotero holdings. | [Usage guide](skills/sanmu-paper-search/README.en.md) |
+| **sanmu-paper-search** | Discover papers from topics, seeds or authors, verify metadata, expand citations, acquire available main text/SI, and deduplicate imports through an independent local Zotero client. | [Usage guide](skills/sanmu-paper-search/README.en.md) |
 
 ### sanmu-doc2md
 
@@ -90,7 +90,23 @@ Interprets papers, supporting information, Zotero attachments, and Markdown note
 
 ### sanmu-paper-search
 
-Search OpenAlex, Semantic Scholar and Crossref from a topic, seed paper or author. Retain provenance, merge evidence, failures and truncation; locate full text/SI and match Zotero holdings. Keep everyday searches lightweight, document broader protocols, and hand acquired materials to conversion and reading workflows.
+Search OpenAlex, Semantic Scholar and Crossref by default from a topic, seed paper or author. Select arXiv and Europe PMC explicitly with `--sources arxiv,europe-pmc`; they add no default requests. Retain provenance, merge evidence, failures and truncation. Distinguish free-to-read access from open licensing and preserve preprint/published-DOI relationships. Keep everyday searches lightweight and document broader protocols.
+
+The Python 3.10+ standard-library core runs independently. `zotero_local.py` needs no host MCP or cloud API key; Zotero's local dialog authorizes the first write. `acquire.py` records main text and SI separately in an acquisition manifest; publisher HTML candidates require explicit selection. `ingest.py` verifies hashes and identity before deduplicating and importing. The local Zotero app handles subsequent WebDAV synchronization; check its completion separately.
+
+Optional ScanSci prepares itself in the user cache on demand, reusing an existing version, including older versions, whose audited functions match. Otherwise it pins `scansci-pdf==1.18.2`; new setup requires Python 3.11+. Only hash-verified OpenAlex OA and Europe PMC OA functions run, never the default mixed-source downloader or institutional modules. Institutional access uses the assistant's browser tool with an authorized session, then `acquire --import-file`. Users need not install ScanSci manually or configure Tor. Full-text and SI coverage depends on actual sources and access results.
+
+Start from the skill directory:
+
+```bash
+python scripts/zotero_local.py doctor
+python scripts/acquire.py --papers /path/to/work/seed --index 1 --out /path/to/work/acquisition
+python scripts/ingest.py /path/to/work/acquisition/manifest.json
+```
+
+`seed` is an existing search run. Ingestion previews by default; complete identity and SI review before adding `--apply` within the authorized scope. See the [CLI guide](skills/sanmu-paper-search/references/cli.md), [local Zotero guide](skills/sanmu-paper-search/references/local-zotero.md), and [installation and scope](skills/sanmu-paper-search/README.en.md).
+
+Design reference: [ScanSci PDF](https://github.com/Rimagination/scansci-pdf). Optional source adapters extract and execute two audited upstream pure-Python functions at runtime after SHA-256 verification under ScanSci's separate [Apache-2.0 license and exceptions](https://github.com/Rimagination/scansci-pdf/blob/main/LICENSE). They neither bundle nor use its `_core` compiled extension. The search core is independently implemented.
 
 [Installation, commands and scope →](skills/sanmu-paper-search/README.en.md)
 
