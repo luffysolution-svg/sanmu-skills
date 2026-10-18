@@ -18,6 +18,13 @@ status.json
 formulas.json
 math-validation.json
 
+# 文献检索私有运行与凭证
+.search-work/
+runs/
+.env
+.env.*
+!.env.example
+
 # 临时文件
 *.tmp
 .DS_Store

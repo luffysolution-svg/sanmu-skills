@@ -36,10 +36,11 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m unittest discover -s tests -v
 4. 检查 MINERU_API_TOKEN 配置状态，不显示凭证值；未配置时指导我从 https://mineru.net 获取并在本地设置。
 5. 对 sanmu-paper-reader，使用 Python 3.10+ 从技能目录执行 python -m unittest discover -s tests -v；附带证据工具无第三方依赖，PDF/OCR/Zotero按实际输入检查可用性。
-6. 汇报安装位置、验证结果和仍需配置的项目。
+6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python -m unittest discover -s tests -v；核心无第三方依赖，学术 API 凭证仅检查是否配置，Zotero 按需连接。
+7. 汇报安装位置、验证结果和仍需配置的项目。
 ```
 
-完整 AI 安装指令：[文档解析](skills/sanmu-doc2md/README.md#方式一让-ai-助手安装配置推荐) · [文献解读](skills/sanmu-paper-reader/README.md#让ai助手安装推荐)
+完整 AI 安装指令：[文档解析](skills/sanmu-doc2md/README.md#方式一让-ai-助手安装配置推荐) · [文献解读](skills/sanmu-paper-reader/README.md#让ai助手安装推荐) · [文献检索](skills/sanmu-paper-search/README.md#让-ai-助手安装推荐)
 
 ### 命令行安装
 
@@ -63,6 +64,7 @@ npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 | --- | --- | --- |
 | **sanmu-doc2md** | 将论文、教材和课件整理成保留 LaTeX 公式、高清图表与 Zotero 元数据的 Markdown 知识库。 | [使用指南](skills/sanmu-doc2md/README.md) |
 | **sanmu-paper-reader** | 单篇精读、跨文献对比、跨学科与跨主题解读及知识库问答，优先材料与化学，保留可追溯证据。 | [使用指南](skills/sanmu-paper-reader/README.md) |
+| **sanmu-paper-search** | 从课题、种子或作者检索文献，核对题录、扩展引文、定位全文/SI，并匹配 Zotero 收藏。 | [使用指南](skills/sanmu-paper-search/README.md) |
 
 ### sanmu-doc2md
 
@@ -86,6 +88,12 @@ npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 - **基准入库与学术标签**：自动提取核心催化指标追加录入 `benchmarks.csv`，并同步反哺 Zotero 学术标签。
 
 [查看使用指南与完整效果展示 →](skills/sanmu-paper-reader/README.md)
+
+### sanmu-paper-search
+
+从研究问题、种子论文或作者出发，查询 OpenAlex、Semantic Scholar 与 Crossref，保留来源、去重依据、失败和截断状态；定位全文/SI并匹配已有 Zotero 材料。日常检索保持轻量，扩展任务记录协议，取得材料后衔接转换与精读。
+
+[查看安装、命令与能力边界 →](skills/sanmu-paper-search/README.md)
 
 ## 使用说明
 
@@ -132,6 +140,13 @@ python skills/sanmu-doc2md/scripts/doctor.py
 
 ```bash
 python -m unittest discover -s skills/sanmu-paper-reader/tests -v
+```
+
+验证 `sanmu-paper-search`（Python 3.10+，核心无第三方依赖）：
+
+```bash
+python -m unittest discover -s skills/sanmu-paper-search/tests -v
+python skills/sanmu-paper-search/scripts/paper_search.py doctor
 ```
 
 ## 许可证

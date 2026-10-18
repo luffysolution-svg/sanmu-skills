@@ -36,10 +36,11 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m unittest discover -s tests -v
 4. Check MINERU_API_TOKEN configuration without displaying its value. If missing, direct me to https://mineru.net and explain how to set it locally.
 5. For sanmu-paper-reader, use Python 3.10+ to run python -m unittest discover -s tests -v from its skill directory. Its evidence tools have no third-party dependencies; check PDF/OCR/Zotero integrations only as needed.
-6. Report installation paths, validation results, and any remaining configuration steps.
+6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python -m unittest discover -s tests -v from its directory. The core has no third-party dependencies; check only whether API credentials are configured and connect Zotero as needed.
+7. Report installation paths, validation results, and any remaining configuration steps.
 ```
 
-Full AI installation instructions: [Document conversion](skills/sanmu-doc2md/README.en.md#option-1-ask-your-ai-assistant-to-install-and-configure-it-recommended) · [Paper reading](skills/sanmu-paper-reader/README.en.md#ask-your-ai-assistant-to-install-it-recommended)
+Full AI installation instructions: [Document conversion](skills/sanmu-doc2md/README.en.md#option-1-ask-your-ai-assistant-to-install-and-configure-it-recommended) · [Paper reading](skills/sanmu-paper-reader/README.en.md#ask-your-ai-assistant-to-install-it-recommended) · [Paper search](skills/sanmu-paper-search/README.en.md#ask-your-ai-assistant-to-install-it-recommended)
 
 ### Command-line installation
 
@@ -63,6 +64,7 @@ npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 | --- | --- | --- |
 | **sanmu-doc2md** | Turn papers, textbooks, and slides into a Markdown knowledge base with LaTeX formulas, high-resolution figures, and Zotero metadata. | [Usage guide](skills/sanmu-doc2md/README.en.md) |
 | **sanmu-paper-reader** | Evidence-grounded paper reading, cross-paper comparison, interdisciplinary transfer, cross-topic synthesis, and library questions, with materials and chemistry checks. | [Usage guide](skills/sanmu-paper-reader/README.en.md) |
+| **sanmu-paper-search** | Discover papers from topics, seeds or authors, verify metadata, expand citations, locate full text/SI, and match Zotero holdings. | [Usage guide](skills/sanmu-paper-search/README.en.md) |
 
 ### sanmu-doc2md
 
@@ -85,6 +87,12 @@ Interprets papers, supporting information, Zotero attachments, and Markdown note
 - **Offline evidence verification**: standard-library Python tools to verify source hashes and quoted text without exposing private documents to external networks.
 
 [Explore the full guide and examples →](skills/sanmu-paper-reader/README.en.md)
+
+### sanmu-paper-search
+
+Search OpenAlex, Semantic Scholar and Crossref from a topic, seed paper or author. Retain provenance, merge evidence, failures and truncation; locate full text/SI and match Zotero holdings. Keep everyday searches lightweight, document broader protocols, and hand acquired materials to conversion and reading workflows.
+
+[Installation, commands and scope →](skills/sanmu-paper-search/README.en.md)
 
 ## Usage
 
@@ -131,6 +139,13 @@ Validate `sanmu-paper-reader` (Python 3.10+, no third-party dependencies):
 
 ```bash
 python -m unittest discover -s skills/sanmu-paper-reader/tests -v
+```
+
+Validate `sanmu-paper-search` (Python 3.10+, standard-library core):
+
+```bash
+python -m unittest discover -s skills/sanmu-paper-search/tests -v
+python skills/sanmu-paper-search/scripts/paper_search.py doctor
 ```
 
 ## License

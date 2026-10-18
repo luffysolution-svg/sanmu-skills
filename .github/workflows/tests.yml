@@ -31,3 +31,7 @@ jobs:
       - run: python scripts/doctor.py
       - run: python -m unittest discover -s tests -v
         working-directory: skills/sanmu-paper-reader
+      - run: python -m unittest discover -s tests -v
+        working-directory: skills/sanmu-paper-search
+      - run: python scripts/paper_search.py doctor
+        working-directory: skills/sanmu-paper-search

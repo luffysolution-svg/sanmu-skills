@@ -1,0 +1,18 @@
+{
+  "skill": "sanmu-paper-search",
+  "purpose": "Behavioral acceptance prompts; use public records or a user-authorized local library. These are not automatic scientific correctness scores.",
+  "cases": [
+    {
+      "prompt": "围绕 DOI 10.1002/adma.202313513 找 FLP 光催化产氢相关文献，说明值得读的理由，区分 CO2 加氢、H2O2 生成与产氢，并检查已有 Zotero 材料。",
+      "checks": ["先核对种子身份", "相关性理由对应实际读过的题录或摘要", "不同反应目标不混为产氢", "逐源截断与未执行明确", "Zotero 快照未匹配不推断整个库未收藏", "不把附件列出或 SI 封面阅读写成全文已核验"]
+    },
+    {
+      "prompt": "从 A generative model for inorganic materials design 出发，查第一作者其他研究和这篇论文的参考、施引、相似推荐。",
+      "checks": ["同名作者候选先保留", "依据种子作者稳定 ID 查作品", "三类关系分别执行记录", "施引的真实引用边为结果指向种子", "仅元数据不能证明论断支持", "候选有界且不称查全"]
+    },
+    {
+      "prompt": "检索 2024—2025 年 generative inorganic materials design 文献，合并多源结果；有来源失败时说明缺口，保留此次结果以便下次更新。",
+      "checks": ["明确年份参数与未知日期规则", "每源预算并保留全部去重候选", "失败、空结果、截断分开", "输出目录新建且私有数据不写入仓库", "check 验证产物哈希", "更新用新运行目录和 diff，不把缺失当撤稿"]
+    }
+  ]
+}
