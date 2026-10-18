@@ -33,7 +33,7 @@ python -m unittest discover -s tests -v
 
 ## 配置（仅环境变量，不写入记录）
 
-官方申请/管理地址与产品权限见 [API 申请与权限指南](api-access.md)；更多候选来源见 [检索与开放数据](api-discovery-providers.md) 和 [出版社与中文数据库](api-publisher-providers.md)。目录不是已接入来源清单，不新增 CLI 来源名或环境变量。持有 Key 不等于具备目标文章的订阅全文权限。
+检索与元数据来源见 [检索与元数据 API](api-discovery-providers.md)，出版社全文路线见 [出版社获取路线](api-publisher-providers.md)。全文 API 只支持 Elsevier/Wiley；其他出版社走浏览器。持有 Key 不等于具备目标文章的订阅全文权限。
 
 - `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`：Semantic Scholar 配额。
 - `OPENALEX_API_KEY`：OpenAlex 配额与深度翻页；缺失时自动降级为匿名请求。
@@ -105,15 +105,15 @@ python scripts/publisher_api.py fetch --keys KEY1,KEY2 --out "/path/to/api-batch
 python scripts/publisher_api.py fetch --doi "10.1016/j.example.2026.123456" --out "/path/to/api-batch" --dry-run
 ```
 
-凭据只从环境变量读取：`ELSEVIER_API_KEY`、`WILEY_TDM_KEY`（兼容 `WILEY_TDM_CLIENT_TOKEN`）。API 只处理 `10.1016/`（Elsevier）与 `10.1002/`、`10.1111/`（Wiley）；其他出版社由浏览器适配器处理。PDF 仍做 header/trailer、SHA-256 和首屏身份检查，产物写 `KEY/paper.pdf` 与 `KEY/manifest.json`。
+凭据只从环境变量读取：`ELSEVIER_API_KEY`、`WILEY_TDM_KEY`（兼容 `WILEY_TDM_CLIENT_TOKEN`）。API 只处理 `10.1016/`（Elsevier）与 `10.1002/`、`10.1111/`（Wiley）；其他出版社走通用浏览器 PDF 链接提取。PDF 仍做 header/trailer、SHA-256 和首屏身份检查，产物写 `KEY/paper.pdf` 与 `KEY/manifest.json`。
 
 同一输出目录重跑时，已有 `paper.pdf` 必须与 `manifest.json` 的 SHA-256、条目 DOI 一致才会被视为 `already_obtained`；文件与清单不一致、只有文件没有清单或 DOI 冲突时失败关闭，不覆盖已有字节。`--apply` 只在 `ingest.py` 返回 `success` 时记为 `ingested`，附件部分失败记 `ingested_partial`，身份未匹配保留 `file_obtained` 并等待人工确认。
 
-Wiley 官方当前要求每 10 分钟最多 60 次请求；默认台账按该窗口和 10 秒最小间隔执行，跨运行仍受同一台账约束。Elsevier 默认 2 秒最小间隔和每日 200 次本地预算。`--state` 指定台账路径，`--daily-limit` 覆盖 API 每日预算；`--no-state` 仅用于诊断。Springer Nature 的 `meta/v2` 不提供闭源 PDF，`openaccess` 只覆盖 OA；Full Text TDM 返回 XML，不能当作 PDF 已补齐。
+Wiley 官方当前要求每 10 分钟最多 60 次请求；默认台账按该窗口和 10 秒最小间隔执行，跨运行仍受同一台账约束。Elsevier 默认 2 秒最小间隔和每日 200 次本地预算。`--state` 指定台账路径，`--daily-limit` 覆盖 API 每日预算；`--no-state` 仅用于诊断。其他出版社没有接入本技能的官方 PDF API，统一走浏览器 lane。
 
-## 校园 WebVPN 与出版社适配（可选）
+## 校园 WebVPN 与浏览器下载（可选）
 
-需要 Playwright 与 Chrome；首次登录由用户在打开的窗口完成，不读取或保存账号密码。`login` 打开入口等待统一身份认证；`fetch` 在 `--backend auto` 下先走 API，未覆盖的条目再从图书馆首页点击对应数据库，完成出版社远程访问握手后直连出版社。浏览器 lane 按主机持久化限速：默认 15±5 秒、单次每主机 20 篇、每日每主机 60 篇；`--daily-per-host` 可调。
+需要 Playwright 与 Chrome；首次登录由用户在打开的窗口完成，不读取或保存账号密码。`login` 打开入口等待统一身份认证；`fetch` 在 `--backend auto` 下先走 API，未覆盖的条目再进入浏览器。对 Elsevier/Wiley，脚本从图书馆首页点击对应数据库，完成出版社远程访问握手后直连出版社；其他出版社直接打开目标页，使用通用 PDF 链接提取。浏览器 lane 按主机持久化限速：默认 15±5 秒、单次每主机 20 篇、每日每主机 60 篇；`--daily-per-host` 可调。
 
 ```bash
 python scripts/webvpn_acquire.py login --profile "%LOCALAPPDATA%/sanmu-paper-search/webvpn-profile" --entry "https://lib-scau-edu-cn-s.vpn.scau.edu.cn/"
@@ -121,7 +121,7 @@ python scripts/webvpn_acquire.py fetch --keys KEY1,KEY2 --out "/path/to/webvpn-b
 python scripts/webvpn_acquire.py fetch --keys KEY1,KEY2 --out "/path/to/webvpn-batch" --backend browser --delay 15 --jitter 5 --max-per-host 20 --apply
 ```
 
-已加专门主机/DOI 映射和 PDF 候选提取的出版社：Elsevier、Wiley、Springer Nature、ACS、RSC、IEEE、Science、CNKI。适配只改进实际页面中的 PDF 链接识别，不绕过登录、订阅或验证码；CNKI 等页面若没有可验证的 PDF 链接，仍记为 `needs_manual`。SI 链接按标题和 URL 标记排除，主文与 SI 不混。
+浏览器 lane 只对 Elsevier/Wiley 做图书馆入口握手；其他出版社直接打开目标页并使用通用 PDF 链接提取，不维护逐出版社适配。没有稳定 PDF 链接的页面会保留 `needs_manual`。SI 链接按标题和 URL 标记排除，主文与 SI 不混。
 
 只处理本地 Zotero 中已有、但缺少主文 PDF 的条目；已有主文跳过，SI 不算主文。`--apply` 前先完成 `zotero_local.py doctor --apply` 授权；身份未匹配时只下载不入库，人工核对后用 `ingest.py --identity-confirmed`。profile 与 storage state 含会话 Cookie，按本机私有文件保护，勿提交或分享；不扩大到整期、整库或与当前阅读无关的批量下载。
 

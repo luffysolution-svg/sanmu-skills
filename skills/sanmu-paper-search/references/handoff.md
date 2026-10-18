@@ -10,7 +10,7 @@
 
 ## 全文与版本
 
-按已有附件、出版社开放版本、机构仓储、OpenAlex/S2 OA 位置和 Unpaywall 定位。各位置保留版本、许可、来源；Crossref 的 PDF/TDM 链接不自动等于 OA。预印本（如 arXiv、机构仓储 DSpace/Zenodo）可作为正式版受阻（如 401/403 订阅墙）时的开放替代，但不能无标记代替正式版，清单需保留具体版本与来源标记。
+按已有附件、出版社开放版本、机构仓储、OpenAlex/S2 OA 位置和 Unpaywall 定位。各位置保留版本、许可、来源；Crossref 的 PDF/TDM 链接不自动等于 OA。预印本或机构仓储版本可作为正式版受阻时的开放替代，但不能无标记代替正式版，清单需保留具体版本与来源标记。
 
 `fetch_pdf.py` 只处理用户任务中的公开 HTTPS PDF。检查 PDF header/trailer，记录原始/最终 URL、大小和 SHA-256。可选 PyMuPDF 在首屏题名区匹配完整 DOI 与标题（同时提供时均需命中，排除参考文献区），结果只代表文字层身份线索，不证明版本、内容完整或科学正确。扫描 PDF、乱码或未匹配进入人工回看，不按尺寸删除。下载拦截（如 reCAPTCHA、Cloudflare 质询、HTML 登录页）、截断与格式损坏分别通过具体 reason 记录。
 
@@ -24,9 +24,9 @@ Elsevier/Wiley 有机构 TDM 凭据时，`scripts/webvpn_acquire.py fetch --back
 
 ## 校园 WebVPN 与机构登录（可选）
 
-SCAU 图书馆 WebVPN（`https://lib-scau-edu-cn-s.vpn.scau.edu.cn/`）的正确路径是：完成统一身份认证后，从图书馆首页点击对应数据库，让出版社设置远程访问 Cookie（例如 ScienceDirect 的 `SD_REMOTEACCESS`），再直连出版社文章页；直接改写出版社域名会得到 403。`scripts/webvpn_acquire.py` 复用用户已登录的持久 Chrome 配置：`login` 只等待登录，保存浏览器配置与 storage state，不读取或保存凭据；`fetch` 自动做一次出版社握手，对本地 Zotero 中缺主文 PDF 的条目串行下载，默认每主机 15±5 秒、单次每主机最多 20 篇、每日每主机 60 篇；遇 403/429 连续 2 次或 Cloudflare 验证码停止。
+SCAU 图书馆 WebVPN（`https://lib-scau-edu-cn-s.vpn.scau.edu.cn/`）的正确路径是：完成统一身份认证后，从图书馆首页点击对应数据库，让出版社设置远程访问 Cookie（例如 ScienceDirect 的 `SD_REMOTEACCESS`），再直连出版社文章页；直接改写出版社域名会得到 403。`scripts/webvpn_acquire.py` 复用用户已登录的持久 Chrome 配置：`login` 只等待登录，保存浏览器配置与 storage state，不读取或保存凭据；`fetch` 对 Elsevier/Wiley 做一次出版社握手，其他出版社直接打开目标页并使用通用 PDF 链接提取；对本地 Zotero 中缺主文 PDF 的条目串行下载，默认每主机 15±5 秒、单次每主机最多 20 篇、每日每主机 60 篇；遇 403/429 连续 2 次或 Cloudflare 验证码停止。
 
-已加专门主机/DOI 映射和 PDF 候选提取的出版社：Elsevier、Wiley、Springer Nature、ACS、RSC、IEEE、Science、CNKI。适配只识别实际页面中的主文 PDF，不绕过登录、订阅或验证码；CNKI 等无可靠 PDF 链接的页面保留 `needs_manual`。CARSI/Shibboleth 走出版社“Access through your institution”页面，由用户完成机构身份认证；脚本检测到机构登录墙时记 `institutional_login_required`。会话是否有效以目标文章页是否出现主文候选为准，不以首页 200 代替。
+浏览器 lane 只对 Elsevier/Wiley 维护入口握手和 DOI 映射；其他出版社没有专门适配，成功取决于用户会话和页面中的实际 PDF 链接。CARSI/Shibboleth 走出版社“Access through your institution”页面，由用户完成机构身份认证；脚本检测到机构登录墙时记 `institutional_login_required`。会话是否有效以目标文章页是否出现主文候选为准，不以首页 200 代替。
 
 验证码或登录墙出现时，`--keep-open` 在当前条目暂停并保留浏览器，检测到标记消失后自动重试当前条目；`--challenge-timeout` 控制等待。超时或未开 `--keep-open` 时按 `--challenge-cooldown`（默认 86400 秒）写入该主机冷却。用户完成验证后用 `--manual-cleared` 重跑，只清除本批次主机的验证码冷却；脚本不自动填写账号、不绕过验证码。下载后写 `sanmu-acquisition/v1` 清单，交 `ingest.py` 入库。
 

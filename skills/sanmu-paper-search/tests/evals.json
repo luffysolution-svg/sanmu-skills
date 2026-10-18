@@ -36,11 +36,7 @@
     },
     {
       "prompt": "批量补全文时遇到 Cloudflare 验证码，我人在电脑前；脚本应该等我完成验证后继续当前这篇，而不是整批跑完就关浏览器。",
-      "checks": ["--keep-open 在当前条目暂停并保留浏览器", "检测到验证码或机构登录标记消失后重试当前条目", "等待超时记录 needs_manual 并按挑战冷却保存", "用户完成验证后重跑清除冷却", "不自动填写账号、不绕过验证码", "未完成条目保留链接、原因和下一步"]
-    },
-    {
-      "prompt": "帮我补 ACS、RSC、IEEE、Science 和 CNKI 的订阅 PDF；能识别页面里的主文 PDF，不要把 SI 当主文。",
-      "checks": ["ACS/RSC/IEEE/Science/CNKI 有主机或 DOI 映射", "优先 citation_pdf_url、pdfdirect、articlepdf、getPDF 等实际链接", "IEEE 可从 arnumber 构造候选但不假定必然成功", "SI 按标题和 URL 标记排除", "CNKI 无可靠 PDF 链接时保留 needs_manual，不假装取得", "仍由用户授权会话完成登录和订阅访问"]
+      "checks": ["--keep-open 在当前条目暂停并保留浏览器", "检测到验证码或机构登录标记消失后重试当前条目", "等待超时记录 needs_manual 并按挑战冷却保存", "用户完成验证后用 --manual-cleared 重跑清除验证码冷却", "不自动填写账号、不绕过验证码", "未完成条目保留链接、原因和下一步"]
     }
   ]
 }

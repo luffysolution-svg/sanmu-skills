@@ -32,7 +32,7 @@ description: 从课题、种子论文或作者出发检索学术文献，查询�
 
 ## 3. 执行与检查结果
 
-从本技能目录执行，路径中有空格时加引号。首次配置或 CLI 变化时运行 `doctor`、`--help` 和离线测试；常规检索不重复初始化。已有可靠运行记录时直接读取并复筛，不重复联网。[CLI 指南](references/cli.md) 包含命令契约。配置检查只报告凭证是否存在，不显示值。需要申请或诊断凭证时读 [API 申请与权限指南](references/api-access.md)，先区分产品、格式与内容权限。
+从本技能目录执行，路径中有空格时加引号。首次配置或 CLI 变化时运行 `doctor`、`--help` 和离线测试；常规检索不重复初始化。已有可靠运行记录时直接读取并复筛，不重复联网。[CLI 指南](references/cli.md) 包含命令契约。配置检查只报告凭证是否存在，不显示值。需要申请或诊断全文 API 凭证时读 [全文获取 API](references/api-access.md)，先区分产品、格式与内容权限。
 
 ```bash
 python scripts/paper_search.py doctor
@@ -62,11 +62,11 @@ python -m unittest discover -s tests -v
 
 整理文献库时先给出分类草案再动手：建子集合、按主题迁移条目、改附件显示标题都可批量执行并回读核对；改条目元数据（作者/年份/标题）是物理重命名的前置条件。磁盘文件名不直接改，交 Zotero「根据父级元数据重命名文件」由宿主维护索引。集合本身的删除/改名宿主接口未必开放，留用户手动完成并说明。
 
-全文定位优先已有附件、出版社开放版、OpenAlex/S2 OA 位置及可选 Unpaywall。保留许可和版本，URL 存在不等于开放获取。需要登录的机构访问由用户已有授权会话完成，不自动改变代理、导入 cookie 或绕过访问控制。外部下载后端仅为可选，失败不能伪装成无文献。
+全文定位优先已有附件、出版社开放版、OpenAlex/S2 OA 位置及可选 Unpaywall。保留许可和版本，URL 存在不等于开放获取。需要登录的机构访问由用户已有授权会话完成，不自动改变代理、导入 cookie 或绕过访问控制；失败保留具体缺口，不伪装成无文献。
 
 用 `scripts/acquire.py` 汇总全文、SI 与来源清单，公开 PDF 仍可单独用 `scripts/fetch_pdf.py` 获取。支持通过 `--institutional-proxy` 自动生成校园网 WebVPN / EZProxy 授权直达链接；机构登录交由用户已有授权浏览器，取得文件后通过 `--import-file` 验真导入清单。格式检查和首屏文字层身份核对不是科学内容验收，未核验保留待审。SI 从对应出版社实际页面提取候选，逐个核对名称、类型、链接与主文关系；页面未核对或文件未取得时如实标记，不猜地址或声称全部取得。`scripts/ingest.py` 校验清单哈希、目标条目与身份状态后，查重追加主文/SI；已有题录不自动覆盖，重复文件跳过，上传失败保留部分成功状态。具体命令按需查 [CLI 指南](references/cli.md)。
 
-校外订阅全文优先用可选脚本 `scripts/webvpn_acquire.py fetch --backend auto`（需 Playwright + Chrome）：有 Elsevier/Wiley TDM 凭据时先调官方 API，只有 API 不支持、未配置 Key 或条目没有 DOI 时才进入浏览器；401/403/429/网络错误不改走浏览器。浏览器 lane 复用用户已登录的持久 Chrome 配置，从图书馆入口完成出版社握手，按主机串行限速取 PDF；已加 Elsevier、Wiley、Springer Nature、ACS、RSC、IEEE、Science、CNKI 的主机/DOI 映射和主文候选提取。默认每主机 15±5 秒、每日 60 篇；请求预算、窗口和冷却跨运行保存在本地台账。`--keep-open` 在验证码或机构登录墙出现时暂停当前条目，检测放行后自动重试；超时按 24 小时冷却记录，用户完成后用 `--manual-cleared` 重跑清除本批次主机的验证码冷却（不会清除 429 冷却）。登录、订阅资格与验证码由用户完成并承担；不保存账号密码、不绕过访问控制，只对本地已有条目补齐主文，不用于整期或整库下载。
+校外订阅全文优先用可选脚本 `scripts/webvpn_acquire.py fetch --backend auto`（需 Playwright + Chrome）：有 Elsevier/Wiley TDM 凭据时先调官方 API，只有 API 不支持、未配置 Key 或条目没有 DOI 时才进入浏览器；401/403/429/网络错误不改走浏览器。浏览器 lane 复用用户已登录的持久 Chrome 配置，对 Elsevier/Wiley 从图书馆入口完成出版社握手；其他出版社直接打开目标页并使用通用 PDF 链接提取，不承诺专门适配。默认每主机 15±5 秒、每日 60 篇；请求预算、窗口和冷却跨运行保存在本地台账。`--keep-open` 在验证码或机构登录墙出现时暂停当前条目，检测放行后自动重试；超时按 24 小时冷却记录，用户完成后用 `--manual-cleared` 重跑清除本批次主机的验证码冷却（不会清除 429 冷却）。登录、订阅资格与验证码由用户完成并承担；不保存账号密码、不绕过访问控制，只对本地已有条目补齐主文，不用于整期或整库下载。
 
 API-only 诊断用 `scripts/publisher_api.py`。两个入口共享 `acquisition-state.json` 台账（`--state`/`--no-state`），已有 `paper.pdf` 与清单哈希或 DOI 不一致时拒绝覆盖。`--apply` 只在入库返回 `success` 时记 `ingested`，附件部分失败记 `ingested_partial`，身份未匹配保留 `file_obtained` 待人工确认。Key 只从 `ELSEVIER_API_KEY`/`WILEY_TDM_KEY` 环境变量读取，不写入仓库、日志或清单。
 

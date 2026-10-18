@@ -7,8 +7,7 @@ Supported routes:
 Keys are read from environment variables only. They are never written to disk,
 logs, manifests, or the repository. Requests and cooldowns are accounted for in
 a persistent rate ledger; existing acquired files are never overwritten when
-their manifest hash or DOI disagrees. Springer Nature's metadata API does not
-provide closed-access PDFs; use webvpn_acquire.py for those publishers.
+their manifest hash or DOI disagrees. Other publishers use webvpn_acquire.py.
 
 The script is optional and uses requests. PDFs are verified with the same
 header/trailer and identity checks as fetch_pdf.py; manifests are consumable by

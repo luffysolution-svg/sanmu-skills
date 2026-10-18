@@ -19,24 +19,24 @@ class InstitutionalAccessTests(unittest.TestCase):
         self.assertEqual(ia.detect_proxy_type(""), "none")
 
     def test_ezproxy_transform(self):
-        target = "https://www.nature.com/articles/s41586-023-06792-0"
+        target = "https://publisher.example/article/123"
         proxy = "https://libproxy.univ.edu/login?url="
         res = ia.transform_url(target, proxy)
         self.assertEqual(res["status"], "configured")
         self.assertEqual(res["proxy_type"], "ezproxy_prefix")
-        self.assertEqual(res["institutional_url"], "https://libproxy.univ.edu/login?url=https://www.nature.com/articles/s41586-023-06792-0")
+        self.assertEqual(res["institutional_url"], "https://libproxy.univ.edu/login?url=https://publisher.example/article/123")
 
         # Test bare base URL
         res2 = ia.transform_url(target, "https://libproxy.univ.edu")
-        self.assertEqual(res2["institutional_url"], "https://libproxy.univ.edu/login?url=https://www.nature.com/articles/s41586-023-06792-0")
+        self.assertEqual(res2["institutional_url"], "https://libproxy.univ.edu/login?url=https://publisher.example/article/123")
 
     def test_webvpn_transform(self):
-        target = "https://www.science.org/doi/10.1126/science.aat2663?param=1"
+        target = "https://publisher.example/article/123?param=1"
         proxy = "https://webvpn.univ.edu.cn"
         res = ia.transform_url(target, proxy)
         self.assertEqual(res["status"], "configured")
         self.assertEqual(res["proxy_type"], "webvpn_path")
-        self.assertEqual(res["institutional_url"], "https://webvpn.univ.edu.cn/https/www.science.org/doi/10.1126/science.aat2663?param=1")
+        self.assertEqual(res["institutional_url"], "https://webvpn.univ.edu.cn/https/publisher.example/article/123?param=1")
 
     def test_template_transform(self):
         target = "https://www.sciencedirect.com/science/article/pii/S123"

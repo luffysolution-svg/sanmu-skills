@@ -4,12 +4,12 @@
 browser lane only for DOIs the API does not cover. `login` opens the campus
 library WebVPN entry and waits for the user to finish SSO. The browser lane
 reuses that persistent Chrome profile, performs the library's publisher
-handshake, then downloads with serial, per-host pacing. Publisher-specific
-mappings cover Elsevier, Wiley, Springer Nature, ACS, RSC, IEEE, Science and
-CNKI. CAPTCHA and institutional-login walls are reported for manual completion;
-with --keep-open the script waits, then retries the current item after the user
-clears it. The script never solves or bypasses a challenge and never enters
-credentials on the user's behalf.
+handshake for Elsevier/Wiley, then downloads with serial, per-host pacing.
+Other publishers use the same browser profile and generic PDF-link extraction,
+without a dedicated adapter. CAPTCHA and institutional-login walls are reported
+for manual completion; with --keep-open the script waits, then retries the
+current item after the user clears it. The script never solves or bypasses a
+challenge and never enters credentials on the user's behalf.
 
 Optional dependencies: playwright and Google Chrome. The core search commands do
 not need them; the API lane needs requests.
@@ -30,7 +30,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from html.parser import HTMLParser
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import acquisition_store
 import fetch_pdf
@@ -43,24 +43,11 @@ DEFAULT_PORTAL = "https://lib-scau-edu-cn-s.vpn.scau.edu.cn/"
 PUBLISHERS = (
     ("elsevier", "ELSEVIER", ("sciencedirect.com", "cell.com", "elsevier.com"), "SD_REMOTEACCESS"),
     ("wiley", "WILEY", ("wiley.com",), None),
-    ("springer", "SPRINGER NATURE", ("nature.com", "springer.com", "biomedcentral.com"), None),
-    ("acs", "ACS", ("pubs.acs.org", "acs.figshare.com"), None),
-    ("rsc", "RSC", ("pubs.rsc.org", "rsc.org"), None),
-    ("ieee", "IEEE", ("ieeexplore.ieee.org",), None),
-    ("science", "SCIENCE", ("science.org",), None),
-    ("cnki", "中国知网", ("cnki.net",), None),
 )
 DOI_PUBLISHERS = {
     "10.1016": "elsevier",
     "10.1002": "wiley",
     "10.1111": "wiley",
-    "10.1038": "springer",
-    "10.1007": "springer",
-    "10.1186": "springer",
-    "10.1021": "acs",
-    "10.1039": "rsc",
-    "10.1109": "ieee",
-    "10.1126": "science",
 }
 CHALLENGE_MARKERS = (
     "are you a robot", "cf-chl", "正在进行安全验证",
@@ -143,37 +130,11 @@ class _PdfLinks(HTMLParser):
             self.links.append(absolute)
 
 
-def _adapter_candidates(html, base_url, publisher, doi):
-    """Publisher-specific PDF routes that are not always emitted as anchors."""
-    values = []
-    doi = (doi or "").strip()
-    if not re.fullmatch(r"10\.\d{4,9}/\S+", doi):
-        return values
-    if publisher == "acs" and doi.lower().startswith("10.1021/"):
-        for prefix in ("/doi/pdf/", "/doi/pdfdirect/"):
-            values.append(urljoin(base_url, prefix + quote(doi, safe="/")))
-    if publisher == "science" and doi.lower().startswith("10.1126/"):
-        for prefix in ("/doi/pdf/", "/doi/epdf/"):
-            values.append(urljoin(base_url, prefix + quote(doi, safe="/")))
-    if publisher == "ieee":
-        match = (re.search(r"arnumber=(\d+)", html or "", re.I)
-                 or re.search(r"arnumber=(\d+)", base_url or "", re.I))
-        if match:
-            number = match.group(1)
-            values.append(urljoin(base_url, "/stampPDF/getPDF.jsp?tp=&arnumber=" + number))
-            values.append(urljoin(base_url, "/stamp/stamp.jsp?tp=&arnumber=" + number))
-    if publisher == "springer" and doi.lower().startswith("10.1007/"):
-        values.append(urljoin(base_url, "/content/pdf/" + quote(doi, safe="/") + ".pdf"))
-    return [value for value in values if value.startswith(("http://", "https://"))]
-
-
-def pdf_candidates(html, base_url, publisher=None, doi=None):
+def pdf_candidates(html, base_url):
     parser = _PdfLinks(base_url)
     parser.feed(html)
-    links = list(parser.links)
-    links.extend(_adapter_candidates(html, base_url, publisher, doi))
     unique = []
-    for url in links:
+    for url in parser.links:
         low = url.lower()
         if any(marker in low for marker in SI_URL_MARKERS):
             continue
@@ -547,7 +508,7 @@ def fetch_item(context, page, client, item, key, out, portal, handshakes, limite
     for _ in range(10):
         try:
             page_html = page.content()
-            candidates = pdf_candidates(page_html, page.url, publisher, record.get("doi"))
+            candidates = pdf_candidates(page_html, page.url)
         except Exception:
             break
         if candidates:

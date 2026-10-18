@@ -7,24 +7,19 @@ import webvpn_acquire as wa
 
 
 class WebVpnAcquireTests(unittest.TestCase):
-    def test_publisher_mapping(self):
+    def test_publisher_mapping_keeps_only_elsevier_and_wiley(self):
         self.assertEqual(wa.publisher_of("https://www.sciencedirect.com/science/article/pii/S123"), "elsevier")
         self.assertEqual(wa.publisher_of("https://www.cell.com/matter/fulltext/S123"), "elsevier")
         self.assertEqual(wa.publisher_of("https://onlinelibrary.wiley.com/doi/10.1002/x"), "wiley")
-        self.assertEqual(wa.publisher_of("https://www.nature.com/articles/x"), "springer")
-        self.assertEqual(wa.publisher_of("https://pubs.acs.org/doi/10.1021/x"), "acs")
-        self.assertEqual(wa.publisher_of("https://pubs.rsc.org/en/content/articlelanding/2024/x"), "rsc")
-        self.assertEqual(wa.publisher_of("https://ieeexplore.ieee.org/document/123"), "ieee")
-        self.assertEqual(wa.publisher_of("https://www.science.org/doi/10.1126/x"), "science")
-        self.assertEqual(wa.publisher_of("https://kns.cnki.net/kcms2/article/abstract?v=x"), "cnki")
-        self.assertEqual(wa.publisher_of("https://example.org/article"), "direct")
+        for url in (
+            "https://publisher.example/article",
+            "https://publisher.example/doi/10.1000/x",
+        ):
+            self.assertEqual(wa.publisher_of(url), "direct")
         self.assertEqual(wa.publisher_for_doi("10.1016/j.matt.2019.08.017"), "elsevier")
         self.assertEqual(wa.publisher_for_doi("10.1002/adma.202313513"), "wiley")
-        self.assertEqual(wa.publisher_for_doi("10.1038/x"), "springer")
-        self.assertEqual(wa.publisher_for_doi("10.1021/jacs.1c1"), "acs")
-        self.assertEqual(wa.publisher_for_doi("10.1039/d4cc00001a"), "rsc")
-        self.assertEqual(wa.publisher_for_doi("10.1109/tpel.2024.1"), "ieee")
-        self.assertEqual(wa.publisher_for_doi("10.1126/science.x"), "science")
+        self.assertEqual(wa.publisher_for_doi("10.1111/test"), "wiley")
+        self.assertEqual(wa.publisher_for_doi("10.1038/x"), "direct")
         self.assertEqual(wa.publisher_for_doi("10.9999/other"), "direct")
 
     def test_pdf_candidates_prefers_direct_and_deduplicates(self):
@@ -40,32 +35,20 @@ class WebVpnAcquireTests(unittest.TestCase):
         self.assertEqual(links[1], "https://www-sciencedirect-com-s.vpn.scau.edu.cn/article/S123.pdf")
         self.assertEqual(len(links), 2)
 
-    def test_acs_adapter_and_si_exclusion(self):
-        html = '<meta name="citation_pdf_url" content="/doi/pdf/10.1021/jacs.1c1">'
-        links = wa.pdf_candidates(html, "https://pubs.acs.org/doi/10.1021/jacs.1c1",
-                                  "acs", "10.1021/jacs.1c1")
-        self.assertIn("https://pubs.acs.org/doi/pdf/10.1021/jacs.1c1", links)
-        si = '<a href="/doi/suppl/10.1021/jacs.1c1/suppl_file/ja1c1_si_001.pdf">SI</a>'
-        si_links = wa.pdf_candidates(si, "https://pubs.acs.org/doi/10.1021/jacs.1c1",
-                                     "acs", "10.1021/jacs.1c1")
-        self.assertFalse(any("suppl_file" in link for link in si_links))
-        self.assertIn("https://pubs.acs.org/doi/pdf/10.1021/jacs.1c1", si_links)
-
-    def test_rsc_ieee_science_and_cnki_candidates(self):
-        rsc = '<a href="/en/content/articlepdf/2024/d4cc00001a">PDF</a>'
-        self.assertTrue(wa.pdf_candidates(rsc, "https://pubs.rsc.org/en/content/articlelanding/2024/d4cc00001a",
-                                          "rsc", "10.1039/d4cc00001a"))
-        ieee = '<div data-arnumber="987654"></div><iframe src="/stamp/stamp.jsp?tp=&arnumber=987654"></iframe>'
-        links = wa.pdf_candidates(ieee, "https://ieeexplore.ieee.org/document/987654",
-                                  "ieee", "10.1109/tpel.2024.1")
-        self.assertIn("https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=987654", links)
-        science = '<a href="/doi/epdf/10.1126/science.x">ePDF</a>'
-        self.assertIn("https://www.science.org/doi/epdf/10.1126/science.x",
-                      wa.pdf_candidates(science, "https://www.science.org/doi/10.1126/science.x",
-                                        "science", "10.1126/science.x"))
-        cnki = '<a href="https://download.cnki.net/kcms/detail/detail.aspx?filename=ABC.pdf">PDF</a>'
-        self.assertTrue(wa.pdf_candidates(cnki, "https://kns.cnki.net/kcms2/article/abstract?v=x",
-                                          "cnki"))
+    def test_generic_extraction_handles_common_publisher_links(self):
+        html = """
+        <meta name="citation_pdf_url" content="/article/123.pdf">
+        <a href="/content/articlepdf/2024/abc">Article PDF</a>
+        <a href="/download/getPDF?id=987654">Download PDF</a>
+        <a href="/article/epdf/10.1000/x">ePDF</a>
+        <a href="/article/123-supplementary.pdf">SI</a>
+        """
+        links = wa.pdf_candidates(html, "https://publisher.example/article/1")
+        self.assertIn("https://publisher.example/article/123.pdf", links)
+        self.assertIn("https://publisher.example/content/articlepdf/2024/abc", links)
+        self.assertIn("https://publisher.example/download/getPDF?id=987654", links)
+        self.assertIn("https://publisher.example/article/epdf/10.1000/x", links)
+        self.assertFalse(any("supplementary" in link for link in links))
 
     def test_institutional_login_detection(self):
         self.assertTrue(wa._institutional_login_page(
@@ -116,13 +99,13 @@ class WebVpnAcquireTests(unittest.TestCase):
 
     def test_resolve_target_prefers_publisher_url(self):
         self.assertEqual(wa.resolve_target({"data": {
-            "url": "https://www.nature.com/articles/x", "DOI": "10.1038/x"}}),
-            "https://www.nature.com/articles/x")
+            "url": "https://publisher.example/article/x", "DOI": "10.1016/j.test"}}),
+            "https://publisher.example/article/x")
         self.assertEqual(wa.resolve_target({"data": {
-            "url": "https://doi.org/10.1038/x", "DOI": "10.1038/x"}}),
-            "https://doi.org/10.1038/x")
-        self.assertEqual(wa.resolve_target({"data": {"DOI": "10.1038/x"}}),
-                         "https://doi.org/10.1038/x")
+            "url": "https://doi.org/10.1016/j.test", "DOI": "10.1016/j.test"}}),
+            "https://doi.org/10.1016/j.test")
+        self.assertEqual(wa.resolve_target({"data": {"DOI": "10.1016/j.test"}}),
+                         "https://doi.org/10.1016/j.test")
         self.assertIsNone(wa.resolve_target({"data": {}}))
 
     def test_has_main_pdf_ignores_supplementary_only(self):
@@ -145,13 +128,13 @@ class WebVpnAcquireTests(unittest.TestCase):
 
     def test_manifest_shape_is_ingest_compatible(self):
         item = {"data": {
-            "title": "A paper", "DOI": "10.1038/x", "date": "2025-03",
+            "title": "A paper", "DOI": "10.1016/j.test", "date": "2025-03",
             "creators": [{"firstName": "Ada", "lastName": "Lovelace"}]}}
         manifest = wa._manifest(item, "paper.pdf", "a" * 64, {"header": True, "trailer": True},
-                                {"status": "matched"}, "https://www.nature.com/articles/x")
+                                {"status": "matched"}, "https://www.sciencedirect.com/science/article/pii/S123")
         self.assertEqual(manifest["schema"], "sanmu-acquisition/v1")
         self.assertEqual(manifest["paper"]["title"], "A paper")
-        self.assertEqual(manifest["paper"]["identifiers"]["doi"], ["10.1038/x"])
+        self.assertEqual(manifest["paper"]["identifiers"]["doi"], ["10.1016/j.test"])
         self.assertEqual(manifest["paper"]["authors"], [{"name": "Ada Lovelace"}])
         self.assertEqual(manifest["main"]["file"], "paper.pdf")
         self.assertEqual(manifest["main"]["sha256"], "a" * 64)
