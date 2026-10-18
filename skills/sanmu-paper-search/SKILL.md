@@ -1,6 +1,6 @@
 ---
 name: sanmu-paper-search
-description: 从课题、种子论文或作者出发检索学术文献，查询作者其他研究、参考文献、施引与相似论文，跨 OpenAlex、Semantic Scholar、Crossref 及可选 arXiv、Europe PMC 合并去重并保留检索记录，获取全文与补充材料，通过本地 API 查重写入 Zotero 并沿用 WebDAV 同步，交接阅读。用户要求“找相关论文”“查这个作者其他文章”“谁引用了这篇”“开题文献检索”“更新某方向文献”“找全文或 SI”“整理文献库”“重建 Zotero 分类”“修改附件名”时使用。支持从种子论文锚定同名作者稳定 ID、日常有界检索与带检索协议的系统检索准备；已有材料的图表机理解读交给阅读流程，PDF 转 Markdown 交给转换流程。
+description: 从课题、种子论文或作者出发检索学术文献，查询作者其他研究、参考文献、施引与相似论文，跨 OpenAlex、Semantic Scholar、Crossref 及可选 arXiv、Europe PMC 合并去重并保留检索记录，获取全文与补充材料，通过本地 API 查重写入 Zotero 并沿用 WebDAV 同步，交接阅读。用户要求“找相关论文”“查这个作者其他文章”“谁引用了这篇”“开题文献检索”“更新某方向文献”“找全文或 SI”“批量下载文献”“校园网取全文”“补 Zotero 附件”“整理文献库”“重建 Zotero 分类”“修改附件名”时使用。支持从种子论文锚定同名作者稳定 ID、日常有界检索与带检索协议的系统检索准备；支持 API-first 统一获取：有 Elsevier/Wiley TDM 凭据时先走官方 API，未覆盖条目再走用户已登录的校园 WebVPN/CARSI，请求预算与冷却跨运行保存，验证码由用户完成后自动续跑；已有材料的图表机理解读交给阅读流程，PDF 转 Markdown 交给转换流程。
 ---
 
 # 文献发现与获取（sanmu-paper-search）
@@ -32,7 +32,7 @@ description: 从课题、种子论文或作者出发检索学术文献，查询�
 
 ## 3. 执行与检查结果
 
-从本技能目录执行，路径中有空格时加引号。首次配置或 CLI 变化时运行 `doctor`、`--help` 和离线测试；常规检索不重复初始化。已有可靠运行记录时直接读取并复筛，不重复联网。[CLI 指南](references/cli.md) 包含命令契约。配置检查只报告凭证是否存在，不显示值。
+从本技能目录执行，路径中有空格时加引号。首次配置或 CLI 变化时运行 `doctor`、`--help` 和离线测试；常规检索不重复初始化。已有可靠运行记录时直接读取并复筛，不重复联网。[CLI 指南](references/cli.md) 包含命令契约。配置检查只报告凭证是否存在，不显示值。需要申请或诊断凭证时读 [API 申请与权限指南](references/api-access.md)，先区分产品、格式与内容权限。
 
 ```bash
 python scripts/paper_search.py doctor
@@ -40,7 +40,7 @@ python scripts/paper_search.py --help
 python -m unittest discover -s tests -v
 ```
 
-使用附带 CLI 执行核心 API 请求和记录保存；本地 Zotero 客户端、领域索引或可选后端按需使用，宿主工具可替代。API 失败保留错误状态，遵守限流与重试预算；没有 key 的来源按实际能力降级，不猜邮箱或编造结果。
+使用附带 CLI 执行核心 API 请求和记录保存；本地 Zotero 客户端、领域索引或可选后端按需使用，宿主工具可替代。API 失败保留错误状态，遵守限流与重试预算；没有 key 的来源按实际能力降级，不猜邮箱或编造结果。批量获取前检查持久化台账的冷却和日预算；同一输出目录重跑先核验既有文件与清单哈希，不覆盖已取得字节。
 
 检查以下边界后再组织答案：
 
@@ -51,6 +51,13 @@ python -m unittest discover -s tests -v
 
 ## 4. 获取与下游交接
 
+| 获取场景 | 首选入口 | 边界 |
+| --- | --- | --- |
+| 明确 OA 直链 | `fetch_pdf.py` 或 `acquire.py` | URL 存在不等于开放许可 |
+| Elsevier/Wiley TDM 凭据 | `webvpn_acquire.py fetch --backend auto` | API 优先，失败不静默转浏览器 |
+| 其他订阅/机构访问 | `webvpn_acquire.py fetch --backend browser` | 用户完成登录与验证码 |
+| 已有授权浏览器下载 | `acquire.py --import-file` | 验真后入清单，不伪造来源 |
+
 先用 `scripts/zotero_local.py` 列库/分类、精确查条目和附件，宿主工具可替代；无本地连接时可读取标准 Zotero JSON 导出。快照未匹配仅表示不在该快照，不能推断整个库未收藏。不直接读取数据库或遍历 storage，附件只按 API 返回路径读取。写入默认预览，用户已授权时用 `--apply` 执行并回读；首次需要 Zotero 8+ [本地授权](references/local-zotero.md)。存储附件由 Zotero 沿用个人库 WebDAV 同步，本地导入与远端同步状态分开。
 
 整理文献库时先给出分类草案再动手：建子集合、按主题迁移条目、改附件显示标题都可批量执行并回读核对；改条目元数据（作者/年份/标题）是物理重命名的前置条件。磁盘文件名不直接改，交 Zotero「根据父级元数据重命名文件」由宿主维护索引。集合本身的删除/改名宿主接口未必开放，留用户手动完成并说明。
@@ -58,6 +65,10 @@ python -m unittest discover -s tests -v
 全文定位优先已有附件、出版社开放版、OpenAlex/S2 OA 位置及可选 Unpaywall。保留许可和版本，URL 存在不等于开放获取。需要登录的机构访问由用户已有授权会话完成，不自动改变代理、导入 cookie 或绕过访问控制。外部下载后端仅为可选，失败不能伪装成无文献。
 
 用 `scripts/acquire.py` 汇总全文、SI 与来源清单，公开 PDF 仍可单独用 `scripts/fetch_pdf.py` 获取。支持通过 `--institutional-proxy` 自动生成校园网 WebVPN / EZProxy 授权直达链接；机构登录交由用户已有授权浏览器，取得文件后通过 `--import-file` 验真导入清单。格式检查和首屏文字层身份核对不是科学内容验收，未核验保留待审。SI 从对应出版社实际页面提取候选，逐个核对名称、类型、链接与主文关系；页面未核对或文件未取得时如实标记，不猜地址或声称全部取得。`scripts/ingest.py` 校验清单哈希、目标条目与身份状态后，查重追加主文/SI；已有题录不自动覆盖，重复文件跳过，上传失败保留部分成功状态。具体命令按需查 [CLI 指南](references/cli.md)。
+
+校外订阅全文优先用可选脚本 `scripts/webvpn_acquire.py fetch --backend auto`（需 Playwright + Chrome）：有 Elsevier/Wiley TDM 凭据时先调官方 API，只有 API 不支持、未配置 Key 或条目没有 DOI 时才进入浏览器；401/403/429/网络错误不改走浏览器。浏览器 lane 复用用户已登录的持久 Chrome 配置，从图书馆入口完成出版社握手，按主机串行限速取 PDF；已加 Elsevier、Wiley、Springer Nature、ACS、RSC、IEEE、Science、CNKI 的主机/DOI 映射和主文候选提取。默认每主机 15±5 秒、每日 60 篇；请求预算、窗口和冷却跨运行保存在本地台账。`--keep-open` 在验证码或机构登录墙出现时暂停当前条目，检测放行后自动重试；超时按 24 小时冷却记录，用户完成后用 `--manual-cleared` 重跑清除本批次主机的验证码冷却（不会清除 429 冷却）。登录、订阅资格与验证码由用户完成并承担；不保存账号密码、不绕过访问控制，只对本地已有条目补齐主文，不用于整期或整库下载。
+
+API-only 诊断用 `scripts/publisher_api.py`。两个入口共享 `acquisition-state.json` 台账（`--state`/`--no-state`），已有 `paper.pdf` 与清单哈希或 DOI 不一致时拒绝覆盖。`--apply` 只在入库返回 `success` 时记 `ingested`，附件部分失败记 `ingested_partial`，身份未匹配保留 `file_obtained` 待人工确认。Key 只从 `ELSEVIER_API_KEY`/`WILEY_TDM_KEY` 环境变量读取，不写入仓库、日志或清单。
 
 交付时区分 `discovered`、`metadata_checked`、`file_obtained`、`identity_checked` 与 `read`，不把前一步状态升级成后一步。主文和 SI 转换可选交给 `sanmu-doc2md`；相关性、图表、机理和实验条件深入核验可选交给 `sanmu-paper-reader`，未安装时交付清单与文件即可。
 
@@ -72,7 +83,7 @@ python -m unittest discover -s tests -v
 1. 主题、种子或作者身份是否清楚，检索范围是否对应请求。
 2. 逐源状态、截断、计数和筛选依据是否如实，链接与标识符能否回查。
 3. 作者歧义、版本关系、字段冲突是否保留；摘要、全文和已读证据是否区分。
-4. 文件、SI 和 Zotero 状态是否基于实际取得/读取，文件哈希清单检查是否通过。
+4. 文件、SI 和 Zotero 状态是否基于实际取得/读取，文件哈希清单检查是否通过；批量任务是否区分 `file_obtained`、`ingested`、`ingested_partial`、`stopped` 与 `needs_manual`，未完成条目是否保留原因和下一步。
 5. 是否回答了问题，并给出足够的下一步阅读材料；没有用模板或全套综述流程拖慢简单检索。
 
 固定来源记录、失败语义、身份边界和文件保护；查询措辞、来源组合、阅读优先级与检索深度保留判断空间。

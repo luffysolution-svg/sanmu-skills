@@ -35,6 +35,8 @@ def detect_proxy_type(proxy_pattern: str) -> str:
     if not proxy_pattern:
         return "none"
     p = proxy_pattern.strip()
+    if "{host_dashed}" in p:
+        return "webvpn_host"
     if "{url}" in p or "{host}" in p or "{doi}" in p:
         return "template"
     if "login?url=" in p.lower() or p.endswith(("url=", "url?")):
@@ -62,8 +64,16 @@ def transform_url(target_url: str, proxy_pattern: str | None, doi: str | None = 
         norm_doi = doi.strip() if doi else ""
         res = proxy.replace("{url}", clean_target)
         res = res.replace("{host}", parts.hostname)
+        res = res.replace("{host_dashed}", parts.hostname.replace(".", "-"))
         res = res.replace("{path}", path_with_query)
         res = res.replace("{doi}", norm_doi)
+        inst_url = res
+    elif ptype == "webvpn_host":
+        # Sangfor host-rewrite proxy, e.g. https://www-sciencedirect-com-s.vpn.scau.edu.cn/path
+        res = proxy.replace("{host}", parts.hostname)
+        res = res.replace("{host_dashed}", parts.hostname.replace(".", "-"))
+        res = res.replace("{path}", path_with_query)
+        res = res.replace("{doi}", doi.strip() if doi else "")
         inst_url = res
     elif ptype == "webvpn_path":
         # Sangfor WebVPN format: https://webvpn.univ.edu.cn/https/{target_host}{path_query}

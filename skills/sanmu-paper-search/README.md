@@ -72,6 +72,8 @@ python scripts/ingest.py /path/to/work/acquisition/manifest.json --apply
 
 `ingest` 先校验文件 SHA-256 和身份，再按稳定 ID 查重入库；默认预览，已有题录不自动改写。文字层身份未确认或存在 SI 时，需完成相应人工核验后再使用 `--identity-confirmed` / `--si-confirmed`，见 [CLI 指南](references/cli.md) 与 [本地 Zotero](references/local-zotero.md)。首次本地授权无需云端 API key；附件导入成功只表示本地写入完成，WebDAV 由本机 Zotero 同步，完成状态需另行核对。
 
+需要批量补齐订阅 PDF 时，可选 `webvpn_acquire.py fetch --backend auto`；先跑 `--dry-run` 查看 API/浏览器计划和台账冷却，再加 `--apply`。验证码或机构登录墙由用户在保留的浏览器中完成。
+
 Windows 使用实际绝对路径并加引号。作者候选核对后，用 `author --author-id ID --provider ...` 获取作品。`search` 和作者作品支持 `--year-from` / `--year-to`。`--limit` 为每源预算，跨源去重后全部保留；默认不做跨库相关性重排，助手根据实际阅读形成候选短名单。参数与记录格式见 [CLI 指南](references/cli.md)。
 
 ## 来源与依赖
@@ -88,7 +90,9 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 
 `search` / `lookup` 默认保留原三源，新增来源不会增加默认请求；`related` 仅支持 OpenAlex 与 Semantic Scholar，其他来源明确报告 `unsupported`。arXiv 预印本与正式 DOI 保留版本关系；免费可读不等于开放许可。
 
-核心检索独立可用，不捆绑凭证。获取默认采用标准库直链与合规 OA，剥离外部第三方下载依赖。机构访问支持通过 `--institutional-proxy` 自动生成校内 WebVPN / EZProxy 授权直达链接，并在宿主浏览器中复用已登录会话，下载后用 `acquire.py --import-file` 导入；不承诺取得所有商业付费全文。
+官方 Key/Token 申请地址、产品权限与配置步骤见 [API 申请与权限指南](references/api-access.md)。扩展核对见 [检索与开放数据目录](references/api-discovery-providers.md) 和 [出版社与中文数据库目录](references/api-publisher-providers.md)，覆盖 WoS、NCBI、CORE、IEEE、APS、ACS、RSC、Science、万方等来源；候选接口和当前已接入能力分别标注。
+
+核心检索独立可用，不捆绑凭证。获取默认采用标准库直链与合规 OA，剥离外部第三方下载依赖。机构访问支持通过 `--institutional-proxy` 自动生成校内 WebVPN / EZProxy 授权直达链接，并在宿主浏览器中复用已登录会话，下载后用 `acquire.py --import-file` 导入；不承诺取得所有商业付费全文。Elsevier/Wiley 有官方 TDM 凭据时，`webvpn_acquire.py fetch --backend auto` 先走官方 API，只有 API 不支持、未配置 Key 或条目没有 DOI 时才进入浏览器；401/403/429 不自动改走浏览器。两个入口共享持久化请求台账，按 UTC 日、滑动窗口和冷却限速；已有 `paper.pdf` 与清单哈希或 DOI 不一致时拒绝覆盖。验证码或机构登录墙出现时，`--keep-open` 暂停当前条目并保留浏览器，用户完成后自动重试；超时按 24 小时冷却记录，完成后用 `--manual-cleared` 重跑清除本批次主机的验证码冷却（不会清除 429 冷却）。浏览器 lane 已加 ACS、RSC、IEEE、Science、CNKI 等主文链接适配，产物交 `ingest.py` 入库。
 
 ## 结果与边界
 

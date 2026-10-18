@@ -46,6 +46,16 @@ class InstitutionalAccessTests(unittest.TestCase):
         self.assertEqual(res["proxy_type"], "template")
         self.assertEqual(res["institutional_url"], "https://vpn.univ.edu.cn/http/80/www.sciencedirect.com/science/article/pii/S123?doi=10.1016/j.test")
 
+    def test_sangfor_host_rewrite_transform(self):
+        target = "https://www.sciencedirect.com/science/article/pii/S123?x=1"
+        template = "https://{host_dashed}-s.vpn.scau.edu.cn{path}"
+        self.assertEqual(ia.detect_proxy_type(template), "webvpn_host")
+        res = ia.transform_url(target, template)
+        self.assertEqual(res["status"], "configured")
+        self.assertEqual(res["proxy_type"], "webvpn_host")
+        self.assertEqual(res["institutional_url"],
+                         "https://www-sciencedirect-com-s.vpn.scau.edu.cn/science/article/pii/S123?x=1")
+
     def test_sensitive_param_redacted(self):
         target = "https://publisher.org/a.pdf?token=SECRET&key=KEY123&keep=yes"
         proxy = "https://libproxy.univ.edu/login?url="

@@ -16,6 +16,22 @@
 
 学校订阅、CARSI、WebVPN 等访问依赖用户自己的授权会话。商业刊物（如 Elsevier、Wiley、Science）与 Google 学术常设 Cloudflare 质询盾或人机验证，自动化或内置浏览器若遇拦截，用户可在宿主个人日常浏览器（含机构 IP/VPN 授权）内完成验证下载，再通过 `acquire.py --import-file` 纳入清单；缺少浏览器工具、登录过期或无订阅时保留具体缺口。配置 `--institutional-proxy`（支持 EZProxy、WebVPN 路径映射或自定义模板，亦可通过 `INSTITUTIONAL_PROXY_URL` 环境变量注入）时，交接清单自动将出版商 URL 转换为校内授权 `institutional_url`。核心获取默认采用标准库直链与合规 OA，剥离外部第三方下载依赖；不自动调用非审计模块，不要默认启动 Tor、改全局代理或绕过验证码，也不要把“免费可取得”与“开放许可”混为一个字段。
 
+## 出版社 TDM API 与统一获取（可选）
+
+Elsevier/Wiley 有机构 TDM 凭据时，`scripts/webvpn_acquire.py fetch --backend auto` 先调官方 API，成功条目直接跳过浏览器；API 只覆盖 `10.1016/`、`10.1002/`、`10.1111/`。只有 API 明确不支持、未配置 Key 或条目没有 DOI 时才进入浏览器；401/403/429/网络错误不改走浏览器，分别按凭证、权限、冷却和网络状态记录。Key 只从 `ELSEVIER_API_KEY`/`WILEY_TDM_KEY` 读取，不写入清单或仓库。`--backend api` 与 `--backend browser` 可单独诊断两条 lane。
+
+获取入口共享持久化请求台账，记录 UTC 日计数、滑动窗口时间戳和冷却截止时间，不记录 DOI、URL、Key 或 Cookie。已有 `paper.pdf` 必须与 `manifest.json` 的 SHA-256 和条目 DOI 一致，重跑记为 `already_obtained` 而不是覆盖；文件与清单冲突时失败关闭。`--apply` 只有在 `ingest.py` 返回 `success` 时记 `ingested`，附件部分失败记 `ingested_partial`，身份未匹配保留 `file_obtained` 待人工确认。
+
+## 校园 WebVPN 与机构登录（可选）
+
+SCAU 图书馆 WebVPN（`https://lib-scau-edu-cn-s.vpn.scau.edu.cn/`）的正确路径是：完成统一身份认证后，从图书馆首页点击对应数据库，让出版社设置远程访问 Cookie（例如 ScienceDirect 的 `SD_REMOTEACCESS`），再直连出版社文章页；直接改写出版社域名会得到 403。`scripts/webvpn_acquire.py` 复用用户已登录的持久 Chrome 配置：`login` 只等待登录，保存浏览器配置与 storage state，不读取或保存凭据；`fetch` 自动做一次出版社握手，对本地 Zotero 中缺主文 PDF 的条目串行下载，默认每主机 15±5 秒、单次每主机最多 20 篇、每日每主机 60 篇；遇 403/429 连续 2 次或 Cloudflare 验证码停止。
+
+已加专门主机/DOI 映射和 PDF 候选提取的出版社：Elsevier、Wiley、Springer Nature、ACS、RSC、IEEE、Science、CNKI。适配只识别实际页面中的主文 PDF，不绕过登录、订阅或验证码；CNKI 等无可靠 PDF 链接的页面保留 `needs_manual`。CARSI/Shibboleth 走出版社“Access through your institution”页面，由用户完成机构身份认证；脚本检测到机构登录墙时记 `institutional_login_required`。会话是否有效以目标文章页是否出现主文候选为准，不以首页 200 代替。
+
+验证码或登录墙出现时，`--keep-open` 在当前条目暂停并保留浏览器，检测到标记消失后自动重试当前条目；`--challenge-timeout` 控制等待。超时或未开 `--keep-open` 时按 `--challenge-cooldown`（默认 86400 秒）写入该主机冷却。用户完成验证后用 `--manual-cleared` 重跑，只清除本批次主机的验证码冷却；脚本不自动填写账号、不绕过验证码。下载后写 `sanmu-acquisition/v1` 清单，交 `ingest.py` 入库。
+
+这不是绕过访问控制：订阅资格、许可和图书馆合理使用条款仍由用户负责；验证码不由脚本绕过，未通过时保留 `needs_manual` 与链接。不用于整期、整库或与当前阅读无关的批量抓取。身份未匹配的 PDF 保留待审，不自动入库。
+
 ## Supporting Information
 
 从已经核对的主文出版社页查附件区。记录每个实际附件的标题、URL、类型、版本、获取状态与主文 DOI；包括 PDF、表格、压缩包、视频及数据链接。不要仅找一个 `supporting.pdf` 就宣布全部 SI 已取得。链接无效、需登录、下载失败与尚未查找分别报告。
