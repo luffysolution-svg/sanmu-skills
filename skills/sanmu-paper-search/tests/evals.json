@@ -13,30 +13,6 @@
     {
       "prompt": "检索 2024—2025 年 generative inorganic materials design 文献，合并多源结果；有来源失败时说明缺口，保留此次结果以便下次更新。",
       "checks": ["明确年份参数与未知日期规则", "每源预算并保留全部去重候选", "失败、空结果、截断分开", "输出目录新建且私有数据不写入仓库", "check 验证产物哈希", "更新用新运行目录和 diff，不把缺失当撤稿"]
-    },
-    {
-      "prompt": "把 MatterGen 的主文和出版社 SI 追加到我已有的 Zotero 条目，附件继续通过 WebDAV 同步；重复执行不要再建条目。",
-      "checks": ["本地 API 精确查重，不依赖宿主 MCP", "未指定改写时保留已有题录", "附件实际文件哈希一致才跳过", "SI 依据真实出版社附件核对", "写前核验清单与身份，写后回读", "上传失败与 WebDAV 同步完成状态分别记录"]
-    },
-    {
-      "prompt": "帮我获取一篇学校订阅的付费论文；需要时配置校园网代理或复用我已经登录的浏览器，不使用外部代理工具。",
-      "checks": ["优先查已有附件与明确 OA 位置", "支持 --institutional-proxy 自动生成 WebVPN/EZProxy 链接", "不执行默认混合来源或外部代理回退", "机构流程交给授权浏览器，不导出 cookie", "没有订阅或登录失效时明确交接缺口", "取得后核验文件并通过本地 Zotero 入库"]
-    },
-    {
-      "prompt": "用我已登录的校园 WebVPN，把我 Zotero 里这几篇缺 PDF 的条目批量补全文并导入 Zotero；注意限速，别触发封禁。",
-      "checks": ["只处理本地已有且缺主文 PDF 的条目", "一次登录由用户完成，不保存账号密码", "从图书馆数据库入口完成出版社握手，不假设域名改写可用", "串行下载，每主机默认 15±5 秒并设单次上限", "遇 403/429 连续 2 次或 Cloudflare 验证码停止", "验证码交用户手动完成，不绕过", "下载后校验 PDF、哈希与身份；身份未匹配只下载不入库", "产物写 sanmu-acquisition 清单并交 ingest.py"]
-    },
-    {
-      "prompt": "用我的 Elsevier 和 Wiley TDM Key 批量补齐 Zotero 里缺的闭源 PDF，Key 不要写进仓库。",
-      "checks": ["只从 ELSEVIER_API_KEY / WILEY_TDM_KEY 环境变量读取凭据", "Elsevier 走 article/doi PDF 端点，Wiley 走 TDM articles 端点", "PDF 头尾、SHA-256 与首屏身份校验", "Key 不出现在日志、清单或仓库", "API 未覆盖的出版社回退校园 WebVPN", "身份未匹配只下载不入库"]
-    },
-    {
-      "prompt": "用 API-first 一个命令补齐这批 Zotero 条目；API 没覆盖的再走校园 WebVPN，别把 429 或 403 直接当浏览器请求继续打。",
-      "checks": ["默认 --backend auto 先调官方 API", "只有 api_not_supported、api_key_not_configured 或无 DOI 才进入浏览器", "401/403/429/网络错误不改走浏览器", "API 与浏览器共享持久化台账，跨运行检查日预算、窗口和冷却", "已有 paper.pdf 与 manifest 哈希或 DOI 不一致时拒绝覆盖", "入库部分失败记 ingested_partial，不写成完整成功"]
-    },
-    {
-      "prompt": "批量补全文时遇到 Cloudflare 验证码，我人在电脑前；脚本应该等我完成验证后继续当前这篇，而不是整批跑完就关浏览器。",
-      "checks": ["--keep-open 在当前条目暂停并保留浏览器", "检测到验证码或机构登录标记消失后重试当前条目", "等待超时记录 needs_manual 并按挑战冷却保存", "用户完成验证后用 --manual-cleared 重跑清除验证码冷却", "不自动填写账号、不绕过验证码", "未完成条目保留链接、原因和下一步"]
     }
   ]
 }

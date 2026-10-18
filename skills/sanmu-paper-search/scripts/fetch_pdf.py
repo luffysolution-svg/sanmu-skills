@@ -26,8 +26,6 @@ def public_url(value):
 
 def inspect_pdf(data):
     if not data.startswith(b"%PDF-"):
-        if re.search(rb"(?i)<!doctype\s+html|<html\b|<script\b|recaptcha|challenge", data[:4096]):
-            raise ValueError("html_or_login_response")
         raise ValueError("not_pdf: response does not start with a PDF header")
     if b"%%EOF" not in data[-4096:]:
         raise ValueError("incomplete_pdf: PDF trailer is missing")

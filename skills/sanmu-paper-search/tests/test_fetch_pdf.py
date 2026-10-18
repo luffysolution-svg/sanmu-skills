@@ -18,10 +18,6 @@ class PdfTests(unittest.TestCase):
                 fetch_pdf.inspect_pdf(payload)
         self.assertTrue(fetch_pdf.inspect_pdf(b"%PDF-1.4\n%%EOF")["trailer"])
 
-    def test_html_challenge_distinguished(self):
-        with self.assertRaisesRegex(ValueError, "html_or_login_response"):
-            fetch_pdf.inspect_pdf(b"<!doctype html><html>reCAPTCHA challenge</html>")
-
     def test_redacts_credentials_and_does_not_invent_identity(self):
         url = fetch_pdf.public_url("https://publisher.org/a.pdf?token=SECRET&email=private%40mail.org&download=1#token")
         self.assertNotIn("SECRET", url)

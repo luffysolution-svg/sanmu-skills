@@ -24,9 +24,9 @@ import re
 import sys
 from pathlib import Path
 
-from _core import (InputError, DEFAULT_PROVIDERS, PROVIDERS, SCHEMA, Redactor, check_bundle, deduplicate, dumps,
+from _core import (InputError, PROVIDERS, SCHEMA, Redactor, check_bundle, deduplicate, dumps,
                    load_papers, prepare_out, unique, write_bundle, zotero_records)
-from _providers import Client, Providers, SourceError, UnsupportedSource, parse_id, polite_email, unpaywall_email
+from _providers import Client, Providers, SourceError, parse_id
 
 
 class Parser(argparse.ArgumentParser):
@@ -47,7 +47,7 @@ def bounded(value):
 def sources(value):
     result = list(dict.fromkeys(value.split(",")))
     if not result or any(s not in PROVIDERS for s in result):
-        raise argparse.ArgumentTypeError("sources must be comma-separated " + ",".join(PROVIDERS))
+        raise argparse.ArgumentTypeError("sources must be comma-separated openalex,semantic-scholar,crossref")
     return result
 
 
@@ -58,7 +58,7 @@ def parser():
     for name in ("search", "lookup", "related"):
         cmd = commands.add_parser(name)
         cmd.add_argument("query" if name == "search" else "id")
-        cmd.add_argument("--sources", type=sources, default=list(DEFAULT_PROVIDERS) if name != "related" else list(PROVIDERS[:2]))
+        cmd.add_argument("--sources", type=sources, default=list(PROVIDERS) if name != "related" else list(PROVIDERS[:2]))
         cmd.add_argument("--limit", type=bounded, default=10, help="Per-source candidate budget (1..20); keep all deduplicated results")
         cmd.add_argument("--out", required=True)
         if name == "search":
@@ -98,9 +98,8 @@ def parser():
 
 
 def _error(exc, fetched=0):
-    unsupported = isinstance(exc, UnsupportedSource)
-    return {"status": "unsupported" if unsupported else "error", "error": str(exc),
-            "http_status": getattr(exc, "status", None), "fetched": fetched, "truncated": not unsupported}
+    return {"status": "error", "error": str(exc), "http_status": getattr(exc, "status", None),
+            "fetched": fetched, "truncated": True}
 
 
 def collect(adapter, names, method, *args):
@@ -154,10 +153,7 @@ def execute(args, client):
                 "configuration": {"semantic_scholar_api_key": bool(env.get("S2_API_KEY") or env.get("SEMANTIC_SCHOLAR_API_KEY")),
                                   "openalex_api_key": bool(env.get("OPENALEX_API_KEY")),
                                   "unpaywall_email": bool(env.get("UNPAYWALL_EMAIL")),
-                                  "unpaywall_email_effective": bool(unpaywall_email(env)),
                                   "crossref_email": bool(env.get("CROSSREF_EMAIL")),
-                                  "crossref_email_effective": bool(env.get("CROSSREF_EMAIL") or polite_email(env)),
-                                  "openalex_email_effective": bool(polite_email(env)),
                                   "polite_email": bool(env.get("POLITE_EMAIL"))}}, 0
     if args.command == "check":
         result = check_bundle(args.run, args.include_metadata)
@@ -308,7 +304,7 @@ def execute(args, client):
         else:
             papers, statuses = collect(adapter, args.sources, "lookup", args.input)
         if args.unpaywall != "never":
-            if unpaywall_email(client.env):
+            if client.env.get("UNPAYWALL_EMAIL"):
                 for paper in papers:
                     for identifier in paper["identifiers"].get("doi", []):
                         name = "unpaywall:" + identifier
@@ -321,9 +317,9 @@ def execute(args, client):
                         except (ValueError, TypeError, KeyError, AttributeError) as exc:
                             statuses[name] = _error(SourceError("Malformed Unpaywall response: " + str(exc)))
             elif args.unpaywall == "required":
-                statuses["unpaywall"] = _error(SourceError("Unpaywall requires UNPAYWALL_EMAIL or a polite email fallback"))
+                statuses["unpaywall"] = _error(SourceError("UNPAYWALL_EMAIL is not configured"))
             else:
-                statuses["unpaywall"] = {"status": "skipped", "reason": "Unpaywall requires UNPAYWALL_EMAIL or a polite email fallback"}
+                statuses["unpaywall"] = {"status": "skipped", "reason": "UNPAYWALL_EMAIL is not configured"}
     elif command == "merge":
         papers = deduplicate([p for group in loaded for p in group])
         # Local exports annotate matches only; unrelated private records do not enter the result.

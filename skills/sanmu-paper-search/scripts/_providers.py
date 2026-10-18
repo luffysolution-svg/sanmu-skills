@@ -6,9 +6,7 @@ import html
 from html.parser import HTMLParser
 import json
 import os
-import re
 import time
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -17,19 +15,7 @@ from urllib.request import Request, urlopen
 from _core import InputError, Redactor, doi, ids, location, now, record
 
 BASE = {"openalex": "https://api.openalex.org", "semantic-scholar": "https://api.semanticscholar.org/graph/v1",
-        "crossref": "https://api.crossref.org", "unpaywall": "https://api.unpaywall.org/v2",
-        "arxiv": "https://export.arxiv.org", "europe-pmc": "https://www.ebi.ac.uk/europepmc/webservices/rest"}
-MAX_BODY = 16 * 1024 * 1024
-
-
-def polite_email(env):
-    return (env.get("OPENALEX_EMAIL") or env.get("CROSSREF_EMAIL")
-            or env.get("UNPAYWALL_EMAIL") or env.get("POLITE_EMAIL"))
-
-
-def unpaywall_email(env):
-    return env.get("UNPAYWALL_EMAIL") or polite_email(env)
-
+        "crossref": "https://api.crossref.org", "unpaywall": "https://api.unpaywall.org/v2"}
 S2_FIELDS = "paperId,corpusId,externalIds,title,year,authors,abstract,publicationTypes,isOpenAccess,openAccessPdf,url"
 S2_AUTHOR_FIELDS = "name,authorId,affiliations,paperCount,citationCount,url"
 
@@ -38,10 +24,6 @@ class SourceError(Exception):
     def __init__(self, message, status=None):
         super().__init__(message)
         self.status = status
-
-
-class UnsupportedSource(SourceError):
-    """The requested provider cannot perform this operation or resolve this ID."""
 
 
 class Client:
@@ -61,26 +43,25 @@ class Client:
             key = self.env.get("S2_API_KEY") or self.env.get("SEMANTIC_SCHOLAR_API_KEY")
             if key:
                 headers["x-api-key"] = key
-        contact = polite_email(self.env)
-        if source == "arxiv":
-            headers["Accept"] = "application/atom+xml"
+        polite_email = (self.env.get("OPENALEX_EMAIL") or self.env.get("CROSSREF_EMAIL")
+                        or self.env.get("UNPAYWALL_EMAIL") or self.env.get("POLITE_EMAIL"))
         if source == "openalex":
             if self.env.get("OPENALEX_API_KEY"):
                 params["api_key"] = self.env["OPENALEX_API_KEY"]
-            elif contact:
-                params["mailto"] = contact
-                headers["User-Agent"] = f"sanmu-paper-search/1.0 (mailto:{contact})"
-        if source == "crossref" and (self.env.get("CROSSREF_EMAIL") or contact):
-            params["mailto"] = self.env.get("CROSSREF_EMAIL") or contact
+            elif polite_email:
+                params["mailto"] = polite_email
+                headers["User-Agent"] = f"sanmu-paper-search/1.0 (mailto:{polite_email})"
+        if source == "crossref" and (self.env.get("CROSSREF_EMAIL") or polite_email):
+            params["mailto"] = self.env.get("CROSSREF_EMAIL") or polite_email
         if source == "unpaywall":
-            email = unpaywall_email(self.env)
+            email = self.env.get("UNPAYWALL_EMAIL") or polite_email
             if not email:
-                raise SourceError("Unpaywall requires UNPAYWALL_EMAIL or a polite email fallback")
+                raise SourceError("UNPAYWALL_EMAIL is not configured")
             params["email"] = email
         base = "https://api.semanticscholar.org" if source == "semantic-scholar" and path.startswith("/recommendations/") else BASE[source]
         url = base + path + (("?" + urlencode(params)) if params else "")
         for attempt in range(3):
-            interval = 3.0 if source == "arxiv" else 1.05 if source == "semantic-scholar" else 0.15
+            interval = 1.05 if source == "semantic-scholar" else 0.15
             if source in self.last:
                 self.sleep(max(0, interval - (self.clock() - self.last[source])))
             self.last[source] = self.clock()
@@ -89,10 +70,10 @@ class Client:
                 with self.opener(Request(url, headers=headers, method="GET"), timeout=25) as response:
                     status = response.status
                     response_headers = dict(response.headers)
-                    payload = response.read(MAX_BODY + 1)
-                    if len(payload) > MAX_BODY:
+                    payload = response.read(16 * 1024 * 1024 + 1)
+                    if len(payload) > 16 * 1024 * 1024:
                         raise SourceError("Response exceeds 16 MiB limit", status)
-                    body = payload.decode("utf-8", errors="replace")
+                    body = payload.decode("utf-8")
             except HTTPError as exc:
                 status = exc.code
                 response_headers = dict(exc.headers or {})
@@ -107,7 +88,7 @@ class Client:
                                  "error": str(exc), "retrieved_at": now()})
                 raise
             try:
-                data = {"xml": body} if source == "arxiv" else json.loads(body)
+                data = json.loads(body)
             except (ValueError, TypeError):
                 data = {"unparsed_body": body}
             self.raw.append(self.redactor.clean({"provider": source, "url": url, "attempt": attempt + 1,
@@ -129,50 +110,8 @@ class Client:
                 raise SourceError(f"HTTP {status}", status)
             if not isinstance(data, dict) or "unparsed_body" in data:
                 raise SourceError("Invalid JSON response", status)
-            return parse_arxiv_feed(body) if source == "arxiv" else data
+            return data
         raise SourceError("Retry budget exhausted", 429)
-
-
-def arxiv_id(value):
-    value = re.sub(r"^(?:arxiv:\s*|https?://(?:export\.)?arxiv\.org/(?:abs|pdf)/)", "", value.strip(), flags=re.I)
-    value = re.sub(r"\.pdf$", "", value, flags=re.I)
-    if not re.fullmatch(r"(?:\d{4}\.\d{4,5}|[a-z][a-z.\-]*/\d{7})(?:v[1-9]\d*)?", value, re.I):
-        raise InputError("Invalid arXiv identifier")
-    return value
-
-
-def parse_arxiv_feed(body):
-    ns = {"a": "http://www.w3.org/2005/Atom", "o": "http://a9.com/-/spec/opensearch/1.1/",
-          "x": "http://arxiv.org/schemas/atom"}
-    try:
-        # Atom metadata never needs a DTD; reject entity declarations before parsing.
-        if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", body, re.I):
-            raise ValueError("DTD/entity declarations are not supported")
-        root = ET.fromstring(body)
-        if root.tag != "{" + ns["a"] + "}feed":
-            raise ValueError("Expected an Atom feed")
-        rows = []
-        for entry in root.findall("a:entry", ns):
-            text = lambda key: " ".join((entry.findtext(key, default="", namespaces=ns)).split())
-            identifier = text("a:id")
-            if identifier.endswith("/api/errors") or text("a:title").casefold() == "error":
-                raise ValueError("arXiv API error: " + text("a:summary"))
-            identifier = arxiv_id(identifier)
-            rows.append({"id": identifier, "title": text("a:title"), "summary": text("a:summary"),
-                         "published": text("a:published"), "updated": text("a:updated"),
-                         "doi": text("x:doi"), "journal_ref": text("x:journal_ref"),
-                         "license": text("x:license"),
-                         "authors": [{"name": " ".join((a.findtext("a:name", "", ns)).split()),
-                                      "affiliations": [v.text or "" for v in a.findall("x:affiliation", ns)]}
-                                     for a in entry.findall("a:author", ns)],
-                         "links": [dict(link.attrib) for link in entry.findall("a:link", ns)]})
-        total = root.findtext("o:totalResults", namespaces=ns)
-        total = int(total) if total is not None else None
-        if total is not None and total < 0:
-            raise ValueError("Negative result count")
-        return {"results": rows, "total": total}
-    except (ET.ParseError, ValueError, TypeError) as exc:
-        raise SourceError("Invalid arXiv feed: " + str(exc)) from exc
 
 
 def parse_id(value):
@@ -181,19 +120,9 @@ def parse_id(value):
     if normalized:
         return "doi", normalized
     lowered = value.lower()
-    if lowered.startswith(("arxiv:", "http://arxiv.org/", "https://arxiv.org/",
-                           "http://export.arxiv.org/", "https://export.arxiv.org/")) or re.fullmatch(
-            r"(?:\d{4}\.\d{4,5}|[a-z][a-z.\-]*/\d{7})(?:v\d+)?", value, re.I):
-        return "arxiv", arxiv_id(value)
-    if re.fullmatch(r"(?:pmcid:)?PMC\d+", value, re.I):
-        return "pmcid", value.split(":")[-1].upper()
-    if lowered.startswith("pmid:"):
-        if not value[5:].isdigit():
-            raise InputError("PMID must contain digits only")
-        return "pmid", value[5:]
     for prefix, kind in (("https://openalex.org/", "openalex"), ("openalex:", "openalex"),
                          ("semantic-scholar:", "semantic_scholar"), ("s2:", "semantic_scholar"),
-                         ("corpusid:", "corpus_id")):
+                         ("pmid:", "pmid"), ("arxiv:", "arxiv"), ("corpusid:", "corpus_id")):
         if lowered.startswith(prefix):
             identifier = value[len(prefix):]
             if not identifier or any(c.isspace() for c in identifier):
@@ -201,7 +130,7 @@ def parse_id(value):
             return kind, identifier
     if value.startswith("W") and value[1:].isdigit():
         return "openalex", value
-    raise InputError("Use a DOI, openalex:W..., s2:paperId, pmid:..., pmcid:PMC..., arxiv:..., or corpusid:...")
+    raise InputError("Use a DOI, openalex:W..., s2:paperId, pmid:..., arxiv:..., or corpusid:...")
 
 
 def s2_id(identifier):
@@ -249,60 +178,6 @@ def plain_text(value):
 
 
 def normalize(source, data):
-    if source == "arxiv":
-        identifier = arxiv_id(data["id"])
-        year = int(data["published"][:4]) if re.match(r"\d{4}-", data.get("published", "")) else None
-        authors = [{"name": a["name"], "identifiers": {}, "affiliations": a["affiliations"]}
-                   for a in data.get("authors", [])]
-        locations = [location(link["href"], source, True, data.get("license"),
-                              "arxiv_repository; free_to_read", "submittedVersion")
-                     for link in data.get("links", []) if link.get("href") and
-                     (link.get("rel") == "alternate" or link.get("title") == "pdf" or link.get("type") == "application/pdf")]
-        p = record(source, identifier, data.get("title"), year, ids(arxiv=identifier), authors,
-                   data.get("summary"), "preprint", locations)
-        # arXiv's DOI field points to a related publication, not the identity of this preprint.
-        if doi(data.get("doi")):
-            p["relations"].append({"type": "published_version", "provider": source,
-                                   "target_identifiers": ids(doi=data["doi"]), "evidence": "arxiv:doi"})
-        p["versions"] = [{"provider": source, "arxiv_id": identifier,
-                          "version": (re.search(r"v\d+$", identifier) or [None])[0],
-                          "published": data.get("published"), "updated": data.get("updated"),
-                          "journal_ref": data.get("journal_ref") or None}]
-        return p
-    if source == "europe-pmc":
-        identifiers = ids(doi=data.get("doi"), pmid=data.get("pmid") or
-                          (data.get("id") if data.get("source") == "MED" else None), pmcid=data.get("pmcid"))
-        authors = [{"name": a.get("fullName") or " ".join(filter(None, [a.get("firstName"), a.get("lastName")])),
-                    "identifiers": ids(orcid=(a.get("authorId") or {}).get("value")
-                                       if (a.get("authorId") or {}).get("type") == "ORCID" else None),
-                    "affiliations": [v.get("affiliation", "") for v in
-                                     (a.get("authorAffiliationDetailsList") or {}).get("authorAffiliation", [])]}
-                   for a in (data.get("authorList") or {}).get("author", [])]
-        if not authors and data.get("authorString"):
-            authors = [{"name": data["authorString"], "identifiers": {}, "affiliations": [],
-                        "unparsed_author_string": True}]
-        year = str(data.get("pubYear") or "")
-        year = int(year) if re.fullmatch(r"\d{4}", year) else None
-        types = (data.get("pubTypeList") or {}).get("pubType", [])
-        if isinstance(types, str):
-            types = [types]
-        license = data.get("license")
-        locations = []
-        for link in (data.get("fullTextUrlList") or {}).get("fullTextUrl", []):
-            if link.get("url"):
-                free = str(link.get("availabilityCode") or "").upper() == "F"
-                locations.append(location(link["url"], source, True if free or data.get("isOpenAccess") == "Y" else None,
-                                          link.get("license") or license, "europe_pmc_fulltext; " +
-                                          str(link.get("availability") or "availability_unknown"), link.get("version")))
-        p = record(source, str(data.get("source", "")) + ":" + str(data.get("id", "")),
-                   plain_text(data.get("title")), year, identifiers, authors,
-                   plain_text(data.get("abstractText")), ",".join(types) or None, locations)
-        p["licenses"] = [license] if license else []
-        p["oa_status"] = {"is_oa": {"Y": True, "N": False}.get(data.get("isOpenAccess")),
-                          "in_pmc": data.get("inPMC"), "has_pdf": data.get("hasPDF")}
-        p["versions"] = [{"provider": source, "source": data.get("source"),
-                          "version": data.get("versionNumber"), "first_publication_date": data.get("firstPublicationDate")}]
-        return p
     if source == "openalex":
         all_ids = data.get("ids") or {}
         identifiers = ids(doi=data.get("doi") or all_ids.get("doi"), openalex=data.get("id"),
@@ -381,12 +256,7 @@ class Providers:
                     raise SourceError("Crossref page has no message object")
             if source == "openalex" and not isinstance(data.get("meta", {}), dict):
                 raise SourceError("OpenAlex page metadata must be an object")
-            if source == "europe-pmc":
-                envelope = data.get("resultList")
-                if not isinstance(envelope, dict):
-                    raise SourceError("Europe PMC page has no resultList object")
-            key = rows_key or {"openalex": "results", "crossref": "items", "semantic-scholar": "data",
-                               "arxiv": "results", "europe-pmc": "result"}[source]
+            key = rows_key or {"openalex": "results", "crossref": "items", "semantic-scholar": "data"}[source]
             entries = envelope.get(key)
             if not isinstance(entries, list):
                 raise SourceError("Page response has no results array: " + key)
@@ -413,31 +283,6 @@ class Providers:
             raise error from exc
 
     def lookup(self, source, identifier):
-        kind, value = parse_id(identifier)
-        supported = {"openalex": {"doi", "openalex", "pmid"},
-                     "semantic-scholar": {"doi", "semantic_scholar", "pmid", "arxiv", "corpus_id"},
-                     "crossref": {"doi"}, "arxiv": {"arxiv"}, "europe-pmc": {"doi", "pmid", "pmcid"}}
-        if source not in supported or kind not in supported[source]:
-            raise UnsupportedSource(f"{source} lookup does not support {kind} identifiers")
-        if source in ("arxiv", "europe-pmc"):
-            if source == "arxiv":
-                _, found = self._page(source, "/api/query", {"id_list": value, "max_results": 1}, [], 0)
-            else:
-                query = {"doi": f'DOI:"{value}"', "pmid": f'EXT_ID:{value} AND SRC:MED',
-                         "pmcid": f'PMCID:{value}'}[kind]
-                _, found = self._page(source, "/search", {"query": query, "format": "json",
-                                                            "resultType": "core", "pageSize": 2}, [], 0)
-            if not found:
-                return [], {"status": "not_found", "fetched": 0, "pages": 1, "truncated": False}
-            def matches(paper):
-                values = paper["identifiers"].get(kind, [])
-                if kind == "arxiv" and not re.search(r"v\d+$", value, re.I):
-                    return any(re.sub(r"v\d+$", "", v, flags=re.I).casefold() == value.casefold() for v in values)
-                return any(v.casefold() == value.casefold() for v in values)
-            found = [p for p in found if matches(p)]
-            if not found:
-                raise SourceError("Exact identifier mismatch in provider response")
-            return found, {"status": "ok", "fetched": len(found), "pages": 1, "truncated": False, "id_verified": True}
         if source == "openalex":
             data = self.client.get(source, "/works/" + quote(oa_id(identifier), safe=""))
         elif source == "semantic-scholar":
@@ -469,40 +314,7 @@ class Providers:
             filters += [f"until-pub-date:{year_to}-12-31"] if year_to else []
         return {"filter": ",".join(filters)}
 
-    def _search_repository(self, source, query, limit, year_from, year_to):
-        if source == "arxiv":
-            if year_from is not None or year_to is not None:
-                query = f"({query}) AND submittedDate:[{year_from or 1000}01010000 TO {year_to or 9999}12312359]"
-        elif year_from is not None or year_to is not None:
-            query = f"({query}) AND FIRST_PDATE:[{year_from or 1000}-01-01 TO {year_to or 9999}-12-31]"
-        papers, pages, offset, cursor, total, more = [], 0, 0, "*", None, False
-        while len(papers) < limit and pages < 4:
-            size = min(10, limit - len(papers))
-            if source == "arxiv":
-                data, normalized = self._page(source, "/api/query", {"search_query": query, "start": offset,
-                    "max_results": size, "sortBy": "relevance", "sortOrder": "descending"}, papers, pages)
-                entries, total, following = data["results"], data.get("total"), None
-            else:
-                data, normalized = self._page(source, "/search", {"query": query, "format": "json",
-                    "resultType": "core", "pageSize": size, "cursorMark": cursor}, papers, pages)
-                entries, total, following = data["resultList"]["result"], data.get("hitCount"), data.get("nextCursorMark")
-            papers.extend(normalized[:size])
-            pages += 1
-            offset += len(entries)
-            more = total > offset if isinstance(total, int) else len(entries) == size
-            if not entries:
-                break
-            if not more or (source == "europe-pmc" and (not following or following == cursor)):
-                break
-            cursor = following
-        return papers, {"status": "ok", "fetched": len(papers), "pages": pages, "total": total,
-                        "truncated": bool(more), "limit": limit, "query_strategy": "provider_search"}
-
     def search(self, source, query, limit, year_from=None, year_to=None):
-        if source in ("arxiv", "europe-pmc"):
-            return self._search_repository(source, query, limit, year_from, year_to)
-        if source not in ("openalex", "semantic-scholar", "crossref"):
-            raise UnsupportedSource(f"{source} search is unsupported")
         years = self._year_params(source, year_from, year_to)
         papers, cursor, offset, pages = [], "*", 0, 0
         total, truncated = None, False
@@ -589,8 +401,8 @@ class Providers:
                         "truncated": bool(more), "author_id": author_id}, []
 
     def related(self, source, identifier, relation, limit):
-        if source not in ("openalex", "semantic-scholar"):
-            raise UnsupportedSource(f"{source} related is unsupported")
+        if source == "crossref":
+            raise SourceError("Crossref is not a supported related provider")
         if source == "openalex":
             seed = self.client.get(source, "/works/" + quote(oa_id(identifier), safe=""))
             seed_id = (seed.get("id") or "").rsplit("/", 1)[-1]

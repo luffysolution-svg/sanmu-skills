@@ -18,13 +18,12 @@ https://github.com/luffysolution-svg/sanmu-skills
 2. Read SKILL.md and README. From the skill directory run:
    python scripts/paper_search.py doctor
    python -m unittest discover -s tests -v
-3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL, CROSSREF_EMAIL and POLITE_EMAIL are configured. Never display values. Explain available capabilities without credentials; point to official registration only when needed.
-4. For Zotero, start the desktop app, enable local application communication, and run python scripts/zotero_local.py doctor. The independent client needs no host MCP or cloud API key; do not read the database or storage directly. Before the first authorized write, run doctor --apply and let me approve Zotero's local authorization dialog. Core search also works without Zotero.
-5. Use acquire.py when full text is needed. It prioritizes open-access direct links; institutional access supports --institutional-proxy to transform publisher URLs into campus WebVPN/EZProxy endpoints, using the assistant's browser tool with an authorized session, then recording the downloaded file with acquire --import-file.
-6. Run a small public-paper query into a new directory outside the repository. Report per-source status, installation path and limitations; installation checks must not modify Zotero items. The local Zotero app manages attachments and WebDAV synchronization; do not claim sync completion without checking its status.
+3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL and CROSSREF_EMAIL are configured. Never display values. Explain available capabilities without credentials; point to official registration only when needed.
+4. For Zotero, check the host integration and local API. Do not read its database or storage directly. Core search also works without Zotero.
+5. Run a small public-paper query into a new directory outside the repository. Report per-source status, installation path and limitations. Do not modify Zotero items.
 ```
 
-Alternatively copy the complete directory into `.agents/skills/sanmu-paper-search`. The Python 3.10+ standard-library core needs no pip installation. PyMuPDF is optional for PDF text-based identity checks.
+Alternatively copy the complete directory into `.agents/skills/sanmu-paper-search`. No pip installation is required. PyMuPDF is optional for PDF text-based identity checks.
 
 ## Examples
 
@@ -49,26 +48,7 @@ python scripts/paper_search.py author "Tian Xie" --provider openalex --from-pape
 python scripts/paper_search.py related 10.1038/s41586-025-08628-5 --relation citations --limit 5 --out /path/to/work/citations
 python scripts/paper_search.py oa /path/to/work/seed --out /path/to/work/oa
 python scripts/paper_search.py check /path/to/work/seed
-# Optional sources require explicit selection; the original three remain the default
-python scripts/paper_search.py search 'all:"crystal diffusion"' --sources arxiv --limit 2 --out /path/to/work/arxiv
-python scripts/paper_search.py lookup pmid:31452104 --sources europe-pmc --out /path/to/work/europe-pmc
 ```
-
-Local Zotero, acquisition and ingestion (run from the skill directory):
-
-```bash
-python scripts/zotero_local.py doctor
-# First local write authorization: approve the dialog in Zotero
-python scripts/zotero_local.py doctor --apply
-python scripts/acquire.py --papers /path/to/work/seed --index 1 --out /path/to/work/acquisition
-# If institutional access is needed, first download through the assistant's authorized browser session
-python scripts/acquire.py --papers /path/to/work/seed --index 1 --out /path/to/work/acquisition --backend none --import-file /path/to/work/browser-paper.pdf
-python scripts/ingest.py /path/to/work/acquisition/manifest.json
-# Verify identity and SI relationships, review the preview, then apply within the authorized scope
-python scripts/ingest.py /path/to/work/acquisition/manifest.json --apply
-```
-
-`ingest` checks file SHA-256 and identity before deduplicating by stable ID and importing. It previews by default and does not automatically rewrite existing metadata. If text-based identity remains unverified or SI is present, complete the relevant review before using `--identity-confirmed` / `--si-confirmed`; see the [CLI guide](references/cli.md) and [local Zotero guide](references/local-zotero.md). First-time local authorization needs no cloud API key. Successful attachment import establishes local completion only; the local Zotero app handles WebDAV sync, whose completion must be checked separately.
 
 On Windows, quote actual absolute paths. After checking candidates, use `author --author-id ID --provider ...` for publications. Topic search and author publications support `--year-from` / `--year-to`. `--limit` is a per-source budget; all deduplicated candidates are retained in source order, without cross-provider relevance reranking. The assistant reads and screens the shortlist. See the [CLI contract](references/cli.md).
 
@@ -79,22 +59,16 @@ On Windows, quote actual absolute paths. After checking candidates, use `author 
 | OpenAlex | Topics, authors, citations and OA locations | `OPENALEX_API_KEY`; anonymous capabilities depend on current limits |
 | Semantic Scholar | Topics, authors, graph relations and recommendations | `SEMANTIC_SCHOLAR_API_KEY` or `S2_API_KEY`; the anonymous pool may throttle |
 | Crossref | DOI/metadata verification and supplementary discovery | Optional `CROSSREF_EMAIL` |
-| arXiv | Direct preprint search and lookup by arXiv ID | Explicit `--sources arxiv`; no key |
-| Europe PMC | Direct search and lookup by DOI/PMID/PMCID | Explicit `--sources europe-pmc`; no key |
-| Unpaywall | OA locations by DOI, not keyword discovery | `UNPAYWALL_EMAIL` or an available contact-email fallback, including `POLITE_EMAIL` |
-| Zotero | Items, attachments and deduplicated writes | Independent `zotero_local.py`, with no host MCP or cloud API key; host tools and standard JSON exports remain usable |
+| Unpaywall | OA locations by DOI, not keyword discovery | `UNPAYWALL_EMAIL` |
+| Zotero | Existing items and attachments | Host tools or a local standard JSON export |
 
-`search` / `lookup` retain the original three-source default; optional sources add no default requests. `related` supports only OpenAlex and Semantic Scholar; other sources explicitly report `unsupported`. arXiv preprints retain relationships to published DOIs. Free-to-read access does not establish an open license.
-
-Full-text APIs are limited to Elsevier and Wiley; see the [full-text API guide (Chinese)](references/api-access.md) for application links, permissions and limits. Discovery and metadata sources are OpenAlex, Semantic Scholar, Crossref, Unpaywall, arXiv and Europe PMC; see [Discovery and metadata APIs](references/api-discovery-providers.md). Publisher API and browser routes are summarized in [Publisher access routes](references/api-publisher-providers.md).
-
-Core search works independently with no bundled credentials. Acquisition uses standard-library open access and direct links by default, without external third-party download packages. Institutional access supports `--institutional-proxy` to generate campus WebVPN / EZProxy access URLs, and uses the assistant's browser tool with an authorized session; import the downloaded file with `acquire.py --import-file`. Full-text availability is not guaranteed. With Elsevier/Wiley TDM credentials, `webvpn_acquire.py fetch --backend auto` tries the official API first and enters the browser lane only when the API does not cover the DOI, no key is configured, or the item has no DOI; 401/403/429 and network errors are not silently retried in the browser. Both lanes share a persistent UTC-day, sliding-window and cooldown ledger. Existing `paper.pdf` files are never replaced when their manifest hash or DOI disagrees. `--keep-open` pauses on a CAPTCHA or institutional login wall, waits for the user, then retries the current item; a timeout records a 24-hour cooldown, and `--manual-cleared` clears this batch's CAPTCHA/login cooldowns after the user finishes verification (not 429 cooldowns). The browser lane performs the library handshake only for Elsevier/Wiley; other publishers use generic PDF-link extraction. Keys are read from environment variables only, and manifests are passed to `ingest.py`.
+No bundled credentials or mandatory dependency on OmniScholar, easyseek or ScanSci PDF. Optional backends require explicit capability, source-policy, licensing and output checks.
 
 ## Outputs and limits
 
 Each run retains the query, per-source status, normalized records, redacted raw responses, readable report and integrity hashes. Empty results, failure, truncation and unexecuted work remain distinct. Stable identifiers drive matching; metadata conflicts and provenance are retained. Resolve authors before retrieving publications, and preserve preprint/publication relationships.
 
-Records distinguish returned metadata from available abstract text; a screening basis is recorded only after reading. A resolved URL is not a downloaded file, and a downloaded file has not necessarily been read. `scripts/fetch_pdf.py` still retrieves direct public PDFs. `acquire.py` creates a `manifest.json` separate from search records, tracking main text and SI individually with sources, hashes, identity, attempts and acquisition status. SI links extracted from publisher HTML are candidates only: review them and select explicitly with `--select-si`. A candidate list neither establishes acquisition nor proves complete SI coverage.
+Records distinguish returned metadata from available abstract text; a screening basis is recorded only after reading. A resolved URL is not a downloaded file, and a downloaded file has not necessarily been read. `scripts/fetch_pdf.py` can retrieve a direct public PDF and record URLs, SHA-256, format checks and identity-check status. SI still requires inspecting the publisher's actual attachment list; automatic complete SI acquisition is outside this release.
 
 Bounded retrieval does not establish exhaustive coverage. Broader searches need a [protocol](references/protocol.md) and screening evidence. No login/paywall bypass or direct Zotero database access. Keep private papers, notes, annotations, credentials and test runs outside public commits.
 
@@ -108,6 +82,6 @@ python -m unittest discover -s tests -v
 
 Offline tests use mock responses to cover normalization, identity merging, failure states, protected outputs and integrity checks. Live availability requires a separate small test. Real Zotero test data stays in the local workspace.
 
-Design references: [K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup), [research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search), [OmniScholar](https://github.com/luffysolution-svg/omnischolar), [paper-search-pro](https://github.com/O0000-code/paper-search-pro), and [easyseek](https://github.com/Rimagination/easyseek). Retrieval and acquisition cores are independently implemented. More: [retrieval strategy](references/retrieval.md), [acquisition and handoff](references/handoff.md), [local Zotero](references/local-zotero.md).
+Design references: [K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup), [research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search), [OmniScholar](https://github.com/luffysolution-svg/omnischolar), [paper-search-pro](https://github.com/O0000-code/paper-search-pro), and [easyseek](https://github.com/Rimagination/easyseek). Core code is independently implemented without copying their source. More: [retrieval strategy](references/retrieval.md), [acquisition and handoff](references/handoff.md).
 
-Covered by the collection's [MIT license](../../LICENSE). Database content, papers, third-party code and services retain their own terms.
+Covered by the collection's [MIT license](../../LICENSE). Database content, papers and third-party services retain their own terms.

@@ -2,7 +2,7 @@
 
 ## 主题检索
 
-OpenAlex 适合跨学科主题与机构/作者作品，S2 适合论文相似性及引用图，Crossref 适合 DOI 和出版社题录核对。默认仍用上述三源；计算/物理显式追加 `arxiv`，生命医学显式追加 `europe-pmc`。两新源支持主题与标识符检索，不提供本 CLI 的作者图谱或推荐关系；未支持的 ID/关系保留逐源状态。
+OpenAlex 适合跨学科主题与机构/作者作品，S2 适合论文相似性及引用图，Crossref 适合 DOI 和出版社题录核对。领域索引只在需要时追加：材料/化学优先上述来源；生命医学可增加 PubMed/Europe PMC；计算/物理可增加 arXiv。核心 CLI 不把未实现的来源列成已支持。
 
 材料问题可以按“对象 × 过程 × 目标/证据”展开。例如“受阻路易斯酸碱对光催化产氢”先查 `frustrated Lewis pairs photocatalytic hydrogen`，再查 `Lewis acid base pairs photothermal water splitting`；不能把 hydrogen evolution 与无牺牲剂整体分解水等同。根据召回论文中的真实术语修订查询，并记录修订原因。
 
@@ -12,7 +12,7 @@ Crossref 的主题补搜使用标题字段 `query.title`，避免 `Lewis` 等词
 
 ## 作者与团队
 
-先查候选并使用稳定作者 ID。核对已知种子是否属于候选，结合机构、合作者及研究时间；机构可能变化，不能只凭当前机构否定。没有足够信息就保留多个候选。
+先查候选并使用稳定作者 ID。核对已知种子是否属于候选，结合 ORCID、机构、合作者及研究时间；机构可能变化，不能只凭当前机构否定。没有足够信息就保留多个候选。
 
 作者作品表应保留完整作者列表、对应来源 ID 和机构，不能只截前五人或把第一作者当通讯作者。团队检索需说明是某作者作品、机构作品还是合作者扩展，不能用共同姓氏认定团队。日常查作者最近作品与后台定时追踪分开；只有用户明确要求定时工作时才另用宿主自动化。
 
@@ -33,7 +33,7 @@ DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的�
 
 凭证通过环境变量：`OPENALEX_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY`（兼容 `S2_API_KEY`）、`UNPAYWALL_EMAIL`、`CROSSREF_EMAIL`。不同 API 认证、预算和分页规则以当前官方文档为准。无 key 可进行的基本查询与需 key 的能力分别检查；不把限流当成无结果，也不读取不相关凭证。
 
-机构访问复用用户已授权会话或校园网 WebVPN/EZProxy 直达链接，缺失时返回浏览器交接。核心实现独立编写；复制上游代码需保留相应许可。
+外部后端可选：OmniScholar 用于额外来源/作者接口，ScanSci PDF 用于获取；easyseek/其他检索 CLI 接入前核对输出契约、许可与逐源状态。没有安装这些工具时核心流程仍可工作。复制上游代码需保留相应许可；本技能的核心实现独立编写。
 
 官方契约入口：
 
@@ -41,5 +41,3 @@ DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的�
 - Semantic Scholar：https://api.semanticscholar.org/api-docs/
 - Crossref：https://www.crossref.org/documentation/retrieve-metadata/rest-api/
 - Unpaywall：https://unpaywall.org/products/api
-- arXiv：https://info.arxiv.org/help/api/user-manual.html
-- Europe PMC：https://europepmc.org/RestfulWebService

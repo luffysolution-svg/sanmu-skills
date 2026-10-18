@@ -20,13 +20,12 @@ https://github.com/luffysolution-svg/sanmu-skills
 2. 阅读技能 SKILL.md 和 README，在技能目录运行：
    python scripts/paper_search.py doctor
    python -m unittest discover -s tests -v
-3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL、POLITE_EMAIL 是否配置，不显示值。没有凭证时说明可用范围，确需配置才指向官方注册页。
-4. 如需 Zotero，启动桌面端并允许本机应用通信，运行 python scripts/zotero_local.py doctor；独立客户端无需宿主 MCP 或云端 API key，不直接读取数据库或 storage。首次写入前，在已授权范围内运行 doctor --apply，并由我在 Zotero 本地对话框中授权。没有 Zotero 也能使用核心检索。
-5. 需要全文时使用 acquire.py，优先匹配开放获取（OA）直链；机构访问支持配置 --institutional-proxy 自动转换校园网 WebVPN/EZProxy 链接，并由助手浏览器工具复用已授权会话下载，再用 acquire --import-file 记录。
-6. 在仓库之外的新工作目录做一次小规模公开文献查询，报告逐源状态、安装位置与限制；安装验证不改 Zotero 文献。附件由本机 Zotero 管理和同步 WebDAV，未核对其状态时不宣称同步完成。
+3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 是否配置，不显示值。没有凭证时说明可用范围，确需配置才指向官方注册页。
+4. 如需 Zotero，检查宿主插件与本地 API；不要直接读取数据库或 storage。没有 Zotero 也能使用核心检索。
+5. 在仓库之外的新工作目录做一次小规模公开文献查询，报告逐源状态、安装位置与限制；不改 Zotero 文献。
 ```
 
-手动安装也可复制完整技能目录到 `.agents/skills/sanmu-paper-search`。Python 3.10+ 标准库核心无需 `pip install`；PDF 文字层身份核对可选安装 PyMuPDF。
+手动安装也可复制完整技能目录到 `.agents/skills/sanmu-paper-search`。不需要 `pip install`；PDF 文字层身份核对可选安装 PyMuPDF，其他功能不受影响。
 
 ## 使用示例
 
@@ -51,28 +50,7 @@ python scripts/paper_search.py author "Tian Xie" --provider openalex --from-pape
 python scripts/paper_search.py related 10.1038/s41586-025-08628-5 --relation citations --limit 5 --out /path/to/work/citations
 python scripts/paper_search.py oa /path/to/work/seed --out /path/to/work/oa
 python scripts/paper_search.py check /path/to/work/seed
-# 可选来源仅显式启用；默认仍为 OpenAlex、Semantic Scholar、Crossref
-python scripts/paper_search.py search 'all:"crystal diffusion"' --sources arxiv --limit 2 --out /path/to/work/arxiv
-python scripts/paper_search.py lookup pmid:31452104 --sources europe-pmc --out /path/to/work/europe-pmc
 ```
-
-本地 Zotero、获取与入库（从技能目录执行）：
-
-```bash
-python scripts/zotero_local.py doctor
-# 首次本地写入授权：在 Zotero 对话框中确认
-python scripts/zotero_local.py doctor --apply
-python scripts/acquire.py --papers /path/to/work/seed --index 1 --out /path/to/work/acquisition
-# 如需机构访问：助手浏览器工具完成已授权下载后，导入同一篇的文件
-python scripts/acquire.py --papers /path/to/work/seed --index 1 --out /path/to/work/acquisition --backend none --import-file /path/to/work/browser-paper.pdf
-python scripts/ingest.py /path/to/work/acquisition/manifest.json
-# 完成身份与 SI 关系核验、确认预览后，在授权范围内写入
-python scripts/ingest.py /path/to/work/acquisition/manifest.json --apply
-```
-
-`ingest` 先校验文件 SHA-256 和身份，再按稳定 ID 查重入库；默认预览，已有题录不自动改写。文字层身份未确认或存在 SI 时，需完成相应人工核验后再使用 `--identity-confirmed` / `--si-confirmed`，见 [CLI 指南](references/cli.md) 与 [本地 Zotero](references/local-zotero.md)。首次本地授权无需云端 API key；附件导入成功只表示本地写入完成，WebDAV 由本机 Zotero 同步，完成状态需另行核对。
-
-需要批量补齐订阅 PDF 时，可选 `webvpn_acquire.py fetch --backend auto`；先跑 `--dry-run` 查看 API/浏览器计划和台账冷却，再加 `--apply`。验证码或机构登录墙由用户在保留的浏览器中完成。
 
 Windows 使用实际绝对路径并加引号。作者候选核对后，用 `author --author-id ID --provider ...` 获取作品。`search` 和作者作品支持 `--year-from` / `--year-to`。`--limit` 为每源预算，跨源去重后全部保留；默认不做跨库相关性重排，助手根据实际阅读形成候选短名单。参数与记录格式见 [CLI 指南](references/cli.md)。
 
@@ -83,23 +61,17 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 | OpenAlex | 主题、作者、引文和 OA 位置 | `OPENALEX_API_KEY`，无 key 的能力按官方限制降级 |
 | Semantic Scholar | 主题、作者、引文和相似推荐 | `SEMANTIC_SCHOLAR_API_KEY` 或 `S2_API_KEY`；共享匿名池可能限流 |
 | Crossref | 题录/DOI核对、补召回 | 可选 `CROSSREF_EMAIL` |
-| arXiv | 直接检索预印本、按 arXiv ID lookup | `--sources arxiv` 显式选择，无 key |
-| Europe PMC | 直接检索、按 DOI/PMID/PMCID lookup | `--sources europe-pmc` 显式选择，无 key |
-| Unpaywall | DOI 对应 OA 位置 | `UNPAYWALL_EMAIL` 或可用联系邮箱回退（含 `POLITE_EMAIL`），不用于关键词搜索 |
-| Zotero | 查询收藏、附件与查重写入 | 独立 `zotero_local.py`，无需宿主 MCP 或云端 API key；也可用宿主工具或标准 JSON 导出 |
+| Unpaywall | DOI 对应 OA 位置 | `UNPAYWALL_EMAIL`，不用于关键词搜索 |
+| Zotero | 检查收藏与已有附件 | 宿主 Zotero 工具，或本地标准 JSON 导出 |
 
-`search` / `lookup` 默认保留原三源，新增来源不会增加默认请求；`related` 仅支持 OpenAlex 与 Semantic Scholar，其他来源明确报告 `unsupported`。arXiv 预印本与正式 DOI 保留版本关系；免费可读不等于开放许可。
-
-全文获取 API 只支持 Elsevier 和 Wiley，申请入口、权限与限流见 [全文获取 API](references/api-access.md)。检索与元数据来源见 [检索与元数据 API](references/api-discovery-providers.md)，包括 OpenAlex、Semantic Scholar、Crossref、Unpaywall、arXiv、Europe PMC；出版社 API 与浏览器路线见 [出版社获取路线](references/api-publisher-providers.md)。
-
-核心检索独立可用，不捆绑凭证。获取默认采用标准库直链与合规 OA，剥离外部第三方下载依赖。机构访问支持通过 `--institutional-proxy` 自动生成校内 WebVPN / EZProxy 授权直达链接，并在宿主浏览器中复用已登录会话，下载后用 `acquire.py --import-file` 导入；不承诺取得所有商业付费全文。Elsevier/Wiley 有官方 TDM 凭据时，`webvpn_acquire.py fetch --backend auto` 先走官方 API，只有 API 不支持、未配置 Key 或条目没有 DOI 时才进入浏览器；401/403/429 不自动改走浏览器。两个入口共享持久化请求台账，按 UTC 日、滑动窗口和冷却限速；已有 `paper.pdf` 与清单哈希或 DOI 不一致时拒绝覆盖。验证码或机构登录墙出现时，`--keep-open` 暂停当前条目并保留浏览器，用户完成后自动重试；超时按 24 小时冷却记录，完成后用 `--manual-cleared` 重跑清除本批次主机的验证码冷却（不会清除 429 冷却）。浏览器 lane 只对 Elsevier/Wiley 做图书馆入口握手，其他出版社使用通用 PDF 链接提取，产物交 `ingest.py` 入库。
+不捆绑凭证，不依赖 OmniScholar、easyseek 或 ScanSci PDF。它们可作额外能力后端，但接入前需核对工具、来源策略、许可和输出；核心检索独立可用。
 
 ## 结果与边界
 
 - 每次运行保存查询、逐源状态、规范题录、脱敏原始响应、可读清单和哈希，明确失败、空结果、截断及未执行。
 - 稳定 ID 对齐，保留字段冲突和来源。作者先消歧；预印本与正式版保留关系，不按标题直接混成一篇。
 - `metadata_only` 和 `abstract` 区分 API 返回的文本层级；筛选依据需实际阅读后记录。找到地址不等于下载，下载不等于读过。
-- 直接公开 PDF 仍可用 `scripts/fetch_pdf.py` 获取。`acquire.py` 在独立于检索记录的 `manifest.json` 中分别记录主文与 SI 的来源、哈希、身份、尝试和取得状态；出版社 HTML 提取的 SI 仅为候选，核对后用 `--select-si` 显式选择，不将候选当作已取得或宣称 SI 全量覆盖。
+- 直接公开 PDF 可用 `scripts/fetch_pdf.py` 获取并生成来源/哈希/检查记录；SI 需助手从主文附件区逐项核对，首版不自动声称全量获取。
 - 有界检索不证明查全；系统检索需逐源预算与筛选记录，见 [检索协议](references/protocol.md)。
 - 不绕过登录/付费访问、不直接操作 Zotero 数据库。私有 PDF、笔记、批注、凭证与测试运行不公开提交。
 
@@ -113,6 +85,6 @@ python -m unittest discover -s tests -v
 
 离线测试使用模拟响应，覆盖字段归一化、身份合并、错误状态、输出保护和哈希；在线可用性需另做小规模实测。真实 Zotero 测试数据保留在本地工作区。
 
-设计参考：[K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup)、[research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search)、[OmniScholar](https://github.com/luffysolution-svg/omnischolar)、[paper-search-pro](https://github.com/O0000-code/paper-search-pro)、[easyseek](https://github.com/Rimagination/easyseek)。检索与获取核心独立实现。按需阅读：[检索策略](references/retrieval.md) · [获取与交接](references/handoff.md) · [本地 Zotero](references/local-zotero.md)。
+设计参考：[K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup)、[research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search)、[OmniScholar](https://github.com/luffysolution-svg/omnischolar)、[paper-search-pro](https://github.com/O0000-code/paper-search-pro)、[easyseek](https://github.com/Rimagination/easyseek)。核心代码独立实现，不复制这些项目源码。按需阅读：[检索策略](references/retrieval.md) · [获取与交接](references/handoff.md)。
 
-采用合集 [MIT 许可证](../../LICENSE)。数据库内容、论文、第三方代码与服务各自的许可继续适用。
+采用合集 [MIT 许可证](../../LICENSE)。数据库内容、论文与第三方服务各自的许可继续适用。

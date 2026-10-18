@@ -36,7 +36,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m unittest discover -s tests -v
 4. 检查 MINERU_API_TOKEN 配置状态，不显示凭证值；未配置时指导我从 https://mineru.net 获取并在本地设置。
 5. 对 sanmu-paper-reader，使用 Python 3.10+ 从技能目录执行 python -m unittest discover -s tests -v；附带证据工具无第三方依赖，PDF/OCR/Zotero按实际输入检查可用性。
-6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python -m unittest discover -s tests -v；核心为标准库，学术 API 凭证仅检查是否配置。Zotero 按需运行 python scripts/zotero_local.py doctor，无需宿主 MCP 或云端 API key；首次写入在已授权范围内用 doctor --apply 触发 Zotero 本地授权。全文后端按需在用户缓存准备 ScanSci：优先复用审计匹配的已有版本，否则固定 1.18.2（新建环境需 Python 3.11+），不要求手装或配置 Tor；机构访问交助手浏览器工具复用已授权会话。附件同步由本机 Zotero 管理，未核对时不宣称 WebDAV 完成。
+6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python -m unittest discover -s tests -v；核心无第三方依赖，学术 API 凭证仅检查是否配置，Zotero 按需连接。
 7. 汇报安装位置、验证结果和仍需配置的项目。
 ```
 
@@ -64,7 +64,7 @@ npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 | --- | --- | --- |
 | **sanmu-doc2md** | 将论文、教材和课件整理成保留 LaTeX 公式、高清图表与 Zotero 元数据的 Markdown 知识库。 | [使用指南](skills/sanmu-doc2md/README.md) |
 | **sanmu-paper-reader** | 单篇精读、跨文献对比、跨学科与跨主题解读及知识库问答，优先材料与化学，保留可追溯证据。 | [使用指南](skills/sanmu-paper-reader/README.md) |
-| **sanmu-paper-search** | 从课题、种子或作者检索文献，核对题录、扩展引文、获取可用主文/SI，并通过独立本地客户端查重写入 Zotero。 | [使用指南](skills/sanmu-paper-search/README.md) |
+| **sanmu-paper-search** | 从课题、种子或作者检索文献，核对题录、扩展引文、定位全文/SI，并匹配 Zotero 收藏。 | [使用指南](skills/sanmu-paper-search/README.md) |
 
 ### sanmu-doc2md
 
@@ -91,23 +91,7 @@ npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 
 ### sanmu-paper-search
 
-从研究问题、种子论文或作者出发，默认查询 OpenAlex、Semantic Scholar 与 Crossref；arXiv 和 Europe PMC 用 `--sources arxiv,europe-pmc` 显式选择，不增加默认请求。保留来源、去重依据、失败和截断状态，区分免费可读与开放许可，预印本与正式 DOI 保留关系。日常检索保持轻量，扩展任务记录协议。
-
-Python 3.10+ 标准库核心独立运行；`zotero_local.py` 无需宿主 MCP 或云端 API key，首次写入由 Zotero 本地对话框授权。`acquire.py` 用独立 manifest 分别记录主文和 SI，出版社 HTML 候选需显式选择；`ingest.py` 校验哈希与身份后查重写入。附件导入后的 WebDAV 同步由本机 Zotero 完成，需另行确认状态。
-
-可选 ScanSci 在用户缓存按需自动准备，优先复用经函数审计匹配的已有版本（含旧版），否则固定 `scansci-pdf==1.18.2`，新建环境需 Python 3.11+。仅运行经哈希核验的 OpenAlex OA 与 Europe PMC OA 函数，不调用默认混合下载器或机构模块；机构访问由助手浏览器工具复用已授权会话下载，再 `acquire --import-file`，无需手装 ScanSci 或配置 Tor。全文与 SI 覆盖取决于实际来源及访问结果。
-
-从技能目录开始：
-
-```bash
-python scripts/zotero_local.py doctor
-python scripts/acquire.py --papers /path/to/work/seed --index 1 --out /path/to/work/acquisition
-python scripts/ingest.py /path/to/work/acquisition/manifest.json
-```
-
-`seed` 为已有检索记录；入库默认预览，完成身份与 SI 核验后在授权范围内加 `--apply`。详见 [CLI 指南](skills/sanmu-paper-search/references/cli.md)、[本地 Zotero](skills/sanmu-paper-search/references/local-zotero.md) 与 [安装及能力边界](skills/sanmu-paper-search/README.md)。
-
-设计参考 [ScanSci PDF](https://github.com/Rimagination/scansci-pdf)：可选来源适配在运行时提取并执行两个经 SHA-256 核验的上游纯 Python 审计函数，遵守其独立的 [Apache-2.0 许可与例外说明](https://github.com/Rimagination/scansci-pdf/blob/main/LICENSE)，不捆绑或使用其 `_core` 编译扩展；检索核心独立实现。
+从研究问题、种子论文或作者出发，查询 OpenAlex、Semantic Scholar 与 Crossref，保留来源、去重依据、失败和截断状态；定位全文/SI并匹配已有 Zotero 材料。日常检索保持轻量，扩展任务记录协议，取得材料后衔接转换与精读。
 
 [查看安装、命令与能力边界 →](skills/sanmu-paper-search/README.md)
 

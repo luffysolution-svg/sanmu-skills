@@ -10,10 +10,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit, urlunsplit, parse_qsl, urlencode, quote
 
 SCHEMA = "sanmu-paper-search/v1"
-DEFAULT_PROVIDERS = ("openalex", "semantic-scholar", "crossref")
-PROVIDERS = DEFAULT_PROVIDERS + ("arxiv", "europe-pmc")
+PROVIDERS = ("openalex", "semantic-scholar", "crossref")
 SECRET_NAMES = ("S2_API_KEY", "SEMANTIC_SCHOLAR_API_KEY", "OPENALEX_API_KEY",
-                "UNPAYWALL_EMAIL", "CROSSREF_EMAIL", "OPENALEX_EMAIL", "POLITE_EMAIL")
+                "UNPAYWALL_EMAIL", "CROSSREF_EMAIL")
 # Canonicalized names are shared by structured fields and parsed URL queries.
 SENSITIVE = {"apikey", "authorization", "token", "accesstoken", "email", "mailto",
              "password", "secret", "xapikey", "key", "signature", "credential",
@@ -171,14 +170,9 @@ def _arxiv_families(paper):
 
 def _version_conflicts(a, b):
     """Only bibliographic/arXiv evidence, never a provider API version field."""
-    publication_link = any(
-        relation.get("type") == "published_version" and
-        set((relation.get("target_identifiers") or {}).get("doi", [])) &
-        set(target.get("identifiers", {}).get("doi", []))
-        for source, target in ((a, b), (b, a)) for relation in source.get("relations", []))
-    reasons = ["preprint_publication_relation"] if publication_link else []
     if not (_arxiv_families(a) & _arxiv_families(b)):
-        return reasons
+        return []
+    reasons = []
     a_doi, b_doi = (set(p.get("identifiers", {}).get("doi", [])) for p in (a, b))
     if a_doi and b_doi and not a_doi & b_doi:
         reasons.append("different_doi")
@@ -306,8 +300,7 @@ def deduplicate(papers):
             if reasons:
                 for source, target in ((paper, other), (other, paper)):
                     source["relations"] = unique(source.get("relations", []) + [{
-                        "type": "arxiv_version_relation" if families else "publication_version_relation",
-                        "target_identifiers": target["identifiers"],
+                        "type": "arxiv_version_relation", "target_identifiers": target["identifiers"],
                         "evidence": {"shared_arxiv_families": families, "reasons": reasons}}])
     return result
 
@@ -390,7 +383,7 @@ def prepare_out(path):
 
 
 def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None):
-    errors = [s for s in sources.values() if s.get("status") in ("error", "unsupported")]
+    errors = [s for s in sources.values() if s.get("status") == "error"]
     usable = [s for s in sources.values() if s.get("status") in ("ok", "not_found")]
     status = ("partial" if usable or papers else "failed") if errors else "success"
     run = {"schema": SCHEMA, "command": command, "query": query, "status": status,
