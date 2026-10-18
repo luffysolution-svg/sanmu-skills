@@ -228,7 +228,16 @@ def _error(exc):
         return {"status": "failed", "reason": "http_error", "http_status": exc.code}
     if isinstance(exc, (URLError, TimeoutError)):
         return {"status": "failed", "reason": "network_error"}
-    return {"status": "failed", "reason": "invalid_file" if isinstance(exc, ValueError) else "filesystem_error"}
+    if isinstance(exc, ValueError):
+        msg = str(exc)
+        safe = {
+            "html_or_login_response", "not_pdf: response does not start with a PDF header",
+            "incomplete_pdf: PDF trailer is missing", "attachment_signature_mismatch",
+            "response_too_large", "insecure_redirect", "invalid_import_file_or_size",
+            "invalid_file"
+        }
+        return {"status": "failed", "reason": msg if msg in safe else "invalid_file"}
+    return {"status": "failed", "reason": "filesystem_error"}
 
 
 def verify_existing(root, item):
