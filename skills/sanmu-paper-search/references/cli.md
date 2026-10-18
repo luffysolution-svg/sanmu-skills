@@ -7,6 +7,10 @@ python scripts/paper_search.py doctor
 python scripts/paper_search.py search "frustrated Lewis pairs photocatalytic hydrogen" --sources openalex,semantic-scholar,crossref --limit 10 --out "/path/to/work/runs/topic"
 python scripts/paper_search.py lookup 10.1038/s41586-025-08628-5 --title "A generative model for inorganic materials design" --out "/path/to/work/runs/seed"
 python scripts/paper_search.py author "Claudio Zeni" --provider semantic-scholar --out "/path/to/work/runs/authors"
+# 同名或译名难消歧时，从种子论文的作者列表直接取稳定作者 ID：
+python scripts/paper_search.py author "Tian Xie" --provider openalex --from-paper doi:10.1038/s41586-025-08628-5 --out "/path/to/work/runs/author-from-paper"
+# 省略姓名则只列出该论文的作者与 ID 候选，不拉取作品：
+python scripts/paper_search.py author --provider openalex --from-paper doi:10.1038/s41586-025-08628-5 --out "/path/to/work/runs/paper-authors"
 # 核对候选中的稳定作者 ID 后，再执行：
 python scripts/paper_search.py author --author-id AUTHOR_ID --provider semantic-scholar --limit 10 --out "/path/to/work/runs/author-papers"
 python scripts/paper_search.py related 10.1038/s41586-025-08628-5 --relation references --sources openalex,semantic-scholar --limit 10 --out "/path/to/work/runs/references"
@@ -23,7 +27,17 @@ python -m unittest discover -s tests -v
 
 `search` 和 `author --author-id` 支持 `--year-from 2024 --year-to 2025`；`related` 不支持年份参数，需在关系结果上另做筛选并保留阶段记录。`--limit` 是每源候选预算（1–20），跨源去重后全部保存，三源最多 60 条；保留源序，不宣称跨库相关性已统一排序。作者单源作品和 `oa` 输入处理同样受该预算约束。已知年份在源端（支持时）和本地过滤，返回的未知年份保留并计数；源端可能不返回缺日期文献，见 `year_filter`。
 
-`author QUERY` 只产生候选；`author --author-id ID` 查询已核对作者的作品，不自动选择同名作者。`related` 按关系区分接口，不将普通关键词补搜冒充推荐。`oa` 只定位与记录访问状态，不代表已下载。
+`author QUERY` 只产生候选；`author --author-id ID` 查询已核对作者的作品，不自动选择同名作者。`author --from-paper ID [NAME]` 先在种子论文作者列表里锚定稳定 ID，再拉取作品；姓名不匹配时该来源记为 `not_found` 并保留全部作者候选，不猜人。`related` 按关系区分接口，不将普通关键词补搜冒充推荐。`oa` 只定位与记录访问状态，不代表已下载。
+
+`summary.md` 是 `papers.json` 的同源精简视图（年份、标题、前三位作者、类型、标识符、证据层级），用于快速浏览；正文判断仍以 `papers.json` 与逐源状态为准。
+
+## 配置（仅环境变量，不写入记录）
+
+- `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`：Semantic Scholar 配额。
+- `OPENALEX_API_KEY`：OpenAlex 配额与深度翻页；缺失时自动降级为匿名请求。
+- `OPENALEX_EMAIL` / `CROSSREF_EMAIL` / `UNPAYWALL_EMAIL` / `POLITE_EMAIL`：Polite Pool 联系邮箱，按此顺序回退；`POLITE_EMAIL` 可一次覆盖三源。OpenAlex 缺少邮箱时仍匿名，深度翻页可能被限流。
+
+`doctor` 只报告这些配置是否存在（布尔值），不显示值。
 
 ## 状态与退出码
 

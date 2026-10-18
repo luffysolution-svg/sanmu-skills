@@ -46,6 +46,7 @@ python scripts/paper_search.py doctor
 python scripts/paper_search.py search "generative inorganic materials design" --sources openalex,semantic-scholar,crossref --limit 5 --out /path/to/work/topic
 python scripts/paper_search.py lookup 10.1038/s41586-025-08628-5 --out /path/to/work/seed
 python scripts/paper_search.py author "Claudio Zeni" --provider semantic-scholar --out /path/to/work/authors
+python scripts/paper_search.py author "Tian Xie" --provider openalex --from-paper 10.1038/s41586-025-08628-5 --out /path/to/work/author-from-paper
 python scripts/paper_search.py related 10.1038/s41586-025-08628-5 --relation citations --limit 5 --out /path/to/work/citations
 python scripts/paper_search.py oa /path/to/work/seed --out /path/to/work/oa
 python scripts/paper_search.py check /path/to/work/seed

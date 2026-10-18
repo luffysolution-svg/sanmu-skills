@@ -266,6 +266,60 @@ class CoreTests(unittest.TestCase):
             with self.assertRaises(SourceError):
                 Providers(client).lookup("semantic-scholar", "10.1234/different")
 
+    def test_author_from_paper_resolves_seed_ids_and_writes_summary(self):
+        seed = s2(1, authors=[{"authorId": "42", "name": "Tian Xie", "externalIds": {"ORCID": "0000-0002-0987-4666"}},
+                              {"authorId": "43", "name": "Xiang Fu"}])
+        seen = []
+
+        def opener(request, timeout):
+            seen.append(request.full_url)
+            url = urlsplit(request.full_url)
+            query = parse_qs(url.query)
+            if "/paper/" in url.path and not url.path.endswith("/papers"):
+                return Response(seed)
+            if url.path.endswith("/author/42/papers"):
+                return Response({"data": [s2(5)]})
+            if url.path.endswith("/author/43/papers"):
+                return Response({"data": [s2(6)]})
+            if "/author/search" in url.path:
+                return Response({"data": [], "total": 0})
+            return Response({"data": []})
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = Client({"S2_API_KEY": "FAKE_KEY"}, opener, lambda _: None)
+            out = root / "from-paper"
+            code, run = self.invoke(["author", "Tian Xie", "--provider", "semantic-scholar",
+                                     "--from-paper", "doi:10.1234/1", "--out", str(out)], client)
+            self.assertEqual(code, 0, run)
+            self.assertEqual(run["author_mode"], "papers")
+            self.assertEqual(run["counts"]["papers"], 1)
+            self.assertEqual(run["source_status"]["semantic-scholar"]["author_id"], "42")
+            self.assertTrue((out / "summary.md").exists())
+            summary = (out / "summary.md").read_text(encoding="utf-8")
+            self.assertIn("| # | Year | Title | Authors |", summary)
+            self.assertIn("论文 5", summary)
+            self.assertEqual(check_bundle(out)["status"], "success")
+
+            listed = root / "list-authors"
+            code, run = self.invoke(["author", "--provider", "semantic-scholar",
+                                     "--from-paper", "doi:10.1234/1", "--out", str(listed)], client)
+            self.assertEqual(code, 0, run)
+            self.assertEqual(run["author_mode"], "paper_authors")
+            self.assertEqual({c["author_id"] for c in run["author_candidates"]}, {"42", "43"})
+            self.assertEqual(run["counts"]["papers"], 0)
+
+            named = root / "no-match"
+            code, run = self.invoke(["author", "Nobody Here", "--provider", "semantic-scholar",
+                                     "--from-paper", "doi:10.1234/1", "--out", str(named)], client)
+            self.assertEqual(code, 0, run)
+            self.assertEqual(run["source_status"]["semantic-scholar"]["status"], "not_found")
+            self.assertEqual(run["counts"]["papers"], 0)
+
+            doctor_code, doctor = self.invoke(["doctor"], client)
+            self.assertEqual(doctor_code, 0)
+            self.assertIn("polite_email", doctor["configuration"])
+
 
 if __name__ == "__main__":
     unittest.main()

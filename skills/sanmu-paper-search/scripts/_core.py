@@ -417,6 +417,16 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
     lines.extend(["", "Metadata/abstract evidence only. OA resolution does not download or verify a PDF.",
                   "License and OA flags are separate; a URL alone is not evidence of open access."])
     artifacts["report.md"] = "\n".join(lines) + "\n"
+    summary = ["| # | Year | Title | Authors | Venue / Type | DOI / Stable ID | Evidence |",
+               "| --- | --- | --- | --- | --- | --- | --- |"]
+    for i, p in enumerate(papers, 1):
+        title = (p.get("title") or "[untitled]").replace("\n", " ").replace("|", "\\|")
+        names = [a.get("name") or "" for a in p.get("authors", [])]
+        authors = ", ".join(names[:3]) + (" et al." if len(names) > 3 else "")
+        stable = [f"{k}:{v}" for k, values in p["identifiers"].items() for v in values]
+        summary.append(f"| {i} | {p.get('year') or 'n.d.'} | {title} | {authors or 'missing'} | "
+                       f"{p.get('type') or 'n.a.'} | {', '.join(stable[:3]) or 'missing'} | {p.get('evidence_level')} |")
+    artifacts["summary.md"] = "\n".join(summary) + "\n"
     for relative, text in artifacts.items():
         target = out / relative
         target.parent.mkdir(parents=True, exist_ok=True)

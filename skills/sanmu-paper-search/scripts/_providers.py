@@ -43,14 +43,21 @@ class Client:
             key = self.env.get("S2_API_KEY") or self.env.get("SEMANTIC_SCHOLAR_API_KEY")
             if key:
                 headers["x-api-key"] = key
-        if source == "openalex" and self.env.get("OPENALEX_API_KEY"):
-            params["api_key"] = self.env["OPENALEX_API_KEY"]
-        if source == "crossref" and self.env.get("CROSSREF_EMAIL"):
-            params["mailto"] = self.env["CROSSREF_EMAIL"]
+        polite_email = (self.env.get("OPENALEX_EMAIL") or self.env.get("CROSSREF_EMAIL")
+                        or self.env.get("UNPAYWALL_EMAIL") or self.env.get("POLITE_EMAIL"))
+        if source == "openalex":
+            if self.env.get("OPENALEX_API_KEY"):
+                params["api_key"] = self.env["OPENALEX_API_KEY"]
+            elif polite_email:
+                params["mailto"] = polite_email
+                headers["User-Agent"] = f"sanmu-paper-search/1.0 (mailto:{polite_email})"
+        if source == "crossref" and (self.env.get("CROSSREF_EMAIL") or polite_email):
+            params["mailto"] = self.env.get("CROSSREF_EMAIL") or polite_email
         if source == "unpaywall":
-            if not self.env.get("UNPAYWALL_EMAIL"):
+            email = self.env.get("UNPAYWALL_EMAIL") or polite_email
+            if not email:
                 raise SourceError("UNPAYWALL_EMAIL is not configured")
-            params["email"] = self.env["UNPAYWALL_EMAIL"]
+            params["email"] = email
         base = "https://api.semanticscholar.org" if source == "semantic-scholar" and path.startswith("/recommendations/") else BASE[source]
         url = base + path + (("?" + urlencode(params)) if params else "")
         for attempt in range(3):

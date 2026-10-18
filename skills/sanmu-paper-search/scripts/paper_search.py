@@ -72,8 +72,9 @@ def parser():
     cmd.add_argument("query", nargs="?")
     cmd.add_argument("--provider", choices=PROVIDERS[:2], required=True)
     cmd.add_argument("--author-id")
-    cmd.add_argument("--year-from", type=int, help="Paper years; requires --author-id")
-    cmd.add_argument("--year-to", type=int, help="Paper years; requires --author-id")
+    cmd.add_argument("--from-paper", help="Seed DOI/stable ID; resolve author IDs from its author list")
+    cmd.add_argument("--year-from", type=int, help="Paper years; requires --author-id or --from-paper")
+    cmd.add_argument("--year-to", type=int, help="Paper years; requires --author-id or --from-paper")
     cmd.add_argument("--limit", type=bounded, default=10, help="Per-source candidate budget (1..20); keep all deduplicated results")
     cmd.add_argument("--out", required=True)
     cmd = commands.add_parser("oa")
@@ -152,7 +153,8 @@ def execute(args, client):
                 "configuration": {"semantic_scholar_api_key": bool(env.get("S2_API_KEY") or env.get("SEMANTIC_SCHOLAR_API_KEY")),
                                   "openalex_api_key": bool(env.get("OPENALEX_API_KEY")),
                                   "unpaywall_email": bool(env.get("UNPAYWALL_EMAIL")),
-                                  "crossref_email": bool(env.get("CROSSREF_EMAIL"))}}, 0
+                                  "crossref_email": bool(env.get("CROSSREF_EMAIL")),
+                                  "polite_email": bool(env.get("POLITE_EMAIL"))}}, 0
     if args.command == "check":
         result = check_bundle(args.run, args.include_metadata)
         return result, 4 if result["status"] == "failed" else 0
@@ -164,14 +166,20 @@ def execute(args, client):
         raise InputError("Years must be between 1000 and 9999")
     if year_from is not None and year_to is not None and year_from > year_to:
         raise InputError("--year-from must not exceed --year-to")
-    if command == "author" and year_filter and not args.author_id:
-        raise InputError("Year filters require --author-id")
+    if command == "author" and year_filter and not (args.author_id or args.from_paper):
+        raise InputError("Year filters require --author-id or --from-paper")
     if command in ("lookup", "related"):
         parse_id(args.id)
+    if command == "author" and args.from_paper:
+        parse_id(args.from_paper)
     if command == "search" and not args.query.strip():
         raise InputError("Search query must not be empty")
-    if command == "author" and (bool(args.query) == bool(args.author_id)):
+    if command == "author" and args.from_paper and args.author_id:
+        raise InputError("Specify only one of --author-id or --from-paper; the query acts as a name filter")
+    if command == "author" and not args.from_paper and bool(args.query) == bool(args.author_id):
         raise InputError("Specify either an author search query or --author-id")
+    if command == "author" and not (args.query or args.author_id or args.from_paper):
+        raise InputError("Specify an author search query, --author-id, or --from-paper")
     if command == "author" and args.author_id:
         author_id = args.author_id.rstrip("/").rsplit("/", 1)[-1]
         pattern = r"A\d+" if args.provider == "openalex" else r"\d+"
@@ -220,17 +228,72 @@ def execute(args, client):
         query = {"text": args.query, "author_id": args.author_id, "provider": args.provider, "limit": args.limit}
         extra["author_candidates"] = []
         extra["author_mode"] = "papers" if args.author_id else "candidates"
-        try:
-            papers, status, candidates = adapter.authors(args.provider, args.query, args.author_id, args.limit, year_from, year_to)
-            statuses[args.provider] = status
-            extra["author_candidates"] = candidates
-        except SourceError as exc:
-            papers = getattr(exc, "papers", [])
-            statuses[args.provider] = _error(exc, len(papers))
-            if getattr(exc, "pages", None) is not None:
-                statuses[args.provider]["pages"] = exc.pages
-        except (ValueError, TypeError, KeyError, AttributeError) as exc:
-            statuses[args.provider] = _error(SourceError("Malformed source response: " + str(exc)))
+        if args.from_paper:
+            # Resolve stable author IDs from the seed paper's author list instead of name search,
+            # which avoids homonym collisions in common-name or transliterated-name cases.
+            seeds = []
+            for provider in dict.fromkeys([args.provider] + list(PROVIDERS[:2])):
+                try:
+                    found, seed_status = adapter.lookup(provider, args.from_paper)
+                    seeds.extend(found)
+                    statuses["paper:" + provider] = seed_status
+                    if found:
+                        statuses["paper:" + provider]["author_mode"] = "paper_authors"
+                        break
+                except SourceError as exc:
+                    statuses["paper:" + provider] = _error(exc)
+                except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                    statuses["paper:" + provider] = _error(SourceError("Malformed seed response: " + str(exc)))
+            seed_authors = [author for paper in deduplicate(seeds) for author in paper.get("authors", [])]
+            wanted = (args.query or "").strip().casefold()
+            matched = ([a for a in seed_authors if a.get("name", "").strip().casefold() == wanted]
+                       or [a for a in seed_authors if wanted and wanted in a.get("name", "").casefold()])
+            # Identifier namespaces use underscores (semantic_scholar) while providers use hyphens.
+            namespace = {"openalex": "openalex", "semantic-scholar": "semantic_scholar"}
+
+            def as_candidates(authors):
+                return [{"provider": provider, "author_id": value, "name": author.get("name"),
+                         "identifiers": author.get("identifiers", {}),
+                         "affiliations": author.get("affiliations", []),
+                         "from_paper": args.from_paper}
+                        for author in authors
+                        for provider, key in namespace.items()
+                        for value in (author.get("identifiers") or {}).get(key, [])]
+            extra["author_candidates"] = as_candidates(matched or ([] if wanted else seed_authors))
+            extra["author_mode"] = "papers" if wanted and matched else "paper_authors"
+            ids_for = [c["author_id"] for c in extra["author_candidates"] if c["provider"] == args.provider]
+            query["from_paper"] = args.from_paper
+            if wanted and not matched:
+                statuses[args.provider] = {"status": "not_found", "fetched": 0, "pages": 1, "truncated": False,
+                                           "error": "Author name is not in the seed paper author list",
+                                           "author_mode": "no_match", "from_paper": args.from_paper}
+                papers = []
+            elif not wanted:
+                statuses[args.provider] = {"status": "ok", "fetched": 0, "pages": 1, "truncated": False,
+                                           "author_mode": "paper_authors", "from_paper": args.from_paper}
+                papers = []
+            elif ids_for:
+                query["author_id"] = args.author_id = ids_for[0]
+            else:
+                raise InputError("No %s author ID for this paper; the seed paper was not found" % args.provider)
+        if args.from_paper and not args.author_id:
+            pass  # Seed paper authored list or name mismatch; nothing further to fetch.
+        else:
+            try:
+                papers, status, candidates = adapter.authors(args.provider, args.query, args.author_id, args.limit, year_from, year_to)
+                statuses[args.provider] = status
+                if not args.from_paper:
+                    extra["author_candidates"] = candidates
+                elif not candidates:
+                    status["author_mode"] = "papers"
+                    status["from_paper"] = args.from_paper
+            except SourceError as exc:
+                papers = getattr(exc, "papers", [])
+                statuses[args.provider] = _error(exc, len(papers))
+                if getattr(exc, "pages", None) is not None:
+                    statuses[args.provider]["pages"] = exc.pages
+            except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                statuses[args.provider] = _error(SourceError("Malformed source response: " + str(exc)))
     elif command == "oa":
         query = {"input": Path(args.input).name if loaded is not None else args.input,
                  "limit": args.limit, "unpaywall": args.unpaywall}
