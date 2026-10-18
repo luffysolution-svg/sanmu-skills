@@ -71,7 +71,7 @@ class AcquireTests(unittest.TestCase):
         self.assertEqual(len(a.oa_candidates(p)), 2)
 
     def test_real_fetch_code_manifest_and_retry_no_overwrite(self):
-        with tempfile.TemporaryDirectory() as d, patch.object(a.fetch_pdf, "urlopen", return_value=Response()) as net, patch.object(a.scansci_backend, "resolve") as backend:
+        with tempfile.TemporaryDirectory() as d, patch.object(a.fetch_pdf, "urlopen", return_value=Response()) as net:
             root = Path(d) / "run"
             result = a.acquire(paper(), root)
             item = result["main"]
@@ -84,27 +84,29 @@ class AcquireTests(unittest.TestCase):
             self.assertEqual(json.loads((root / "manifest.json").read_text(encoding="utf-8"))["main"], item)
             a.acquire(paper(), root)
             self.assertEqual(net.call_count, 1)
-            backend.assert_not_called()
             (root / item["file"]).write_bytes(b"changed")
             with self.assertRaises(a.InputError):
                 a.acquire(paper(), root)
 
     def test_failure_survives_and_backend_status_handoff(self):
-        with tempfile.TemporaryDirectory() as d, patch.object(a.fetch_pdf, "urlopen", side_effect=URLError("secret")), patch.object(a.scansci_backend, "resolve", return_value={"status": "unsupported_policy", "candidates": []}):
+        with tempfile.TemporaryDirectory() as d, patch.object(a.fetch_pdf, "urlopen", side_effect=URLError("secret")):
             result = a.acquire(paper(), d)
             self.assertEqual(result["main"]["status"], "failed")
-            self.assertEqual(result["backend"]["status"], "unsupported_policy")
+            self.assertEqual(result["backend"]["status"], "disabled")
             self.assertEqual(result["handoff"]["status"], "needs_browser_session")
             self.assertEqual(result["main"]["attempts"][0]["reason"], "network_error")
             self.assertNotIn("secret", (Path(d) / "manifest.json").read_text(encoding="utf-8"))
 
-    def test_backend_candidate_policy_is_rechecked(self):
+    def test_institutional_proxy_handoff(self):
         p = paper()
         p["oa_locations"] = []
-        with tempfile.TemporaryDirectory() as d, patch.object(a.scansci_backend, "resolve", return_value={"status": "ok", "candidates": [{"url": "https://p.test/a.pdf", "is_oa": False}]}), patch.object(a.fetch_pdf, "fetch") as fetch:
-            result = a.acquire(p, d)
-            fetch.assert_not_called()
-            self.assertEqual(result["backend"]["status"], "unsupported_policy")
+        with tempfile.TemporaryDirectory() as d:
+            result = a.acquire(p, d, institutional_proxy="https://webvpn.univ.edu.cn")
+            handoff = result["handoff"]
+            self.assertEqual(handoff["proxy_type"], "webvpn_path")
+            self.assertIn("webvpn.univ.edu.cn", handoff["institutional_url"])
+            self.assertIn("10.1234/a", handoff["institutional_url"])
+            self.assertIn("WebVPN", handoff["action"])
 
     def test_import_authorized_pdf_unknown_oa_and_version(self):
         with tempfile.TemporaryDirectory() as d, patch.object(a.fetch_pdf, "fetch") as fetch:

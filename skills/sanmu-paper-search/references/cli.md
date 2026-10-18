@@ -66,23 +66,21 @@ python scripts/fetch_pdf.py "https://publisher.example/article.pdf" --doi "10.xx
 ## 获取主文、SI 与浏览器交接
 
 ```bash
-# 已有题录时选一篇，优先明确 OA 位置，失败后按需准备 ScanSci OA 后端。
+# 已有题录时选一篇，优先明确 OA 位置自动获取。
 python scripts/acquire.py --papers "/path/to/work/runs/oa" --index 1 --out "/path/to/acquisition"
-# 单独检查/自动准备后端；不需要用户预先安装或填写 ScanSci 凭证。
-python scripts/scansci_backend.py --prepare-only
 # 读取真实出版社页面，仅发现 SI 候选，不自动下载所有链接。
 python scripts/acquire.py --papers "/path/to/work/runs/oa" --index 1 --out "/path/to/acquisition" --publisher-url "https://publisher.example/article"
+# 配置校园网 WebVPN / EZProxy 代理前缀，自动生成校内授权直达链接写入 handoff
+python scripts/acquire.py --papers "/path/to/work/runs/oa" --index 1 --out "/path/to/acquisition" --institutional-proxy "https://webvpn.univ.edu.cn"
 # 使用返回的真实 si-ID 选择文件；页面需再次提供，也可用 --publisher-html 已保存页面。
 python scripts/acquire.py --papers "/path/to/work/runs/oa" --index 1 --out "/path/to/acquisition" --publisher-url "https://publisher.example/article" --select-si si-REALID
 # 机构授权浏览器取得文件后摄取；来源与版本保留，不自动证明开放许可。
-python scripts/acquire.py --papers "/path/to/work/runs/oa" --index 1 --out "/path/to/acquisition" --backend none --import-file "/path/to/browser-download.pdf" --source-url "https://publisher.example/article" --version publishedVersion
+python scripts/acquire.py --papers "/path/to/work/runs/oa" --index 1 --out "/path/to/acquisition" --import-file "/path/to/browser-download.pdf" --source-url "https://publisher.example/article" --version publishedVersion
 ```
 
 示例网址和 ID 需换为实际结果。新目录保存 `manifest.json`，同一篇可续跑，已有文件先核验哈希并拒绝覆盖。主文和 SI 分开记录文件、来源、许可、版本、身份状态与每次尝试；非 PDF SI 显式指定 `--import-kind supplementary --import-type xlsx` 等类型，不执行压缩包。SI 候选只是实际链接发现，不是完整性或主文关系的验收。
 
-`--backend none` 禁用后端，`--no-install` 禁止自动准备。后端优先复用已安装且来源函数符合审计的 ScanSci；否则用 uv，缺 uv 时用隔离 venv/pip，在用户缓存安装固定版本（Python 3.11+），不改全局环境。当前仅调用审计过的 OpenAlex OA、Europe PMC OA 来源函数，不运行 ScanSci 默认混合下载、机构模块或 Tor；上游函数变更时明确报策略不支持。安装失败与来源失败保留状态，检索仍可独立使用。
-
-机构获取通过 `handoff` 交给助手浏览器工具，复用已授权会话并保持 CARSI/WebVPN 访问路径；`--authorized-profile` / `--use-tool-profile` 只表明授权交接，不等于登录有效，也不会启动登录或复制 cookie。下载后用 `--import-file` 恢复。主文取得但已选择的 SI/页面发现失败仍为部分完成，不能只依据文件存在判断整项任务成功。
+机构获取通过 `handoff` 交给助手浏览器工具，复用已授权会话并保持 CARSI/WebVPN 访问路径；`--authorized-profile` 只表明授权交接，不等于登录有效，也不会启动登录或复制 cookie。下载后用 `--import-file` 恢复。主文取得但已选择的 SI/页面发现失败仍为部分完成，不能只依据文件存在判断整项任务成功。
 
 ## 本地 Zotero 与入库
 

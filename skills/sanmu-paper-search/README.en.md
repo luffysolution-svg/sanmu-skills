@@ -20,11 +20,11 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m unittest discover -s tests -v
 3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL, CROSSREF_EMAIL and POLITE_EMAIL are configured. Never display values. Explain available capabilities without credentials; point to official registration only when needed.
 4. For Zotero, start the desktop app, enable local application communication, and run python scripts/zotero_local.py doctor. The independent client needs no host MCP or cloud API key; do not read the database or storage directly. Before the first authorized write, run doctor --apply and let me approve Zotero's local authorization dialog. Core search also works without Zotero.
-5. Use acquire.py when full text is needed. It prepares optional ScanSci in the user cache on demand, preferring an existing version whose audited functions match; otherwise it pins scansci-pdf==1.18.2 (new setup requires Python 3.11+). Do not require me to install ScanSci manually or configure Tor. For institutional access, use the assistant's browser tool with an already authorized session, then record the downloaded file with acquire --import-file.
+5. Use acquire.py when full text is needed. It prioritizes open-access direct links; institutional access supports --institutional-proxy to transform publisher URLs into campus WebVPN/EZProxy endpoints, using the assistant's browser tool with an authorized session, then recording the downloaded file with acquire --import-file.
 6. Run a small public-paper query into a new directory outside the repository. Report per-source status, installation path and limitations; installation checks must not modify Zotero items. The local Zotero app manages attachments and WebDAV synchronization; do not claim sync completion without checking its status.
 ```
 
-Alternatively copy the complete directory into `.agents/skills/sanmu-paper-search`. The Python 3.10+ standard-library core needs no pip installation. PyMuPDF is optional for PDF text-based identity checks. The optional ScanSci backend prepares itself in the user cache on demand: it first reuses an existing version, including older versions, whose audited function hashes match. Otherwise it pins `scansci-pdf==1.18.2`; new setup requires Python 3.11+. Use `--no-install` to disable automatic preparation.
+Alternatively copy the complete directory into `.agents/skills/sanmu-paper-search`. The Python 3.10+ standard-library core needs no pip installation. PyMuPDF is optional for PDF text-based identity checks.
 
 ## Examples
 
@@ -86,7 +86,7 @@ On Windows, quote actual absolute paths. After checking candidates, use `author 
 
 `search` / `lookup` retain the original three-source default; optional sources add no default requests. `related` supports only OpenAlex and Semantic Scholar; other sources explicitly report `unsupported`. arXiv preprints retain relationships to published DOIs. Free-to-read access does not establish an open license.
 
-Core search works independently with no bundled credentials. Optional ScanSci runs only the audited OpenAlex OA and Europe PMC OA source functions, never its default mixed-source downloader or institutional modules. Institutional access uses the assistant's browser tool with an already authorized session; import the downloaded file with `acquire.py --import-file`. Users need not install ScanSci manually or configure Tor. Full-text availability is not guaranteed.
+Core search works independently with no bundled credentials. Acquisition uses standard-library open access and direct links by default, without external third-party download packages. Institutional access supports `--institutional-proxy` to generate campus WebVPN / EZProxy access URLs, and uses the assistant's browser tool with an authorized session; import the downloaded file with `acquire.py --import-file`. Full-text availability is not guaranteed.
 
 ## Outputs and limits
 
@@ -106,6 +106,6 @@ python -m unittest discover -s tests -v
 
 Offline tests use mock responses to cover normalization, identity merging, failure states, protected outputs and integrity checks. Live availability requires a separate small test. Real Zotero test data stays in the local workspace.
 
-Design references: [K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup), [research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search), [OmniScholar](https://github.com/luffysolution-svg/omnischolar), [paper-search-pro](https://github.com/O0000-code/paper-search-pro), [easyseek](https://github.com/Rimagination/easyseek), and [ScanSci PDF](https://github.com/Rimagination/scansci-pdf). The search core is independently implemented. Optional ScanSci source adapters extract two audited pure-Python functions from the locally installed upstream package at runtime, verify their SHA-256, and execute that third-party function code in a restricted child process under its separate [Apache-2.0 license and exceptions](https://github.com/Rimagination/scansci-pdf/blob/main/LICENSE). They neither bundle nor use its `_core` compiled extension. More: [retrieval strategy](references/retrieval.md), [acquisition and handoff](references/handoff.md), [local Zotero](references/local-zotero.md).
+Design references: [K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup), [research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search), [OmniScholar](https://github.com/luffysolution-svg/omnischolar), [paper-search-pro](https://github.com/O0000-code/paper-search-pro), and [easyseek](https://github.com/Rimagination/easyseek). Retrieval and acquisition cores are independently implemented. More: [retrieval strategy](references/retrieval.md), [acquisition and handoff](references/handoff.md), [local Zotero](references/local-zotero.md).
 
 Covered by the collection's [MIT license](../../LICENSE). Database content, papers, third-party code and services retain their own terms.

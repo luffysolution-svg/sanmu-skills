@@ -22,11 +22,11 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m unittest discover -s tests -v
 3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL、POLITE_EMAIL 是否配置，不显示值。没有凭证时说明可用范围，确需配置才指向官方注册页。
 4. 如需 Zotero，启动桌面端并允许本机应用通信，运行 python scripts/zotero_local.py doctor；独立客户端无需宿主 MCP 或云端 API key，不直接读取数据库或 storage。首次写入前，在已授权范围内运行 doctor --apply，并由我在 Zotero 本地对话框中授权。没有 Zotero 也能使用核心检索。
-5. 需要全文时使用 acquire.py，按需自动准备用户缓存中的 ScanSci；优先复用函数审计匹配的已有版本，否则固定安装 scansci-pdf==1.18.2（新建环境需 Python 3.11+）。不要求我手动安装 ScanSci 或配置 Tor。机构访问由助手浏览器工具复用已授权会话下载，再用 acquire --import-file 记录。
+5. 需要全文时使用 acquire.py，优先匹配开放获取（OA）直链；机构访问支持配置 --institutional-proxy 自动转换校园网 WebVPN/EZProxy 链接，并由助手浏览器工具复用已授权会话下载，再用 acquire --import-file 记录。
 6. 在仓库之外的新工作目录做一次小规模公开文献查询，报告逐源状态、安装位置与限制；安装验证不改 Zotero 文献。附件由本机 Zotero 管理和同步 WebDAV，未核对其状态时不宣称同步完成。
 ```
 
-手动安装也可复制完整技能目录到 `.agents/skills/sanmu-paper-search`。Python 3.10+ 标准库核心无需 `pip install`；PDF 文字层身份核对可选安装 PyMuPDF。可选 ScanSci 后端按需在用户缓存自动准备：优先复用经函数哈希审计匹配的已有版本（含匹配的旧版），否则固定 `scansci-pdf==1.18.2`，新建环境需 Python 3.11+；`--no-install` 可禁用自动准备。
+手动安装也可复制完整技能目录到 `.agents/skills/sanmu-paper-search`。Python 3.10+ 标准库核心无需 `pip install`；PDF 文字层身份核对可选安装 PyMuPDF。
 
 ## 使用示例
 
@@ -88,7 +88,7 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 
 `search` / `lookup` 默认保留原三源，新增来源不会增加默认请求；`related` 仅支持 OpenAlex 与 Semantic Scholar，其他来源明确报告 `unsupported`。arXiv 预印本与正式 DOI 保留版本关系；免费可读不等于开放许可。
 
-核心检索独立可用，不捆绑凭证。可选 ScanSci 仅运行经审计的 OpenAlex OA 与 Europe PMC OA 来源函数，不调用其默认混合下载器或机构模块。机构访问交助手浏览器工具复用已授权会话，下载后用 `acquire.py --import-file` 导入；不要求用户手装 ScanSci 或配置 Tor，也不承诺取得所有全文。
+核心检索独立可用，不捆绑凭证。获取默认采用标准库直链与合规 OA，剥离外部第三方下载依赖。机构访问支持通过 `--institutional-proxy` 自动生成校内 WebVPN / EZProxy 授权直达链接，并在宿主浏览器中复用已登录会话，下载后用 `acquire.py --import-file` 导入；不承诺取得所有商业付费全文。
 
 ## 结果与边界
 
@@ -109,6 +109,6 @@ python -m unittest discover -s tests -v
 
 离线测试使用模拟响应，覆盖字段归一化、身份合并、错误状态、输出保护和哈希；在线可用性需另做小规模实测。真实 Zotero 测试数据保留在本地工作区。
 
-设计参考：[K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup)、[research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search)、[OmniScholar](https://github.com/luffysolution-svg/omnischolar)、[paper-search-pro](https://github.com/O0000-code/paper-search-pro)、[easyseek](https://github.com/Rimagination/easyseek)、[ScanSci PDF](https://github.com/Rimagination/scansci-pdf)。检索核心独立实现；可选 ScanSci 来源适配在运行时从本地上游包提取两个经 SHA-256 核验的纯 Python 审计函数，并在受限子进程中执行第三方函数代码，遵守其独立的 [Apache-2.0 许可与例外说明](https://github.com/Rimagination/scansci-pdf/blob/main/LICENSE)；不捆绑或使用其 `_core` 编译扩展。按需阅读：[检索策略](references/retrieval.md) · [获取与交接](references/handoff.md) · [本地 Zotero](references/local-zotero.md)。
+设计参考：[K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup)、[research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search)、[OmniScholar](https://github.com/luffysolution-svg/omnischolar)、[paper-search-pro](https://github.com/O0000-code/paper-search-pro)、[easyseek](https://github.com/Rimagination/easyseek)。检索与获取核心独立实现。按需阅读：[检索策略](references/retrieval.md) · [获取与交接](references/handoff.md) · [本地 Zotero](references/local-zotero.md)。
 
 采用合集 [MIT 许可证](../../LICENSE)。数据库内容、论文、第三方代码与服务各自的许可继续适用。

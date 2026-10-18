@@ -14,7 +14,7 @@
 
 `fetch_pdf.py` 只处理用户任务中的公开 HTTPS PDF。检查 PDF header/trailer，记录原始/最终 URL、大小和 SHA-256。可选 PyMuPDF 在首屏题名区匹配完整 DOI 与标题（同时提供时均需命中，排除参考文献区），结果只代表文字层身份线索，不证明版本、内容完整或科学正确。扫描 PDF、乱码或未匹配进入人工回看，不按尺寸删除。下载拦截（如 reCAPTCHA、Cloudflare 质询、HTML 登录页）、截断与格式损坏分别通过具体 reason 记录。
 
-学校订阅、CARSI、WebVPN 等访问依赖用户自己的授权会话。商业刊物（如 Elsevier、Wiley、Science）与 Google 学术常设 Cloudflare 质询盾或人机验证，自动化或内置浏览器若遇拦截，用户可在宿主个人日常浏览器（含机构 IP/VPN 授权）内完成验证下载，再通过 `acquire.py --import-file` 纳入清单；缺少浏览器工具、登录过期或无订阅时保留具体缺口。登录及多因素验证由用户完成，不提取浏览器 cookie 交给脚本。当前 ScanSci 适配只运行审计过的 OA 来源函数，不自动调用其机构模块或混合批量回退；后端按需自动准备，核心检索不依赖它。不要默认启动 Tor、改代理或绕过验证码，也不要把“免费可取得”与“开放许可”混为一个字段。
+学校订阅、CARSI、WebVPN 等访问依赖用户自己的授权会话。商业刊物（如 Elsevier、Wiley、Science）与 Google 学术常设 Cloudflare 质询盾或人机验证，自动化或内置浏览器若遇拦截，用户可在宿主个人日常浏览器（含机构 IP/VPN 授权）内完成验证下载，再通过 `acquire.py --import-file` 纳入清单；缺少浏览器工具、登录过期或无订阅时保留具体缺口。配置 `--institutional-proxy`（支持 EZProxy、WebVPN 路径映射或自定义模板，亦可通过 `INSTITUTIONAL_PROXY_URL` 环境变量注入）时，交接清单自动将出版商 URL 转换为校内授权 `institutional_url`。核心获取默认采用标准库直链与合规 OA，剥离外部第三方下载依赖；不自动调用非审计模块，不要默认启动 Tor、改全局代理或绕过验证码，也不要把“免费可取得”与“开放许可”混为一个字段。
 
 ## Supporting Information
 

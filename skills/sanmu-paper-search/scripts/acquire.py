@@ -1,4 +1,4 @@
-"""Acquire one paper: explicit OA PDFs -> optional ScanSci OA -> browser handoff.
+"""Acquire one paper: explicit OA PDFs -> browser handoff with institutional proxy.
 
 Output manifest.json (sanmu-acquisition/v1) keeps full paper metadata, main and
 supplementary entries with relative file, sha256, size, identity, source, attempts.
@@ -24,10 +24,11 @@ import uuid
 
 from _core import InputError, Redactor, doi as normalize_doi, dumps, license_status, load_papers, now, read_json
 import fetch_pdf
-import scansci_backend
+import institutional_access
 
 SCHEMA = "sanmu-acquisition/v1"
 MAX_BYTES = 80 * 1024 * 1024
+MAX_JSON = 2 * 1024 * 1024
 TYPES = {"pdf", "zip", "docx", "xlsx", "pptx", "csv", "tsv", "txt", "json", "xml", "png", "jpeg", "tiff", "gzip"}
 SUPPLEMENT = re.compile(r"supplement(?:ary|al)?|supporting[ _-]*(?:information|material|data)|附加材料|补充材料|电子附件|(?:^|[/_.-])(?:esm|supp|si)[/_.-]", re.I)
 
@@ -240,6 +241,26 @@ def _error(exc):
     return {"status": "failed", "reason": "filesystem_error"}
 
 
+def browser_handoff(doi=None, authorized_profile=None):
+    """Generate structured handoff metadata for browser session retrieval."""
+    candidate = Path(authorized_profile).expanduser() if authorized_profile else None
+    origin = "user" if candidate else "none"
+    profile_present = bool(candidate and candidate.is_dir())
+    authorized = bool(profile_present and authorized_profile)
+    return {
+        "status": "needs_browser_download" if authorized else "needs_browser_session",
+        "publisher_url": "https://doi.org/" + (doi or "").strip() if doi else None,
+        "profile_present": profile_present,
+        "profile_origin": origin,
+        "tool_saved_state_present": False,
+        "session_validity": "not_checked",
+        "authorization": "user_asserted" if authorized else "required",
+        "institutional_execution": "browser_handoff_only",
+        "action": "Hand off publisher URL to the assistant's browser tool with an authorized profile/session; "
+                  "obtain the download and use acquire.py --import-file FILE."
+    }
+
+
 def verify_existing(root, item):
     path = Path(item.get("file") or "")
     target = (root / path).resolve()
@@ -299,12 +320,12 @@ def obtain(root, item, paper, url=None, imported=None, source=None):
         item["status"] = "failed"
 
 
-def acquire(paper, out, backend="auto", max_candidates=3, import_file=None, import_kind="main",
+def acquire(paper, out, backend="none", max_candidates=3, import_file=None, import_kind="main",
             import_id=None, import_type="pdf", import_source=None, publisher_html=None,
-            publisher_url=None, select_si=(), max_si=20, cache=None, install=True,
-            authorized_profile=None, use_tool_profile=False):
+            publisher_url=None, select_si=(), max_si=20, authorized_profile=None,
+            institutional_proxy=None, **kwargs):
     """Return the persisted manifest. Network work is bounded; reruns append attempts."""
-    if backend not in {"auto", "none", "scansci"} or not 1 <= max_candidates <= 10 or not 1 <= max_si <= 100:
+    if backend not in {"auto", "none", "direct"} or not 1 <= max_candidates <= 10 or not 1 <= max_si <= 100:
         raise InputError("Invalid backend or candidate budget")
     if select_si and not (publisher_html or publisher_url):
         raise InputError("SI selection requires --publisher-html/--publisher-url discovery")
@@ -354,7 +375,20 @@ def acquire(paper, out, backend="auto", max_candidates=3, import_file=None, impo
             discovery_issues = any(d["status"] != "ok" or d.get("unmatched_selected_ids") for d in latest_discovery.values())
             manifest["status"] = ("partial" if si_issues or discovery_issues else "file_obtained") if main_ok else "needs_browser"
             write_manifest(root, manifest)
-        manifest["handoff"] = scansci_backend.browser_handoff(paper.get("doi"), authorized_profile, use_tool_profile)
+        handoff = browser_handoff(paper.get("doi"), authorized_profile)
+        publisher_target = "https://doi.org/" + (paper.get("doi") or "").strip() if paper.get("doi") else None
+        proxy = institutional_access.get_configured_proxy(institutional_proxy)
+        if proxy and publisher_target:
+            inst = institutional_access.transform_url(publisher_target, proxy, paper.get("doi"))
+            if inst.get("status") == "configured":
+                handoff["institutional_url"] = inst.get("institutional_url")
+                handoff["proxy_type"] = inst.get("proxy_type")
+                handoff["proxy_pattern"] = inst.get("proxy_pattern")
+                handoff["action"] = (
+                    "Open institutional_url in your authorized browser session (campus WebVPN / EZProxy); "
+                    "download the PDF, then import it with acquire.py --import-file FILE."
+                )
+        manifest["handoff"] = handoff
         save()
         if import_file:
             item = manifest["main"]
@@ -380,28 +414,14 @@ def acquire(paper, out, backend="auto", max_candidates=3, import_file=None, impo
                 save()
                 if main["status"] == "file_obtained":
                     break
-        if main["status"] != "file_obtained" and backend != "none" and paper.get("doi"):
-            resolved = scansci_backend.resolve(paper["doi"], cache=cache, install=install)
-            manifest["backend"] = {k: v for k, v in resolved.items() if k not in {"python", "source", "candidates"}}
-            save()
-            for candidate in resolved.get("candidates", [])[:max_candidates]:
-                if candidate.get("is_oa") is not True or not safe_url(candidate.get("url")):
-                    manifest["backend"]["status"] = "unsupported_policy"
-                    save()
-                    continue
-                obtain(root, main, paper, url=candidate["url"], source=candidate)
-                save()
-                if main["status"] == "file_obtained":
-                    break
-        elif backend == "none":
-            manifest["backend"] = {"status": "disabled"}
+        manifest["backend"] = {"status": "disabled"}
         if publisher_html or publisher_url:
             discovery = {"at": now(), "url": public_url(publisher_url), "status": "started"}
             manifest["discovery"].append(discovery)
             save()
             try:
                 if publisher_html:
-                    if Path(publisher_html).stat().st_size > scansci_backend.MAX_JSON:
+                    if Path(publisher_html).stat().st_size > MAX_JSON:
                         raise ValueError("html_too_large")
                     html = Path(publisher_html).read_text(encoding="utf-8-sig")
                 else:
@@ -410,9 +430,9 @@ def acquire(paper, out, backend="auto", max_candidates=3, import_file=None, impo
                     with urlopen(Request(publisher_url, headers={"User-Agent": "sanmu-paper-search/1.0"}), timeout=30) as response:
                         if not safe_url(response.url):
                             raise ValueError("insecure_redirect")
-                        data = response.read(scansci_backend.MAX_JSON + 1)
+                        data = response.read(MAX_JSON + 1)
                         publisher_url = response.url
-                    if len(data) > scansci_backend.MAX_JSON:
+                    if len(data) > MAX_JSON:
                         raise ValueError("html_too_large")
                     html = data.decode("utf-8")
                 discovered = discover_si(html, publisher_url, max_si)
@@ -450,10 +470,9 @@ def main(argv=None):
     parser.add_argument("--doi", help="Paper DOI; may select a record from --papers")
     parser.add_argument("--metadata", type=Path, help="One paper JSON object, used with --doi")
     parser.add_argument("--out", required=True, type=Path, help="New output directory or same-paper acquisition to resume")
-    parser.add_argument("--backend", choices=("auto", "none", "scansci"), default="auto")
+    parser.add_argument("--institutional-proxy",
+                        help="Campus WebVPN / EZProxy URL pattern or template (e.g. 'https://webvpn.univ.edu.cn/https/{host}{path}' or 'https://libproxy.univ.edu/login?url=')")
     parser.add_argument("--max-candidates", type=int, default=3)
-    parser.add_argument("--cache-dir", type=Path)
-    parser.add_argument("--no-install", action="store_true", help="Disable isolated ScanSci preparation")
     parser.add_argument("--import-file", type=Path, help="PDF or explicitly typed SI obtained by an authorized browser")
     parser.add_argument("--import-kind", choices=("main", "supplementary"), default="main")
     parser.add_argument("--import-id", help="Existing discovered SI ID (or a new import ID)")
@@ -466,7 +485,6 @@ def main(argv=None):
     parser.add_argument("--select-si", action="append", default=[], help="Explicit discovered si-ID to obtain; repeatable")
     parser.add_argument("--max-si", type=int, default=20)
     parser.add_argument("--authorized-profile", type=Path, help="User-asserted authorized browser profile (handoff only)")
-    parser.add_argument("--use-tool-profile", action="store_true", help="Authorize reusing ScanSci's own discovered profile for manual browser handoff")
     args = parser.parse_args(argv)
     if args.import_id and not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", args.import_id):
         parser.error("--import-id must contain only letters, digits, underscore or hyphen")
@@ -476,11 +494,13 @@ def main(argv=None):
         parser.error("--metadata cannot be combined with --papers")
     try:
         paper = select_paper(args.papers, args.index, args.doi, args.metadata)
-        result = acquire(paper, args.out, args.backend, args.max_candidates, args.import_file,
-                         args.import_kind, args.import_id, args.import_type,
-                         {"url": args.source_url, "version": args.version, "license": args.license},
-                         args.publisher_html, args.publisher_url, args.select_si, args.max_si,
-                         args.cache_dir, not args.no_install, args.authorized_profile, args.use_tool_profile)
+        result = acquire(paper, args.out, max_candidates=args.max_candidates, import_file=args.import_file,
+                         import_kind=args.import_kind, import_id=args.import_id, import_type=args.import_type,
+                         import_source={"url": args.source_url, "version": args.version, "license": args.license},
+                         publisher_html=args.publisher_html, publisher_url=args.publisher_url,
+                         select_si=args.select_si, max_si=args.max_si,
+                         authorized_profile=args.authorized_profile,
+                         institutional_proxy=args.institutional_proxy)
         code = 0 if result["status"] == "file_obtained" else 2
     except (InputError, OSError, ValueError) as exc:
         result, code = {"status": "error", "reason": str(exc) if isinstance(exc, InputError) else "invalid_input_or_filesystem_error"}, 2

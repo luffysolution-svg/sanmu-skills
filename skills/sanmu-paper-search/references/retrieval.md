@@ -33,7 +33,7 @@ DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的�
 
 凭证通过环境变量：`OPENALEX_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY`（兼容 `S2_API_KEY`）、`UNPAYWALL_EMAIL`、`CROSSREF_EMAIL`。不同 API 认证、预算和分页规则以当前官方文档为准。无 key 可进行的基本查询与需 key 的能力分别检查；不把限流当成无结果，也不读取不相关凭证。
 
-外部后端可选：`scansci_backend.py` 按需自动准备固定版本 ScanSci PDF，限制到已核对的来源入口；OpenAIRE/CORE 等全文覆盖以实际执行状态为准，不计作本 CLI 新增检索源。机构访问复用用户已授权会话，缺失时返回浏览器交接。OmniScholar、easyseek 仍仅是可选扩展建议，不列为已接入。后端不可用不影响核心检索，也不伪装成没有文献。复制上游代码需保留相应许可；本技能的核心实现独立编写。
+外部后端与扩展：OpenAIRE/CORE 等全文覆盖以实际执行状态为准，不计作本 CLI 新增检索源。机构访问复用用户已授权会话或校园网 WebVPN/EZProxy 直达链接，缺失时返回浏览器交接。OmniScholar、easyseek 仍仅是可选扩展建议，不列为已接入。复制上游代码需保留相应许可；本技能的核心实现独立编写。
 
 官方契约入口：
 
@@ -43,4 +43,3 @@ DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的�
 - Unpaywall：https://unpaywall.org/products/api
 - arXiv：https://info.arxiv.org/help/api/user-manual.html
 - Europe PMC：https://europepmc.org/RestfulWebService
-- ScanSci PDF（可选获取后端）：https://github.com/Rimagination/scansci-pdf

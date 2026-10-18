@@ -57,7 +57,7 @@ python -m unittest discover -s tests -v
 
 全文定位优先已有附件、出版社开放版、OpenAlex/S2 OA 位置及可选 Unpaywall。保留许可和版本，URL 存在不等于开放获取。需要登录的机构访问由用户已有授权会话完成，不自动改变代理、导入 cookie 或绕过访问控制。外部下载后端仅为可选，失败不能伪装成无文献。
 
-用 `scripts/acquire.py` 汇总全文、SI 与来源清单，公开 PDF 仍可单独用 `scripts/fetch_pdf.py` 获取。可选 ScanSci 后端按需在用户缓存自动准备，固定版本并限制来源，不调用其默认混合下载流程；机构登录交给用户已有授权浏览器，取得文件后导入清单。格式检查和首屏文字层身份核对不是科学内容验收，未核验保留待审。SI 从对应出版社实际页面提取候选，逐个核对名称、类型、链接与主文关系；页面未核对或文件未取得时如实标记，不猜地址或声称全部取得。`scripts/ingest.py` 校验清单哈希、目标条目与身份状态后，查重追加主文/SI；已有题录不自动覆盖，重复文件跳过，上传失败保留部分成功状态。具体命令按需查 [CLI 指南](references/cli.md)。
+用 `scripts/acquire.py` 汇总全文、SI 与来源清单，公开 PDF 仍可单独用 `scripts/fetch_pdf.py` 获取。支持通过 `--institutional-proxy` 自动生成校园网 WebVPN / EZProxy 授权直达链接；机构登录交由用户已有授权浏览器，取得文件后通过 `--import-file` 验真导入清单。格式检查和首屏文字层身份核对不是科学内容验收，未核验保留待审。SI 从对应出版社实际页面提取候选，逐个核对名称、类型、链接与主文关系；页面未核对或文件未取得时如实标记，不猜地址或声称全部取得。`scripts/ingest.py` 校验清单哈希、目标条目与身份状态后，查重追加主文/SI；已有题录不自动覆盖，重复文件跳过，上传失败保留部分成功状态。具体命令按需查 [CLI 指南](references/cli.md)。
 
 交付时区分 `discovered`、`metadata_checked`、`file_obtained`、`identity_checked` 与 `read`，不把前一步状态升级成后一步。主文和 SI 转换可选交给 `sanmu-doc2md`；相关性、图表、机理和实验条件深入核验可选交给 `sanmu-paper-reader`，未安装时交付清单与文件即可。
 
