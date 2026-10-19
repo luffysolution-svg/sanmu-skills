@@ -112,7 +112,7 @@ python scripts/build_research_document.py --pdf <论文PDF> --raw <OCR目录> \
 - **段落边界**：保守保留 OCR 段落与跨页边界，避免误拼题目、公式及新段落。
 - **标题与习题精准消歧**：区分名词性小节编号（如 `1. 晶胞概念` 归入 H3）与指令性习题题干（如 `1. 计算这个数`、以 `。？！` 结句或位于习题区者保留为列表/正文），层级结构严谨；拆分章名与传入标题一致时去重；实质脚注和整页图保留，不按 OCR 标签或面积静默丢弃。
 - **干净交付**：默认只生成导航、正文 Markdown 和图片；构建状态位于输出旁的 `.<目录名>.build/`，可用 `--state-dir` 指定外部工作目录。
-- **可选检索**：仅当用户明确要求后续 Agent 检索、RAG 时添加 `--agent-index`，生成 `agent/` 分块与原页映射。
+- **可选检索**：仅当用户明确要求后续 Agent 检索、RAG 时添加 `--agent-index`，生成 `agent/` 分块与原页映射。需要主题入口和分层问答时，可交给 `sanmu-paper-reader` 的 `topic_tools.py` 复用；未安装该技能不影响转换。路由、摘要和学习笔记单独保存，正文与原页映射保持独立。
 - **回源修复**：`--repairs repairs.json` 接受 `[{"page":1,"bbox":[100,200,800,300],"field":"text","old":"原识别","new":"核对后的内容","reason":"原页核对依据"}]`；可附 `set_type:"body_text"` 强制正文或 `set_type:"page_footnote"` 保留脚注，`text` 则仍参与标题判定。补原图使用 `action:"add_image"`、裁切 `bbox` 和 `after:{"bbox":[...],"text":"原始锚点"}`。旧值或定位不匹配立即停止，审计留在外部构建状态。
 - **图块修复**：`action:"update_image"` 用原 `page+bbox` 和完整 `old` 图块快照核对后，原子修改 `new_bbox`、`image_caption` / `image_footnote`；`add_image` 也支持题注，配合 `skip` 处理确认后的合图、拆图。新增或改框必须从原 PDF 重裁，修复图块不再自动合并。格式及 chart 字段规则按需读取 `references/mineru-api.md` 的“回源修复图块”。
 - **过滤模型泄漏**：自动清除 `The Ground Truth...` 等模型推理遗留文本。

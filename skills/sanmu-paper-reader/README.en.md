@@ -130,6 +130,18 @@ python -m unittest discover -s tests -v
 
 `inventory` records Markdown paths, hashes, titles, and headings. After reading, populate the evidence ledger using the [evidence contract](references/evidence-contract.md). `check` validates structure, path boundaries, source hashes, and quoted text. It makes no network or model calls. Conflicting existing outputs are rejected; use new filenames for revisions. `si_probe.py` and `extract_si_figures.py` penetrate multi-page Supporting Information documents and extract high-resolution figures without heavy cloud OCR pipelines. `crop_subfigures.py` crops multi-panel scientific figures into focused subfigures. `benchmark_collector.py` deduplicates and records catalytic performance data across papers.
 
+## Optional topic routing and layered reading
+
+For repeated questions over existing textbook, slide, paper, or SI Markdown, build a topic entry point with source hashes and exact line ranges using the Python standard library:
+
+```bash
+python scripts/topic_tools.py build --root ./sources --files textbook.md paper.md --out ./work/topics
+python scripts/topic_tools.py query ./work/topics --root ./sources --query "Does first-order half-life depend on initial concentration?" --limit 5
+python scripts/topic_tools.py read ./work/topics --root ./sources --id "<returned chunk ID>"
+```
+
+Add `--agent-index ./sources/agent` to reuse verified doc2md chunks and page mappings. Without a page map, only source lines are reported. Use `--terms` for source-language keywords or synonyms. The tool generates navigation and candidate passages, not summaries or scientific conclusions; changed sources invalidate queries and require rebuilding and evidence review. The assistant reads topic entries, optional summaries, then source evidence, checking exact numbers, formulas, conditions, and disagreements against the source. See the [reading and real-question validation protocol](references/topic-reading.md) (Chinese).
+
 ## Document and library integration
 
 Existing [sanmu-doc2md](https://github.com/luffysolution-svg/sanmu-skills/blob/main/skills/sanmu-doc2md/README.en.md) output can be reused, but that skill is not required. Native PDF text is only a reading aid: formulas, tables, column order, and figure content may require source-page inspection. Record unavailable supporting information instead of inventing missing parameters.

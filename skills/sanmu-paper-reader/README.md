@@ -128,6 +128,18 @@ python -m unittest discover -s tests -v
 
 `inventory` 发现Markdown并记录相对路径、哈希、标题与章节。阅读后按 [证据契约](references/evidence-contract.md) 填写 `evidence.json`。`check` 检查字段、路径边界、哈希与正文引文；不联网，也不自动生成科学结论。输出文件内容不同时拒绝覆盖，修订时使用新文件名。`si_probe.py` 与 `extract_si_figures.py` 利用轻量本地解析快速透视并完整提取几十页补充材料的参数与附图，无需重量级云端 OCR。`crop_subfigures.py` 支持按坐标将复合多面板大图裁切为聚焦子图，实现阅读过程中的精准图文对齐。`benchmark_collector.py` 实现多文献催化数据的标准化去重录入与 Markdown 汇总导出。
 
+## 可选主题路由与分层读取
+
+已有教材、课件、论文或 SI 解析稿需要反复问答时，可用标准库工具建立主题入口，保留源文件哈希与原文行号：
+
+```bash
+python scripts/topic_tools.py build --root ./sources --files textbook.md paper.md --out ./work/topics
+python scripts/topic_tools.py query ./work/topics --root ./sources --query "一级反应半衰期与初始浓度有关吗" --limit 5
+python scripts/topic_tools.py read ./work/topics --root ./sources --id "<返回的块 ID>"
+```
+
+有 doc2md `agent/` 索引时增加 `--agent-index ./sources/agent` 复用分块与页码；没有页码映射时只给行号。中文同义表达可用 `--terms` 补充原文关键词。工具生成章节路由和候选片段，不自动生成摘要或科学结论；来源变化会拒绝查询，需重建并复核证据。助手按“主题入口、可选摘要、原文证据”升级阅读，数值、公式、条件和分歧回源核对。详见 [读取与实际问答验证规范](references/topic-reading.md)。
+
 ## 与解析工具衔接
 
 可直接读取 [sanmu-doc2md](https://github.com/luffysolution-svg/sanmu-skills/tree/main/skills/sanmu-doc2md) 产物，但不依赖该技能。已有可靠解析结果优先复用；原生文字导出只作为阅读文本，复杂公式、图表及双栏顺序需要回到PDF核对。未获取SI时明确标注，不猜测其中的实验或计算参数。
