@@ -62,17 +62,15 @@ Codex 的仓库目录为 `.agents/plugins/marketplace.json`，通过本地来源
 
 ## 腾讯 SkillHub
 
-三个技能已提交，当前状态为安全审核中。页面状态是唯一依据，审核通过前不视为已上架：
+三个技能已发布：
 
-| 技能 | slug | 页面 |
-| --- | --- | --- |
-| sanmu-doc2md | `sanmu-doc2md` | https://skillhub.cn/skills/sanmu-doc2md |
-| sanmu-paper-reader | `sanmu-paper-reader` | https://skillhub.cn/skills/sanmu-paper-reader |
-| sanmu-paper-search | `sanmu-paper-search` | https://skillhub.cn/skills/sanmu-paper-search |
+| 技能 | slug |
+| --- | --- |
+| sanmu-doc2md | `sanmu-doc2md` |
+| sanmu-paper-reader | `sanmu-paper-reader` |
+| sanmu-paper-search | `sanmu-paper-search` |
 
-条目已建立，slug 不可重复使用；后续版本在控制台「版本历史」提交，不改 slug。
-
-网页上传只接受构建产物 `skillhub/<技能名>-<版本>.zip`，不要选 `skills/<技能名>/` 源码目录。源码目录含 `node_modules/`、`__pycache__/` 与 `.pyc`，doc2md 会因此超过 200 个文件上限，其余技能会因二进制类型被跳过。平台限制为单包最多 200 个文件、解压后不超过 10 MB；当前三个包分别为 31、23、12 个文件，均在限制内。
+上传选构建产物 `skillhub/<技能名>-<版本>.zip`，不要选 `skills/<技能名>/` 源码目录：其中的 `node_modules/`、`__pycache__/` 会让 doc2md 超过平台 200 个文件上限，其余技能会因 `.pyc` 被跳过。平台限制为单包 200 个文件、10 MB；当前三个包为 31、23、12 个文件。后续版本在控制台「版本历史」更新，slug 不变。
 
 使用 API Token 发布时，按[官方教程](https://skillhub.cn/tutorials)完成实名与配置。Windows 发布教程使用 WSL；不要把 Token 写入源码、命令示例或提交记录。
 
@@ -91,7 +89,7 @@ skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-reader --changelog "首次发
 skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-search --changelog "首次发布"
 ```
 
-返回 `pending_review` 表示已提交，不等于已上架。已存在条目重新提交时，slug 沿用上表，仅更新版本与变更说明。
+返回 `pending_review` 表示已提交，不等同于已经公开上架。
 
 ## SkillsMP 与 skills.sh
 

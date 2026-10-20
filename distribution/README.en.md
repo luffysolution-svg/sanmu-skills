@@ -62,17 +62,15 @@ A self-hosted GitHub marketplace is separate from Anthropic or OpenAI's official
 
 ## Tencent SkillHub
 
-All three skills are submitted and currently in security review. The page status is authoritative; they are not listed publicly until review passes:
+All three skills are published:
 
-| Skill | slug | Page |
-| --- | --- | --- |
-| sanmu-doc2md | `sanmu-doc2md` | https://skillhub.cn/skills/sanmu-doc2md |
-| sanmu-paper-reader | `sanmu-paper-reader` | https://skillhub.cn/skills/sanmu-paper-reader |
-| sanmu-paper-search | `sanmu-paper-search` | https://skillhub.cn/skills/sanmu-paper-search |
+| Skill | slug |
+| --- | --- |
+| sanmu-doc2md | `sanmu-doc2md` |
+| sanmu-paper-reader | `sanmu-paper-reader` |
+| sanmu-paper-search | `sanmu-paper-search` |
 
-The entries exist and their slugs are no longer available to others. Submit later versions from the console's version history without changing the slug.
-
-The web uploader accepts only built artifacts, `skillhub/<skill-name>-<version>.zip`; do not select `skills/<skill-name>/`. Source directories contain `node_modules/`, `__pycache__/` and `.pyc`, which push doc2md past the 200-file limit and make the other skills skip binary types. The platform allows at most 200 files and 10 MB uncompressed per package; the current packages contain 31, 23 and 12 files.
+Upload the built artifact `skillhub/<skill-name>-<version>.zip`, not the `skills/<skill-name>/` source directory: its `node_modules/` and `__pycache__/` push doc2md past the 200-file limit and make the other skills skip `.pyc` files. The platform allows 200 files and 10 MB per package; the current packages contain 31, 23 and 12 files. Update later versions from the console's version history without changing the slug.
 
 To publish with an API token, complete identity verification and configure it using the [official guide](https://skillhub.cn/tutorials). The Windows publication guide uses WSL. Keep tokens out of source files, examples and commits.
 
@@ -91,7 +89,7 @@ skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-reader --changelog "Initial r
 skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-search --changelog "Initial release"
 ```
 
-`pending_review` means submitted, not publicly listed. When resubmitting an existing entry, keep the slug from the table above and update only the version and changelog.
+`pending_review` means submitted, not publicly listed.
 
 ## SkillsMP and skills.sh
 
