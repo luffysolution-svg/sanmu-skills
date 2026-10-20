@@ -26,7 +26,7 @@ Content-Type: application/json
 
 参数要点：
 
-- `model_version`：用 `vlm`，公式和版面识别质量明显更好。
+- `model_version`：本流程使用 `vlm`；输出仍须核对原页。
 - `enable_formula` / `enable_table`：必须开，否则不给公式 LaTeX 和表格结构。
 - `language`：中文文档用 `ch`。
 - `files[]` 里的 `is_ocr`、`page_ranges` 属于**每个文件**；`model_version`、`enable_formula`、`enable_table`、`language` 属于**顶层**。放错位置会静默忽略。
@@ -88,7 +88,9 @@ images/                       # 切出的插图
 | `chart` | `img_path`, `chart_caption`, `chart_footnote`, `bbox` | 图表（曲线图等），字段名与 image 不同 |
 | `table` | `table_body`(HTML), `table_caption`, `table_footnote` | 表格，body 是 HTML 需转换 |
 | `list` | `list_items` | 列表 |
-| `header`/`footer`/`page_number`/`page_footnote` | `text` | 页眉页脚页码，应丢弃 |
+| `header`/`footer`/`page_number` | `text` | 核对为运行页眉、页脚或页码后过滤；误分类的实质内容应保留 |
+| `page_footnote` | `text` | 保留学术注释、来源、版权说明及公式解释；只有核对为运行页脚或噪声后才过滤 |
+| `ref_text` | `text` / `ref_text` | 参考文献段落，原生转为正文，不按页脚删除 |
 
 **注意 `image` 和 `chart` 是两种类型，字段名不同**（`image_caption` vs `chart_caption`）。只处理 `image` 会漏掉所有曲线图。
 
@@ -173,4 +175,4 @@ curl --resolve cdn-mineru.openxlab.org.cn:443:<真实IP> -L -o out.zip "<full_zi
 
 ## 本地模型（无 Token 时）
 
-MinerU 也提供本地部署（`pip install mineru`），功能等价但需下载模型、需要 GPU 才快。有 Token 时优先用云端——不用管环境依赖，且版面模型更新更及时。
+MinerU 也提供本地部署（`pip install mineru`），需要单独配置模型和运行环境。版本、模型与输出格式可能不同，不能假定与云端功能或结果等价；本技能的 `submit` 使用云端 API，本地结果须先核对数据结构再接入。

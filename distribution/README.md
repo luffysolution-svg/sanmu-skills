@@ -13,16 +13,38 @@
 ```bash
 python distribution/build.py check
 python -m unittest discover -s distribution/tests -v
-python distribution/build.py build --out dist/1.2.0
+python distribution/build.py build --out dist/1.3.0
 ```
 
-新文件必须先加入 Git 暂存区再构建。构建只使用 Git 跟踪的当前文件，不包含未跟踪的凭证、私人材料、缓存或本地依赖。输出目录已存在时拒绝覆盖，复测请指定新目录。
+新运行文件必须先加入 Git 暂存区再构建。构建以 Git 索引中的跟踪路径读取当前文件；发布前须暂存迁移，未暂存的运行文件缺失会报错，防止静默漏包。技能包仅接收根部 `SKILL.md`、README、LICENSE、requirements，以及 `scripts/`、`references/`、`assets/`。测试、样例、开发文档与 ROADMAP 不打包；嵌套测试、缓存、`_selftest.py`、凭证及本地依赖进入运行输入时检查失败。输出目录已存在时拒绝覆盖，复测请指定新目录。
+
+静态检查校验标准 Agent Skills frontmatter、三个公开版本的一致性，以及 `SKILL.md` 和运行 `references/` 内的本地 Markdown 链接与反引号 `references/*.md` 路径。目标必须存在并进入同一个独立技能包；在线链接、围栏样例和 Obsidian 双链不作为本地文件检查。
+
+`manifest.json` 的 `packageBudget` 是本项目自定预算：合集运行文件不超过 200 个，解压后总大小不超过 5 MiB，超出则失败；这不是任何平台的硬限制。`check` 输出合集及各技能的文件数/原始字节数，`build` 输出每个 ZIP 的文件数、解压后与压缩后字节数。摘要只打印到终端，不生成质检报告。
+
+## 仓库开发布局
+
+运行源码在 `skills/<技能名>/`；开发资产集中在仓库根目录：
+
+- `tests/sanmu-doc2md/`、`tests/sanmu-paper-reader/`、`tests/sanmu-paper-search/`：离线测试；doc2md 入口为 `tests/sanmu-doc2md/_selftest.py`。
+- `examples/sanmu-doc2md/`：原样例、原始 PDF、截图、`RESULTS.md` 和历史 `RESEARCH-VALIDATION.md`。
+- `docs/development/sanmu-doc2md/ROADMAP.md`：后续开发计划。
+- `docs/showcases/sanmu-paper-reader/images/`：reader 展示截图。
+- `distribution/tests/`：分发构建回归测试。
+
+```bash
+python tests/sanmu-doc2md/_selftest.py
+python -m unittest discover -s tests/sanmu-paper-reader -v
+python -m unittest discover -s tests/sanmu-paper-search -v
+```
+
+以上路径均相对于仓库根目录。样例与展示图片只供仓库浏览和开发验证，安装后的运行链接应指向包内资源。
 
 输出包括：
 
-- `sanmu-skills-1.2.0.zip`：通用插件包，包含三个技能、根 `plugin.json`、Claude 插件声明及许可证；也可作为 OpenAI 公共插件目录的待提交包，仍需平台检查与审核。
+- `sanmu-skills-1.3.0.zip`：通用插件包，包含三个技能、根 `plugin.json`、Claude 插件声明及许可证；也可作为 OpenAI 公共插件目录的待提交包，仍需平台检查与审核。
 - `skillhub/<技能名>/`：可直接交给腾讯 CLI 的目录。
-- `skillhub/<技能名>-1.2.0.zip`：与对应目录内容一致的归档，根部包含 `SKILL.md`。网页是否接收此格式以实际上传入口为准。
+- `skillhub/<技能名>-1.3.0.zip`：与对应目录内容一致的归档，根部包含 `SKILL.md`。网页是否接收此格式以实际上传入口为准。
 - `SHA256SUMS`：四个 ZIP 的 SHA-256 校验值。
 
 腾讯包在原 `SKILL.md` 头部追加 `slug`、`displayName`、`version`、`summary`、`license`；通用源码不添加腾讯顶层专用字段。正文及资源保持一致。
@@ -44,17 +66,17 @@ Codex 的仓库目录为 `.agents/plugins/marketplace.json`，通过本地来源
 
 ```bash
 skillhub auth whoami
-skillhub publish ./dist/1.2.0/skillhub/sanmu-doc2md --dry-run
-skillhub publish ./dist/1.2.0/skillhub/sanmu-paper-reader --dry-run
-skillhub publish ./dist/1.2.0/skillhub/sanmu-paper-search --dry-run
+skillhub publish ./dist/1.3.0/skillhub/sanmu-doc2md --dry-run
+skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-reader --dry-run
+skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-search --dry-run
 ```
 
 预检通过后，分别提交三个目录：
 
 ```bash
-skillhub publish ./dist/1.2.0/skillhub/sanmu-doc2md --changelog "首次发布"
-skillhub publish ./dist/1.2.0/skillhub/sanmu-paper-reader --changelog "首次发布"
-skillhub publish ./dist/1.2.0/skillhub/sanmu-paper-search --changelog "首次发布"
+skillhub publish ./dist/1.3.0/skillhub/sanmu-doc2md --changelog "首次发布"
+skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-reader --changelog "首次发布"
+skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-search --changelog "首次发布"
 ```
 
 返回 `pending_review` 表示已提交，审核通过后才能声称已上架。如果某个 `slug` 已被占用，核对本人账号和平台条目后再调整打包元数据；不改通用技能名。

@@ -2,7 +2,7 @@
 
 ## 主题检索
 
-OpenAlex 适合跨学科主题与机构/作者作品，S2 适合论文相似性及引用图，Crossref 适合 DOI 和出版社题录核对。领域索引只在需要时追加：材料/化学优先上述来源；生命医学可增加 PubMed/Europe PMC；计算/物理可增加 arXiv。核心 CLI 不把未实现的来源列成已支持。
+核心 CLI 支持 OpenAlex、Semantic Scholar 和 Crossref：OpenAlex 用于跨学科主题与机构/作者作品，S2 用于论文相似性及引用图，Crossref 用于 DOI 和出版社题录核对。需要补充领域覆盖时，通过宿主工具查询 PubMed/Europe PMC 或 arXiv，并单独记录来源。
 
 材料问题可以按“对象 × 过程 × 目标/证据”展开。例如“受阻路易斯酸碱对光催化产氢”先查 `frustrated Lewis pairs photocatalytic hydrogen`，再查 `Lewis acid base pairs photothermal water splitting`；不能把 hydrogen evolution 与无牺牲剂整体分解水等同。根据召回论文中的真实术语修订查询，并记录修订原因。
 

@@ -5,7 +5,7 @@
 **Turn papers, textbooks, and slides into a maintainable Markdown knowledge base.**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
-[![KaTeX validation](https://img.shields.io/badge/KaTeX-100%25%20Strict-brightgreen.svg)](https://katex.org/)
+[![KaTeX validation](https://img.shields.io/badge/KaTeX-validation-brightgreen.svg)](https://katex.org/)
 [![Tests](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml)
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skill-Claude%20%7C%20ZCode%20%7C%20Codex-orange.svg)](https://agentskills.io)
@@ -39,9 +39,9 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m pip install -r requirements.txt
 4. Install the Node.js dependencies for formula validation:
    npm --prefix scripts install --ignore-scripts --no-audit --no-fund
-5. Use the configured Python environment to run checks and tests:
+5. Use the configured Python environment for environment and minimal startup checks (no OCR submission):
    python scripts/doctor.py
-   python -m unittest discover -s tests -v
+   python scripts/build_markdown.py --help
 6. Check whether MINERU_API_TOKEN is configured without displaying its value.
    If missing, direct me to https://mineru.net and explain how to set it locally.
    If configured, run python scripts/doctor.py --require-ocr to check configuration status.
@@ -64,10 +64,10 @@ Change to the installed `sanmu-doc2md` directory containing `SKILL.md` (or `skil
 python -m pip install -r requirements.txt
 npm --prefix scripts install --ignore-scripts --no-audit --no-fund
 python scripts/doctor.py
-python -m unittest discover -s tests -v
+python scripts/build_markdown.py --help
 ```
 
-You can create a Python virtual environment before installing dependencies. `doctor.py` checks the runtime and credential configuration without installing dependencies or printing secret values. Use `--json` for structured output.
+You can create a Python virtual environment before installing dependencies. `doctor.py` checks the runtime and credential configuration and compiles a basic formula, without installing dependencies or printing secret values. Use `--json` for structured output. `build_markdown.py --help` checks that the assembly entry point starts; it does not test document conversion. For development tests, see the repository’s [contribution guide](https://github.com/luffysolution-svg/sanmu-skills/blob/main/README.en.md#contributing).
 
 Cloud OCR requires `MINERU_API_TOKEN`, available from [mineru.net](https://mineru.net). Run `python scripts/doctor.py --require-ocr` to treat a missing token as a failure. Local assembly and validation remain available without a token when their dependencies are installed.
 
@@ -84,7 +84,7 @@ Academic document conversion often encounters:
 - **OCR substitutions**: similar-looking characters, such as `ν` and `v` or `N₀` and `No`, are confused.
 - **Model artifacts**: phrases such as “The Ground Truth image displays...” leak into the document.
 
-The skill provides a workflow with full formula compilation and target-client verification. Its rules come from practical work on textbooks and academic literature.
+The skill provides full formula syntax checks and target-client verification. Obsidian uses MathJax; the local KaTeX check is a preflight check. Resolve engine differences against the source and actual client. The rules come from practical work on textbooks and academic literature.
 
 ## Three document workflows
 
@@ -116,11 +116,9 @@ scripts/
   validate_output.py           Structure, resource, and artifact checks
   validate_math.cjs            Full KaTeX compilation
   preview_server.py            Markdown and KaTeX preview
-examples/
-  RESULTS.md                   Textbook and slide case studies
-  RESEARCH-VALIDATION.md       Academic document case studies
-  book-demo/                   Original two-page reproducible example
 ```
+
+Case studies and the [reproducible example](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/book-demo/demo.md) live in the repository and are not part of the installed runtime skill.
 
 ## Workflow
 
@@ -144,7 +142,7 @@ The repository documents the following practical cases:
 | English research literature | 7 papers, 87 pages | 876 | 114 | Two-column flow, long Windows paths, and YAML metadata |
 | **Total** | **Nearly 2,000 pages** | **16,314** | **1,043** | **All formulas compiled in these reported cases** |
 
-See [textbook and slide results](examples/RESULTS.md) and [research validation](examples/RESEARCH-VALIDATION.md). These detailed reports are currently in Chinese.
+See [textbook and slide results](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/RESULTS.md) and [research validation](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/RESEARCH-VALIDATION.md). These detailed reports are currently in Chinese.
 
 ## Command reference
 
@@ -193,7 +191,8 @@ python scripts/preview_server.py ./knowledge-base --port 8766 --katex-dir script
 - **Relative paths**: image references use `![](images/...)`, so the knowledge base can be moved between devices.
 - **Scientific fidelity**: LaTeX formulas remain searchable; complex tables and chemical structures can retain source crops for verification.
 - **Bracket handling**: explanatory brackets use full-width `［...］` where required to avoid Markdown parsing conflicts.
-- **Navigation**: `00-目录.md` uses URI-encoded links compatible with Obsidian.
+- **Navigation**: `00-目录.md` uses URI-encoded links; check navigation in the target Obsidian vault.
+- **Sources and manual edits**: retain source files, page mappings, and repair evidence. Preserve manual edits rather than bypassing differences with `--overwrite`. Keep substantive `page_footnote` content, including academic notes, sources, and formula explanations.
 
 ## License
 

@@ -1,6 +1,6 @@
 ---
 name: sanmu-paper-reader
-description: 解读已有论文、补充材料和解析后的 Markdown，完成单篇精读、跨文献比较、跨学科方法迁移、跨主题综合及有出处的知识库问答。支持子图精准切片（Sub-figure Crop）、50+页SI附图高清抽离与定向探针穿透、图文对照证据链预览（折叠抽屉与双链悬停）、实验复现SOP配方卡导出、Mermaid机制流程图防错渲染、催化性能Benchmark横向入库与Zotero学术标签自动增强。用户要求读懂论文、解释图表与机理、核对创新点和证据、整理复现参数、比较研究结论、把文献连接到课题、从已有教材或课件解析稿进行主题问答，或整理 Obsidian 阅读笔记时使用。优先针对材料与化学，按需检查合成表征、催化电化学、DFT计算、光谱机理和性能可比性。区分作者报告、解读与研究假设，保留原文定位和缺失信息；不依赖其他科研 Skill。
+description: 解读论文、补充材料与解析稿，用于单篇精读、跨文献比较、方法迁移和知识库问答。保留证据来源、单位工况及事实与假设边界，按需提供图文对照、复现准备草案和性能比较。
 ---
 
 # 文献解读（sanmu-paper-reader）
@@ -64,13 +64,13 @@ Zotero 操作使用宿主支持的工具或已验证的只读导出接口，不�
 
 交付优先回答用户的问题，再提供足够的证据与限制。不要无条件生成一组空模板。
 
-- 单篇：核心结论、带图文对照证据链预览（折叠抽屉 Callout 与双链悬停）的关键图表分析、Mermaid 机制与反应流转图、实验复现 SOP 与配方卡、性能 Benchmark 横向归档、方法与复现缺口、局限及研究启发。
+- 单篇：核心结论、关键证据、方法与复现缺口、局限及研究启发。根据任务需要启用图文对照、Mermaid 机制图、复现准备 SOP 草案或 Benchmark 比较，不要求每次全部生成。SOP 需注明缺项及原文出处，不作为可直接执行的实验规程。
 - 跨文献：共同问题、带条件的横向比较表、一致与分歧、可以与不可以作出的结论。
 - 跨学科：原学科概念、目标学科对应、失配点、验证计划；类比只作为候选假设。
 - 跨主题：问题驱动的主题结构、每条主题联系的依据、证据缺口与优先阅读顺序。
 - 问答：直接答案、出处、反例/限制和检索覆盖范围。未找到不等于不存在，不把个人库问答称为完整系统综述。
 
-完整文件产物默认放在新独立目录；原文解析稿、用户批注保持独立。阅读笔记推荐“作者 - 年份 - 标题 - 解读.md”，综合笔记使用具体研究问题命名，建立指向原文和SI的可用链接。有条件时可将核心指标同步追加至知识库基准库 `benchmarks.csv`，并为 Zotero 对应条目注入结构化学术标签。更新已有解读先读取并比较，只更新自己生成且未被人工修改的部分；冲突时写新版本，不清空目录或重写用户见解。
+完整文件产物默认放在新独立目录；原文解析稿、用户批注保持独立。阅读笔记推荐“作者 - 年份 - 标题 - 解读.md”，综合笔记使用具体研究问题命名，建立指向原文和SI的可用链接。任务需要且获授权时，可将带单位、工况与来源的指标写入 `benchmarks.csv`，或更新 Zotero 学术标签。更新已有解读先读取并比较，只更新自己生成且未被人工修改的部分；冲突时写新版本，不清空目录或重写用户见解。
 
 证据较多、需要长期更新或跨文献对比时，按 [证据契约](references/evidence-contract.md) 保存 `evidence.json`；简单回答可使用同等信息的行内出处。来源清单与机械质检文件放工作目录，不混入正式阅读正文。
 
@@ -83,19 +83,19 @@ Zotero 操作使用宿主支持的工具或已验证的只读导出接口，不�
 python scripts/evidence_tools.py inventory ./sources --out ./work/sources.json
 python scripts/evidence_tools.py check ./work/evidence.json --root ./sources --out ./work/check.json
 
-# 2. 50+ 页补充材料 (SI) 极速定向透视与附图全量高清抽离
-python scripts/si_probe.py ./sources/paper-SI.pdf [--search "TEOA,xenon,Hubbard"]
+# 2. 有文字层的 SI 定向检索与附图/整页预览
+python scripts/si_probe.py ./sources/paper-SI.pdf --search "TEOA,xenon,Hubbard"
 python scripts/extract_si_figures.py ./sources/paper-SI.pdf --out-dir ./images/SI
 
 # 3. 大图子面板精准切片 (Sub-figure Crop)
 python scripts/crop_subfigures.py ./images/master_fig.png --out-dir ./images/subfigures --spec-json ./crops.json
 
 # 4. 性能 Benchmark 横向入库
-python scripts/benchmark_collector.py add ./benchmarks.csv --json-entry '{"doi":"...","activity_rate":"10.7"}'
+python scripts/benchmark_collector.py add ./benchmarks.csv --json-entry '{"doi":"...","condition_id":"420nm","activity_rate":"10.7","activity_unit":"mmol g-1 h-1","source":"SI p.4 Table S1"}'
 
-# 5. 离线工具自动化测试
-python -m unittest discover -s tests -v
 ```
+
+开发测试从源码仓库根目录运行 `python -m unittest discover -s tests/sanmu-paper-reader -v`；安装技能不要求运行开发测试。图像清单的 `extraction_mode` 区分嵌入位图与整页渲染，同页图号可共用页面，不等于独立图已全部分离；扫描题注需先 OCR，提取结果需回页核对。Benchmark 用 `record_id` 或 DOI/引用键 + `condition_id` 定位记录；只更新显式提供字段，空字符串或 JSON null 显式清空。无标识旧记录仅在论文唯一匹配时可更新；含糊匹配先按报错候选核对，不自动合并历史数据。
 
 清单记录相对路径和文件哈希；证据表还需要助手在阅读后填写，工具不自动生成科学结论。文件改变后回看证据并重新核对，不只替换哈希。
 

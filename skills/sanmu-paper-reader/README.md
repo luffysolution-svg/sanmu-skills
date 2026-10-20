@@ -13,7 +13,7 @@
 
 </div>
 
-面向已有论文、SI、Zotero附件与解析后的Markdown，支持单篇精读、跨文献对比、跨学科迁移、跨主题综合和知识库问答。核心是把论断链接到已读的证据，并保留条件、局限和研究疑问。内置图文对照证据链预览（折叠 Callout 与双链悬停）、实验复现 SOP 配方卡导出、Mermaid 机理流程图、50+ 页 SI 轻量定向探针穿透、催化性能 Benchmark 横向入库及 Zotero 学术标签增强。
+面向已有论文、SI、Zotero附件与解析后的Markdown，支持单篇精读、跨文献对比、跨学科迁移、跨主题综合和知识库问答。核心是把论断链接到已读的证据，并保留条件、局限和研究疑问。按任务需要启用图文对照（折叠 Callout 与双链悬停）、复现准备 SOP 草案、Mermaid 机理图、SI 定向检索、Benchmark 比较与经授权的 Zotero 标签更新；保留证据来源、单位、工况及作者报告与研究假设的区别。
 
 ## 完整效果展示
 
@@ -22,33 +22,33 @@
 <details open>
 <summary><b>1. 笔记结构与多层大纲导航视图（点击展开/折叠）</b></summary>
 
-![Obsidian 笔记结构与导航](docs/images/obsidian_overview.png)
+![Obsidian 笔记结构与导航](https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/docs/showcases/sanmu-paper-reader/images/obsidian_overview.png)
 </details>
 
 <details>
-<summary><b>2. 实验室级复现 SOP 与配方卡（精确到毫克/毫升与退火曲线）</b></summary>
+<summary><b>2. 复现准备 SOP 草案与配方卡（按原文记录参数与缺项）</b></summary>
 
-![Obsidian SOP 配方卡](docs/images/obsidian_sop_card.png)
+![Obsidian SOP 配方卡](https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/docs/showcases/sanmu-paper-reader/images/obsidian_sop_card.png)
 </details>
 
 <details>
 <summary><b>3. 原生 Mermaid 反应机理与电荷动力学流程图</b></summary>
 
-![Obsidian Mermaid 流程图](docs/images/obsidian_mermaid_mechanism.png)
+![Obsidian Mermaid 流程图](https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/docs/showcases/sanmu-paper-reader/images/obsidian_mermaid_mechanism.png)
 </details>
 
 <details>
 <summary><b>4. 双链气泡悬停与折叠抽屉子图精准对照（Sub-figure Crop）</b></summary>
 
-![Obsidian 图文证据对照与切片子图](docs/images/obsidian_visual_evidence.png)
+![Obsidian 图文证据对照与切片子图](https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/docs/showcases/sanmu-paper-reader/images/obsidian_visual_evidence.png)
 
-![Obsidian 折叠图表与 Figure 3 对照](docs/images/obsidian_figure_comparison.png)
+![Obsidian 折叠图表与 Figure 3 对照](https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/docs/showcases/sanmu-paper-reader/images/obsidian_figure_comparison.png)
 </details>
 
 <details>
 <summary><b>5. 50+ 页 SI 定向探针与催化性能 Benchmark 横向对照</b></summary>
 
-![Obsidian SI 定向探针与 Benchmark 对照](docs/images/obsidian_si_probe.png)
+![Obsidian SI 定向探针与 Benchmark 对照](https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/docs/showcases/sanmu-paper-reader/images/obsidian_si_probe.png)
 </details>
 
 ## 安装
@@ -66,11 +66,9 @@ https://github.com/luffysolution-svg/sanmu-skills
    选择当前助手的安装目标；已有安装先检查本地修改。
 2. 阅读安装目录里的 SKILL.md 和 README.md。
 3. 核心解读由当前助手完成，不需要单独模型API或deep-research。证据、主题与基准工具使用Python 3.10+标准库；需要SI探针、PDF附图提取或子图裁切时，在独立虚拟环境执行 python -m pip install -r requirements.txt，安装PyMuPDF与Pillow。
-4. 从包含SKILL.md的技能目录运行：
-   python -m unittest discover -s tests -v
-   python scripts/evidence_tools.py --help
+4. 从包含SKILL.md的技能目录运行 python scripts/evidence_tools.py --help，确认脚本入口。安装不要求运行源码仓库的开发测试。
 5. 我提供Markdown时直接阅读；提供PDF时检查当前宿主的PDF读取能力；提供Zotero条目时检查Zotero连接。需要扫描件解析时再配置可用OCR工具。
-6. 不显示凭证值。告诉我技能位置、测试结果，以及哪些可选读取能力可用。
+6. 不显示凭证值。告诉我技能位置、入口检查结果，以及哪些可选读取能力可用。
 ```
 
 ### 命令行安装
@@ -118,7 +116,7 @@ python -m pip install -r requirements.txt
 python scripts/evidence_tools.py inventory ./sources --out ./work/sources.json
 python scripts/evidence_tools.py check ./work/evidence.json --root ./sources --out ./work/check.json
 
-# 2. 50+ 页 SI 轻量定向探针与附图 (Figure S1-S36) 高清原图全量抽离
+# 2. 有文字层的 SI 定向检索与附图/整页预览
 python scripts/si_probe.py ./sources/paper-SI.pdf --search "TEOA,xenon,Hubbard"
 python scripts/extract_si_figures.py ./sources/paper-SI.pdf --out-dir ./images/SI
 
@@ -126,13 +124,11 @@ python scripts/extract_si_figures.py ./sources/paper-SI.pdf --out-dir ./images/S
 python scripts/crop_subfigures.py ./images/master_fig.png --out-dir ./images/subfigures --spec-json ./crops.json
 
 # 4. 性能 Benchmark 结构化横向入库
-python scripts/benchmark_collector.py add ./benchmarks.csv --json-entry '{"doi":"10.1002/adma.202313513","activity_rate":"10.71"}'
+python scripts/benchmark_collector.py add ./benchmarks.csv --json-entry '{"doi":"10.1002/adma.202313513","condition_id":"420nm","activity_rate":"10.71","activity_unit":"mmol g-1 h-1","source":"SI p.4 Table S1"}'
 
-# 5. 全套离线自动化测试
-python -m unittest discover -s tests -v
 ```
 
-`inventory` 发现Markdown并记录相对路径、哈希、标题与章节。阅读后按 [证据契约](references/evidence-contract.md) 填写 `evidence.json`。`check` 检查字段、路径边界、哈希与正文引文；不联网，也不自动生成科学结论。输出文件内容不同时拒绝覆盖，修订时使用新文件名。`si_probe.py` 与 `extract_si_figures.py` 利用轻量本地解析快速透视并完整提取几十页补充材料的参数与附图，无需重量级云端 OCR。`crop_subfigures.py` 支持按坐标将复合多面板大图裁切为聚焦子图，实现阅读过程中的精准图文对齐。`benchmark_collector.py` 实现多文献催化数据的标准化去重录入与 Markdown 汇总导出。
+`inventory` 发现Markdown并记录相对路径、哈希、标题与章节。阅读后按 [证据契约](references/evidence-contract.md) 填写 `evidence.json`。`check` 检查字段、路径边界、哈希与正文引文；不联网，也不自动生成科学结论。输出文件内容不同时拒绝覆盖，修订时使用新文件名。`si_probe.py` 基于文字层定位关键词与题注，扫描件需先 OCR。`extract_si_figures.py` 识别 Figure S / Fig. S 等行首题注，清单中的 `extraction_mode` 标注 `embedded_image` 或 `page_render`。多图、多位图或含矢量内容的页面优先整页渲染；同页图号共享 `Page_XXX.png`，不是已分离的独立图。题注检测可能遗漏，需回看原页确认。`crop_subfigures.py` 支持按坐标将复合多面板大图裁切为聚焦子图，实现阅读过程中的精准图文对齐。`benchmark_collector.py` 保存带单位、工况及来源的性能记录，并导出 Markdown。使用唯一 `record_id`，或 DOI/引用键 + `condition_id` 区分同一论文的多种工况。更新只覆盖 JSON 中显式提供的字段；`""` 或 `null` 用于明确清空。唯一且无记录标识的历史论文行仍可仅凭 DOI/引用键更新；多个候选或已带标识的行须补充标识，报错不会写盘。保留旧 CSV 与自定义列，不自动合并历史记录。
 
 ## 可选主题路由与分层读取
 
@@ -151,6 +147,8 @@ python scripts/topic_tools.py read ./work/topics --root ./sources --id "<返回�
 可直接读取 [sanmu-doc2md](https://github.com/luffysolution-svg/sanmu-skills/tree/main/skills/sanmu-doc2md) 产物，但不依赖该技能。已有可靠解析结果优先复用；原生文字导出只作为阅读文本，复杂公式、图表及双栏顺序需要回到PDF核对。未获取SI时明确标注，不猜测其中的实验或计算参数。
 
 Zotero只作为可选来源，不直接操作数据库，不遍历存储目录。读取与本地实测不修改文献库；写笔记或批注依用户授权执行并回读。
+
+开发者可从源码仓库根目录运行 `python -m unittest discover -s tests/sanmu-paper-reader -v`（图像回归需 PyMuPDF 与 Pillow）。测试位于根目录，不随技能安装要求执行。SOP 是基于已读原文的复现准备草案：未知用量、升温程序、校准等需标缺项与出处，经实验人员审阅后再制定执行规程。
 
 ## 验证与限制
 

@@ -33,10 +33,10 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m pip install -r requirements.txt
    npm --prefix scripts install --ignore-scripts --no-audit --no-fund
    python scripts/doctor.py
-   python -m unittest discover -s tests -v
+   python scripts/build_markdown.py --help
 4. 检查 MINERU_API_TOKEN 配置状态，不显示凭证值；未配置时指导我从 https://mineru.net 获取并在本地设置。
-5. 对 sanmu-paper-reader，证据、主题与基准工具使用 Python 3.10+ 标准库；需要 SI 探针、PDF 附图提取或子图裁切时，在独立虚拟环境执行 python -m pip install -r requirements.txt。再从技能目录执行 python -m unittest discover -s tests -v；PDF/OCR/Zotero按实际输入检查可用性。
-6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python -m unittest discover -s tests -v；核心无第三方依赖，学术 API 凭证仅检查是否配置，Zotero 按需连接。
+5. 对 sanmu-paper-reader，证据、主题与基准工具使用 Python 3.10+ 标准库；需要 SI 探针、PDF 附图提取或子图裁切时，在独立虚拟环境执行 python -m pip install -r requirements.txt。从技能目录运行 python scripts/evidence_tools.py --help 和 python scripts/benchmark_collector.py --help；PDF/OCR/Zotero 按实际输入检查。
+6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python scripts/paper_search.py --help；核心无第三方依赖，学术 API 凭证仅检查是否配置，Zotero 按需连接。
 7. 汇报安装位置、验证结果和仍需配置的项目。
 ```
 
@@ -86,7 +86,7 @@ codex plugin add sanmu-skills@sanmu-skills
 
 ### 腾讯 SkillHub、SkillsMP 与 skills.sh
 
-- **腾讯 SkillHub**：在 [SkillHub](https://skillhub.cn/) 搜索 `sanmu-doc2md`、`sanmu-paper-reader` 或 `sanmu-paper-search`；上架以平台审核通过为准。三个独立适配包随 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases) 提供。
+- **腾讯 SkillHub**：三个独立适配包随 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases) 提供，可从 Release 下载使用。SkillHub 市场条目将在完成认证、提交与审核后开放。
 - **SkillsMP**：从公开 GitHub 自动索引，实际展示以其同步结果为准；安装使用本页命令。
 - **skills.sh**：[合集页面](https://skills.sh/luffysolution-svg/sanmu-skills) 展示三个技能，使用上方 `npx skills add` 安装。
 
@@ -118,8 +118,8 @@ codex plugin add sanmu-skills@sanmu-skills
 - **按场景分层**：支持单篇精读、跨文献对比、跨学科迁移、跨主题综合与知识库问答五大场景。
 - **图文对照与子图切片**：提供 Obsidian 悬停气泡预览、折叠抽屉 Callout 与单面板精准切片，阅读文字即刻核验谱图。
 - **实验复现 SOP 与配方卡**：提取毫克级投料、溶剂体积、升温退火曲线、反应液配比与已知复现缺口。
-- **原生 Mermaid 机制流与 SI 探针**：零报错渲染能带电荷流与 FLPs 水分子极化；毫秒级穿透 50+ 页 SI 并全量提取高清附图。
-- **基准入库与学术标签**：自动提取核心催化指标追加录入 `benchmarks.csv`，并同步反哺 Zotero 学术标签。
+- **机制图与 SI 定位**：按需绘制 Mermaid 机制图，对有文字层的 SI 检索关键词、定位题注并导出候选图像，结合原页核对完整性。
+- **性能基准与学术标签**：核对指标、单位和实验工况后写入基准表，保留同一论文的不同条件记录；按需更新 Zotero 标签。
 
 [查看使用指南与完整效果展示 →](skills/sanmu-paper-reader/README.md)
 
@@ -153,7 +153,7 @@ npx skills update
 git clone https://github.com/luffysolution-svg/sanmu-skills.git
 ```
 
-将 `skills/` 下需要的技能目录完整复制或链接到 AI 助手的技能目录，例如 `~/.agents/skills/sanmu-doc2md`。保留其中的脚本、参考文档与示例。
+将 `skills/` 下需要的技能目录完整复制或链接到 AI 助手的技能目录，例如 `~/.agents/skills/sanmu-doc2md`。目录内包含运行脚本、参考文档和安装说明；演示案例位于仓库的 `examples/`，开发测试位于 `tests/`。
 
 ## 参与贡献
 
@@ -166,20 +166,20 @@ git clone https://github.com/luffysolution-svg/sanmu-skills.git
 ```bash
 python -m pip install -r skills/sanmu-doc2md/requirements.txt
 npm --prefix skills/sanmu-doc2md/scripts install --ignore-scripts --no-audit --no-fund
-python -m unittest discover -s skills/sanmu-doc2md/tests -v
+python -m unittest discover -s tests/sanmu-doc2md -v
 python skills/sanmu-doc2md/scripts/doctor.py
 ```
 
 验证 `sanmu-paper-reader`（Python 3.10+；SI/PDF/图像工具的可选依赖见其安装说明）：
 
 ```bash
-python -m unittest discover -s skills/sanmu-paper-reader/tests -v
+python -m unittest discover -s tests/sanmu-paper-reader -v
 ```
 
 验证 `sanmu-paper-search`（Python 3.10+，核心无第三方依赖）：
 
 ```bash
-python -m unittest discover -s skills/sanmu-paper-search/tests -v
+python -m unittest discover -s tests/sanmu-paper-search -v
 python skills/sanmu-paper-search/scripts/paper_search.py doctor
 ```
 

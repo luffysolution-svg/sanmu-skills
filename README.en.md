@@ -33,10 +33,10 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m pip install -r requirements.txt
    npm --prefix scripts install --ignore-scripts --no-audit --no-fund
    python scripts/doctor.py
-   python -m unittest discover -s tests -v
+   python scripts/build_markdown.py --help
 4. Check MINERU_API_TOKEN configuration without displaying its value. If missing, direct me to https://mineru.net and explain how to set it locally.
-5. For sanmu-paper-reader, evidence, topic and benchmark tools use the Python 3.10+ standard library. For SI probing, PDF figure extraction or subfigure cropping, run python -m pip install -r requirements.txt in a dedicated virtual environment. Run python -m unittest discover -s tests -v from its directory; check PDF/OCR/Zotero integrations only as needed.
-6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python -m unittest discover -s tests -v from its directory. The core has no third-party dependencies; check only whether API credentials are configured and connect Zotero as needed.
+5. For sanmu-paper-reader, evidence, topic and benchmark tools use the Python 3.10+ standard library. For SI probing, PDF figure extraction or subfigure cropping, run python -m pip install -r requirements.txt in a dedicated virtual environment. From the skill directory run python scripts/evidence_tools.py --help and python scripts/benchmark_collector.py --help; check PDF/OCR/Zotero integrations as needed.
+6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python scripts/paper_search.py --help from its directory. The core has no third-party dependencies; check only whether API credentials are configured and connect Zotero as needed.
 7. Report installation paths, validation results, and any remaining configuration steps.
 ```
 
@@ -86,7 +86,7 @@ Use a recent Codex CLI that supports `plugin marketplace`; start a new session a
 
 ### Tencent SkillHub, SkillsMP and skills.sh
 
-- **Tencent SkillHub**: search [SkillHub](https://skillhub.cn/) for `sanmu-doc2md`, `sanmu-paper-reader` or `sanmu-paper-search`. Availability depends on platform review. Three standalone packages are provided with [GitHub Releases](https://github.com/luffysolution-svg/sanmu-skills/releases).
+- **Tencent SkillHub**: download the three standalone packages from [GitHub Releases](https://github.com/luffysolution-svg/sanmu-skills/releases). Marketplace listings will become available after account verification, submission and review.
 - **SkillsMP**: indexes public GitHub skills; listing depends on its next successful sync. Use the installation commands on this page.
 - **skills.sh**: the [collection page](https://skills.sh/luffysolution-svg/sanmu-skills) lists the three skills. Install with `npx skills add` above.
 
@@ -116,9 +116,9 @@ A workflow for academic documents with dense formulas, complex figures, and chal
 Interprets papers, supporting information, Zotero attachments, and Markdown notes with condition-aware claim extraction and traceable evidence.
 
 - **Scenario-based workflows**: single-paper reading, cross-paper comparison, interdisciplinary transfer, cross-topic synthesis, and library questions.
-- **Evidence-grounded claims**: separate observed facts from author claims and hypotheses; retain test conditions, uncertainty definitions, and unretrieved items.
-- **Materials and chemistry checks**: specialized domain rules for synthesis and characterization, catalysis and electrochemistry, DFT computation, spectroscopy mechanisms, and performance benchmarks.
-- **Offline evidence verification**: standard-library Python tools to verify source hashes and quoted text without exposing private documents to external networks.
+- **Figures and evidence**: link claims to source figures, crop subfigures when useful, and retain experimental conditions and source locations.
+- **Reproduction preparation**: organize synthesis quantities, processing conditions and missing parameters into recipe cards; draw mechanism diagrams when the task calls for them.
+- **SI and benchmarks**: locate text and figure captions in SI, verify exported images against source pages, and store checked performance metrics as separate condition records.
 
 [Explore the full guide and examples →](skills/sanmu-paper-reader/README.en.md)
 
@@ -152,7 +152,7 @@ npx skills update
 git clone https://github.com/luffysolution-svg/sanmu-skills.git
 ```
 
-Copy or link the complete skill directory from `skills/` into your assistant's skill directory, such as `~/.agents/skills/sanmu-doc2md`. Keep the scripts, references, and examples together.
+Copy or link the complete skill directory from `skills/` into your assistant's skill directory, such as `~/.agents/skills/sanmu-doc2md`. It contains runtime scripts, references and installation instructions. Repository examples live under `examples/`, and development tests under `tests/`.
 
 ## Contributing
 
@@ -165,20 +165,20 @@ Validate `sanmu-doc2md`:
 ```bash
 python -m pip install -r skills/sanmu-doc2md/requirements.txt
 npm --prefix skills/sanmu-doc2md/scripts install --ignore-scripts --no-audit --no-fund
-python -m unittest discover -s skills/sanmu-doc2md/tests -v
+python -m unittest discover -s tests/sanmu-doc2md -v
 python skills/sanmu-doc2md/scripts/doctor.py
 ```
 
 Validate `sanmu-paper-reader` (Python 3.10+; see its guide for optional SI/PDF/image dependencies):
 
 ```bash
-python -m unittest discover -s skills/sanmu-paper-reader/tests -v
+python -m unittest discover -s tests/sanmu-paper-reader -v
 ```
 
 Validate `sanmu-paper-search` (Python 3.10+, standard-library core):
 
 ```bash
-python -m unittest discover -s skills/sanmu-paper-search/tests -v
+python -m unittest discover -s tests/sanmu-paper-search -v
 python skills/sanmu-paper-search/scripts/paper_search.py doctor
 ```
 

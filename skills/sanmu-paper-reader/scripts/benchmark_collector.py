@@ -27,7 +27,10 @@ BENCHMARK_FIELDS = [
     "scavenger_or_electrolyte",
     "benchmark_comparison",
     "mechanism",
-    "record_date"
+    "record_date",
+    "record_id",
+    "condition_id",
+    "source"
 ]
 
 
@@ -40,55 +43,131 @@ def load_benchmarks(csv_path: Path) -> List[Dict[str, str]]:
         return []
     with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
-        return list(reader)
+        rows = list(reader)
+        if reader.fieldnames and len(set(reader.fieldnames)) != len(reader.fieldnames):
+            raise BenchmarkError("Duplicate CSV headers; repair a copy before updating.")
+        if any(None in row or any(v is None for v in row.values()) for row in rows):
+            raise BenchmarkError("Malformed CSV row; repair a copy before updating.")
+        return rows
 
 
 def save_benchmarks(csv_path: Path, rows: List[Dict[str, str]]) -> None:
+    # Keep historical and custom columns, including headers in an empty ledger.
+    fields = []
+    if csv_path.exists():
+        with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
+            fields = next(csv.reader(f), [])
+    for field in BENCHMARK_FIELDS + [key for row in rows for key in row]:
+        if field not in fields:
+            fields.append(field)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    with csv_path.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=BENCHMARK_FIELDS)
-        writer.writeheader()
-        for r in rows:
-            # normalize row with all fields
-            row_dict = {field: r.get(field, "") for field in BENCHMARK_FIELDS}
-            writer.writerow(row_dict)
+    # Replace only after successful serialization; a failed write leaves the original.
+    import os
+    import tempfile
+    fd, temporary = tempfile.mkstemp(dir=csv_path.parent, suffix=".csv.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(temporary, csv_path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def upsert_benchmark(csv_path: Path, entry: Dict[str, Any]) -> Dict[str, Any]:
-    doi = str(entry.get("doi", "")).strip().lower()
-    citation_key = str(entry.get("citation_key", "")).strip()
+    """Patch one record; omitted fields survive, explicit null/empty strings clear.
 
-    if not doi and not citation_key:
-        raise BenchmarkError("Benchmark entry must contain at least a 'doi' or 'citation_key'.")
-
+    Prefer globally unique record_id, or DOI/citation_key + condition_id. A legacy
+    paper-only entry can update only one unqualified historical row. Once records
+    have condition/record identifiers, callers must provide one to select a row.
+    """
+    if not isinstance(entry, dict):
+        raise BenchmarkError("Benchmark entry must be a JSON object.")
+    if any(not isinstance(k, str) or not k for k in entry):
+        raise BenchmarkError("Field names must be non-empty strings.")
+    cleaned_entry = {k: "" if v is None else str(v).strip() for k, v in entry.items()}
+    doi = cleaned_entry.get("doi", "").lower()
+    citation_key = cleaned_entry.get("citation_key", "")
+    record_id = cleaned_entry.get("record_id", "")
+    condition_id = cleaned_entry.get("condition_id", "")
+    if not doi and not citation_key and not record_id:
+        raise BenchmarkError("Provide a 'doi', 'citation_key', or existing 'record_id'.")
     rows = load_benchmarks(csv_path)
-    updated = False
+    paper_matches = [i for i, r in enumerate(rows) if
+                     (doi and r.get("doi", "").strip().lower() == doi) or
+                     (citation_key and r.get("citation_key", "").strip() == citation_key)]
+    # Check the paper identifiers before condition filtering can hide conflicts.
+    # Missing legacy identifiers may be filled, but established identities cannot
+    # be reassigned (or cleared) by a performance-data patch.
+    def identity_conflicts(row, fields):
+        return [field for field in fields if field in cleaned_entry
+                and row.get(field, "").strip()
+                and (row[field].strip().lower() if field == "doi" else row[field].strip())
+                != (cleaned_entry[field].lower() if field == "doi" else cleaned_entry[field])]
 
-    cleaned_entry = {k: str(entry.get(k, "")).strip() for k in BENCHMARK_FIELDS}
-    if not cleaned_entry.get("record_date"):
-        cleaned_entry["record_date"] = str(date.today())
-
-    new_rows = []
-    for r in rows:
-        r_doi = r.get("doi", "").strip().lower()
-        r_key = r.get("citation_key", "").strip()
-
-        # match by DOI or citation key
-        if (doi and r_doi == doi) or (citation_key and r_key == citation_key):
-            new_rows.append(cleaned_entry)
-            updated = True
-        else:
-            new_rows.append(r)
-
-    if not updated:
-        new_rows.append(cleaned_entry)
-
-    save_benchmarks(csv_path, new_rows)
-    return {
-        "status": "updated" if updated else "added",
-        "total_records": len(new_rows),
-        "entry": cleaned_entry
-    }
+    for i in paper_matches:
+        conflicts = identity_conflicts(rows[i], ("doi", "citation_key"))
+        if conflicts:
+            raise BenchmarkError(f"Conflicting paper identity at CSV row {i + 2}: {', '.join(conflicts)}. "
+                                 "Use the existing identifiers; review identity corrections separately.")
+    if record_id:
+        matches = [i for i, r in enumerate(rows) if r.get("record_id", "").strip() == record_id]
+    elif condition_id:
+        matches = [i for i in paper_matches if rows[i].get("condition_id", "").strip() == condition_id]
+    else:
+        matches = paper_matches
+        if len(matches) == 1 and (rows[matches[0]].get("record_id") or rows[matches[0]].get("condition_id")):
+            raise BenchmarkError("This paper has an identified record. Supply record_id or the paper's condition_id; use a new identifier to add another condition.")
+    if len(matches) > 1:
+        candidates = [{"csv_row": i + 2, "record_id": rows[i].get("record_id", ""),
+                       "condition_id": rows[i].get("condition_id", "")} for i in matches]
+        raise BenchmarkError("Ambiguous benchmark match. Supply a unique record_id or DOI/citation_key + condition_id. "
+                             "If historical rows lack identifiers, assign identifiers in a reviewed copy first. "
+                             f"Candidates: {json.dumps(candidates, ensure_ascii=False)}")
+    target = matches[0] if matches else None
+    if target is not None:
+        conflicts = identity_conflicts(rows[target], ("record_id", "doi", "citation_key", "condition_id"))
+        if conflicts:
+            raise BenchmarkError(f"Identity change refused at CSV row {target + 2}: {', '.join(conflicts)}. "
+                                 "Use the existing identifiers; add a new record for a different condition.")
+        merged = dict(rows[target])
+        merged.update(cleaned_entry)
+        status = "updated"
+    else:
+        if not doi and not citation_key:
+            raise BenchmarkError("New records need a doi or citation_key in addition to record_id.")
+        merged = dict(cleaned_entry)
+        if "record_date" not in merged:
+            merged["record_date"] = str(date.today())
+        status = "added"
+    # Validate only the resulting record against its peers. Unrelated historical
+    # duplicates do not prevent updates elsewhere in the ledger.
+    for i, row in enumerate(rows):
+        if i == target:
+            continue
+        same_record = bool(merged.get("record_id")) and merged["record_id"] == row.get("record_id", "").strip()
+        same_paper = ((bool(merged.get("doi")) and merged["doi"].lower() == row.get("doi", "").strip().lower())
+                      or (bool(merged.get("citation_key")) and merged["citation_key"] == row.get("citation_key", "").strip()))
+        if same_paper:
+            for field in ("doi", "citation_key"):
+                existing, resulting = row.get(field, "").strip(), merged.get(field, "").strip()
+                if field == "doi":
+                    existing, resulting = existing.lower(), resulting.lower()
+                if existing and resulting and existing != resulting:
+                    raise BenchmarkError(f"Conflicting resulting paper identity with CSV row {i + 2}: {field}. "
+                                         "Use consistent DOI/citation_key identifiers; review corrections separately.")
+        same_condition = (bool(merged.get("condition_id"))
+                          and merged["condition_id"] == row.get("condition_id", "").strip())
+        if same_record or (same_paper and same_condition):
+            raise BenchmarkError(f"Duplicate resulting identity with CSV row {i + 2}. "
+                                 "Use that record's existing record_id or paper + condition_id; review duplicates separately.")
+    if target is None:
+        rows.append(merged)
+    else:
+        rows[target] = merged
+    save_benchmarks(csv_path, rows)
+    return {"status": status, "total_records": len(rows), "entry": merged}
 
 
 def export_markdown_table(csv_path: Path) -> str:
@@ -97,7 +176,7 @@ def export_markdown_table(csv_path: Path) -> str:
         return "*暂无 Benchmark 性能记录。*"
 
     headers = [
-        "催化体系", "年份/期刊", "反应类型", "活性速率", "AQY (%)", "光源/条件", "牺牲剂/电解液", "对比/机制"
+        "记录/工况", "催化体系", "年份/期刊", "反应类型", "活性速率", "AQY (%)", "光源/条件", "牺牲剂/电解液", "对比/机制", "来源"
     ]
     md_lines = [
         "| " + " | ".join(headers) + " |",
@@ -114,7 +193,10 @@ def export_markdown_table(csv_path: Path) -> str:
         scav = r.get("scavenger_or_electrolyte", "-")
         mech = f"{r.get('benchmark_comparison', '')}; {r.get('mechanism', '')}".strip(" ;")
 
-        md_lines.append(f"| **{sys_name}** | {year_j} | {react} | {rate} | {aqy} | {light} | {scav} | {mech} |")
+        identity = " / ".join(filter(None, [r.get("record_id"), r.get("condition_id")])) or "legacy"
+        source = " / ".join(filter(None, [r.get("doi") or r.get("citation_key"), r.get("source")]))
+        cells = [identity, f"**{sys_name}**", year_j, react, rate, aqy, light, scav, mech, source]
+        md_lines.append("| " + " | ".join(c.replace("|", r"\|").replace("\n", "<br>") for c in cells) + " |")
 
     return "\n".join(md_lines)
 

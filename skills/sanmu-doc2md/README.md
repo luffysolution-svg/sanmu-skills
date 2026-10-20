@@ -5,7 +5,7 @@
 **把论文、教材和课件，整理成可维护的 Markdown 知识库。**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
-[![KaTeX 100%](https://img.shields.io/badge/KaTeX-100%25%20Strict-brightgreen.svg)](https://katex.org/)
+[![KaTeX validation](https://img.shields.io/badge/KaTeX-validation-brightgreen.svg)](https://katex.org/)
 [![Tests](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skill-Claude%20%7C%20ZCode%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/skills)
@@ -41,9 +41,9 @@ https://github.com/luffysolution-svg/sanmu-skills
    python -m pip install -r requirements.txt
 4. 安装公式校验所需的 Node.js 依赖：
    npm --prefix scripts install --ignore-scripts --no-audit --no-fund
-5. 使用配置好的 Python 运行环境检查和测试：
+5. 使用配置好的 Python 做环境与最小运行检查（不提交 OCR）：
    python scripts/doctor.py
-   python -m unittest discover -s tests -v
+   python scripts/build_markdown.py --help
 6. 检查 MINERU_API_TOKEN 是否配置；不要显示凭证值。
    如未配置，提示我从 https://mineru.net 获取并在本地设置。
    已配置时运行 python scripts/doctor.py --require-ocr，检查配置状态。
@@ -66,10 +66,10 @@ npx skills add luffysolution-svg/sanmu-skills --skill '*' -g
 python -m pip install -r requirements.txt
 npm --prefix scripts install --ignore-scripts --no-audit --no-fund
 python scripts/doctor.py
-python -m unittest discover -s tests -v
+python scripts/build_markdown.py --help
 ```
 
-可先创建 Python 虚拟环境再安装依赖。`doctor.py` 只检查环境与凭证配置状态，不安装依赖、不输出凭证值；`--json` 输出结构化结果。
+可先创建 Python 虚拟环境再安装依赖。`doctor.py` 检查环境与凭证配置，并试编译一个基础公式；不安装依赖、不输出凭证值；`--json` 输出结构化结果。`build_markdown.py --help` 检查装配入口能否启动，不代表完成文档转换。开发测试见仓库的[参与贡献](https://github.com/luffysolution-svg/sanmu-skills#参与贡献)。
 
 云端 OCR 需要设置 `MINERU_API_TOKEN`（获取方式见 [mineru.net](https://mineru.net)）。使用 `python scripts/doctor.py --require-ocr` 将缺少凭证视为检查失败；未配置凭证不影响满足依赖的本地装配与校验。
 
@@ -88,7 +88,7 @@ python -m unittest discover -s tests -v
 - **同音字/形近字错漏**："轫致辐射"→"韧致辐射"、"ν"→"v"、"N₀"→"No"；
 - **模型推理泄漏**：多模态 OCR 模型的 "The Ground Truth image displays..." 等提示词进入正文。
 
-本 Skill 提供标准流水线与严格质量门禁（KaTeX 全量编译通过 + 真实客户端渲染终验），规则来自真实教材与学术文献的实战踩坑。
+本 Skill 提供全量公式语法预检与真实客户端渲染核验。Obsidian 使用 MathJax，本地 KaTeX 检查仅作预检；引擎支持差异须结合原页和客户端确认。规则来自教材与学术文献的处理案例。
 
 ---
 
@@ -109,25 +109,26 @@ python -m unittest discover -s tests -v
 ## 包含什么
 
 ```text
-SKILL.md                        技能定义、执行准则与 10 大反模式清单
+SKILL.md                        技能定义、执行流程与边界
 references/
   mineru-api.md                 MinerU API 契约、归一化坐标与 DoH 连接策略
-  math-normalization.md         14 条科学公式归一化规则，附真实前后对照
+  math-normalization.md         科学公式归一化规则，附真实前后对照
   book-workflow.md              超长教材与学术专著分片识别、重组指引
   research-documents.md         学术论文与学位论文标准命名、元数据与双栏规范
+  zotero-sync.md                只读 API 与 MCP 同步、回读验证
 scripts/
+  doctor.py                     环境与凭证配置检查、基础公式编译探测
   mineru_ocr.py                 大文档切分 (split) / 批量提交 / 轮询 / 容错下载
   build_markdown.py             Markdown 组装核心（支持 slides / book / 孤儿切图清理）
   build_research_document.py    科研文献专用一体化装配入口
   normalize_math.py             LaTeX 公式归一化引擎（命令分离、方括号防劫持、Unicode退避）
   extract_formulas.py           从 Markdown 抽取全部公式
   validate_output.py            交付前结构校验、宏命令残留与模型提示词泄漏检测
-  validate_math.cjs             KaTeX 全量公式编译严格校验（100% 门禁）
+  validate_math.cjs             KaTeX 全量公式语法预检
   preview_server.py             本地离线 Markdown + KaTeX 预览沙箱
-examples/
-  RESULTS.md                    教材与课件实战报告（694页课件 + 556页物理化学经典教材）
-  RESEARCH-VALIDATION.md        科研文献全量实测报告（611页中文核心/硕博论文 + 71页英文期刊）
 ```
+
+实战记录见下方[案例文档](#真实实战规模全景)；[可复现示例](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/book-demo/demo.md)保存在仓库中，不随运行技能安装。
 
 ---
 
@@ -142,18 +143,18 @@ examples/
         │
 [4. 图表回源保真]  ── 提取内嵌原图 / PDF 3× 高清重裁，多面板外接矩形合并，保留表内二维码
         │
-[5. 公式规范归一]  ── 14 条规则标准化（中文进 \text、不等号转义、方括号防劫持、标题公式保全）
+[5. 公式规范归一]  ── 公式规则标准化（中文进 \text、不等号转义、方括号防劫持、标题公式保全）
         │
 [6. 知识库组装]    ── 自然混排或视觉置顶，生成 00-目录.md 导航，可选 --prune-orphans 清理孤儿切图
         │
-[7. 双重终验门禁]  ── KaTeX 全量 100% 编译通过 + Obsidian 真实客户端视图核验
+[7. 语法与显示检查] ── 全量 KaTeX 语法预检 + Obsidian MathJax 实际视图核验
 ```
 
 ---
 
 ## 真实实战规模全景
 
-全套工具链均在真实大部头理工科文档中经过极限压测：
+仓库案例文档记录了以下处理结果；这些数字描述相应案例，不代表对任意文档的质量保证：
 
 | 案例库 | 文档类型与规模 | 提取公式数 | 图片/图表数 | 质量指标与技术突破 |
 | :--- | :--- | :---: | :---: | :--- |
@@ -161,9 +162,9 @@ examples/
 | **案例二：物理化学（第六版）下册** | 556 页全扫描经典高校教材 | **7,523 个** | 332 张 | **KaTeX 7,523/7,523 全部通过（0 失败）**，提取 28 个拓展二维码 |
 | **案例三：中文科研文献与硕博学位论文全集** | 5 篇共 611 页（含 240 页博士论文） | **5,797 个** | 398 张 | 解决 Obsidian 方括号链接劫持、保全标题化学式、**安全清理 89 个历史旧图** |
 | **案例四：英文前沿期刊文献集** | 7 篇共 87 页顶级英文期刊 (Nature/Matter 等) | 876 个 | 114 张 | 双栏阅读流还原，突破 Windows 路径长度瓶颈，YAML 元数据 全量注入 |
-| **总计** | **近 2,000 页真实学术文档** | **16,314 个** | **1,043 张** | **全量编译通过率 100%，结构化零损坏交付** |
+| **总计** | **近 2,000 页真实学术文档** | **16,314 个** | **1,043 张** | **案例记录的公式全部通过编译** |
 
-*详见 [examples/RESULTS.md](examples/RESULTS.md) 与 [examples/RESEARCH-VALIDATION.md](examples/RESEARCH-VALIDATION.md)。*
+*详见 [examples/RESULTS.md](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/RESULTS.md) 与 [examples/RESEARCH-VALIDATION.md](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/RESEARCH-VALIDATION.md)。*
 
 ---
 
@@ -200,7 +201,7 @@ python scripts/build_research_document.py --pdf ./source.pdf --raw ./ocr-work/ra
 # 6. 交付前结构与链接完整性校验
 python scripts/validate_output.py ./知识库 --images-dir images
 
-# 7. KaTeX 100% 全量公式编译门禁（0 容错）
+# 7. 全量 KaTeX 公式语法预检，失败项回源处理
 python scripts/extract_formulas.py ./知识库 --out formulas.json
 node scripts/validate_math.cjs formulas.json
 
@@ -216,8 +217,9 @@ python scripts/preview_server.py ./知识库 --port 8766 --katex-dir scripts/nod
 - **干净交付**：默认仅导航、正文 Markdown 与图片；构建报告和增量状态存放在外部 `.<目录名>.build/`。
 - **全相对路径**：图片采用 `![](images/...)` 标准相对格式，知识库目录整体可自由移动或跨设备同步；
 - **双模态保真**：公式输出标准 LaTeX，复杂科学表格与复杂化学环状键保留原扫描图裁片双轨备查；
-- **全角方括号规范**：中文解释性注释采用 `［...］`，彻底消除 Markdown 链接解析冲突；
-- **入口导航**：根目录附带标准 URI 编码的 `00-目录.md`，可无缝融入 Obsidian 知识库体系。
+- **全角方括号规范**：解释性注释发生链接解析冲突时，核对后可采用 `［...］`，保留真实引用、链接和数学分组；
+- **入口导航**：根目录附带标准 URI 编码的 `00-目录.md`，在目标 Obsidian 库中核验跳转。
+- **来源与人工内容**：保留源文件、页码映射和修复依据；默认保护人工修改，不用 `--overwrite` 绕过差异。`page_footnote` 的学术注释、来源和公式说明须保留，不能按标签一律丢弃。
 
 ---
 

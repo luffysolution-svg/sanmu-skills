@@ -12,9 +12,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       PYTHONIOENCODING: utf-8
-    defaults:
-      run:
-        working-directory: skills/sanmu-doc2md
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,15 +20,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r skills/sanmu-doc2md/requirements.txt -r skills/sanmu-paper-reader/requirements.txt
       - run: npm install --ignore-scripts --no-audit --no-fund
         working-directory: skills/sanmu-doc2md/scripts
-      - run: python -m unittest discover -s tests -v
-      - run: python scripts/_selftest.py
-      - run: python scripts/doctor.py
-      - run: python -m unittest discover -s tests -v
-        working-directory: skills/sanmu-paper-reader
-      - run: python -m unittest discover -s tests -v
-        working-directory: skills/sanmu-paper-search
-      - run: python scripts/paper_search.py doctor
-        working-directory: skills/sanmu-paper-search
+      - run: python tests/sanmu-doc2md/_selftest.py
+      - run: python skills/sanmu-doc2md/scripts/doctor.py
+      - run: python -m unittest discover -s tests/sanmu-paper-reader -v
+      - run: python -m unittest discover -s tests/sanmu-paper-search -v
+      - run: python skills/sanmu-paper-search/scripts/paper_search.py doctor

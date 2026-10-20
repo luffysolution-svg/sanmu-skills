@@ -7,12 +7,20 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+from urllib.parse import unquote, urlsplit
 import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = ("plugin.json", ".claude-plugin/plugin.json", "README.md", "README.en.md", "LICENSE")
-BLOCKED_PARTS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", ".search-work", "runs"}
+BLOCKED_PARTS = {
+    ".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache",
+    ".mypy_cache", ".ruff_cache", "cache", ".cache", ".search-work", "runs",
+    "tests", "test", "examples", "docs", ".ocr-work", ".ocr_work", "ocr-out",
+}
+DEVELOPMENT_PARTS = {"tests", "examples", "docs"}
+SKILL_ROOT_FILES = {"SKILL.md", "LICENSE", "README.md", "README.en.md", "requirements.txt"}
+FRONTMATTER_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
 
 
 def read_json(path):
@@ -25,10 +33,74 @@ def skill_header(text):
         raise ValueError("SKILL.md must start with YAML frontmatter")
     fields = {}
     for line in match.group(1).splitlines():
+        if not line.strip() or line.lstrip().startswith("#") or line.startswith((" ", "\t")):
+            continue
         key, separator, value = line.partition(":")
-        if separator and not key.startswith(" "):
-            fields[key] = value.strip()
+        if not separator or not re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", key):
+            raise ValueError(f"Invalid frontmatter field: {line}")
+        if key in fields:
+            raise ValueError(f"Duplicate frontmatter field: {key}")
+        fields[key] = value.strip()
     return fields, match
+
+
+def validate_standard_header(text, name):
+    fields, match = skill_header(text)
+    unknown = set(fields) - FRONTMATTER_FIELDS
+    if unknown:
+        raise ValueError(f"Nonstandard Agent Skills frontmatter fields in {name}: {sorted(unknown)}")
+    # Portable sources use plain or quoted single-line required values.
+    values = {}
+    for key in ("name", "description"):
+        value = fields.get(key, "")
+        if value.startswith('"'):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"Invalid quoted frontmatter {key}: {name}") from error
+        elif value.startswith("'") and value.endswith("'"):
+            value = value[1:-1].replace("''", "'")
+        if not isinstance(value, str) or not value or value in {"|", ">", "null", "true", "false"}:
+            raise ValueError(f"Frontmatter {key} must be a non-empty string: {name}")
+        values[key] = value
+    if values["name"] != name or len(values["description"]) > 1024 or re.search(r"[<>]", values["description"]):
+        raise ValueError(f"Invalid Agent Skills metadata: {name}")
+    return fields, match
+
+
+def runtime_file(path, name):
+    relative = PurePosixPath(path).relative_to(f"skills/{name}")
+    return (relative.as_posix() in SKILL_ROOT_FILES
+            or len(relative.parts) > 1 and relative.parts[0] in {"scripts", "references", "assets"})
+
+
+def validate_runtime_references(root, selected, names):
+    packaged = set(selected)
+    for name in names:
+        directory = root / "skills" / name
+        documents = [directory / "SKILL.md", *sorted((directory / "references").rglob("*.md"))]
+        for document in documents:
+            text = document.read_text(encoding="utf-8")
+            # Ignore examples in fenced code; check actual Markdown links and inline reference paths.
+            text = re.sub(r"(?ms)^[ \t]*(?:```|~~~)[^\n]*\n.*?^[ \t]*(?:```|~~~)[^\n]*(?:\n|$)", "", text)
+            targets = re.findall(r"`((?:\./|\.\./)*references/[^`\s]+\.md(?:#[^`\s]*)?)`", text)
+            prose = re.sub(r"`+[^`\n]*`+", "", text)
+            # Chemical states such as [Fe(CN)6](aq) are not document references.
+            links = re.findall(r"\[[^\]\n]*\]\(<?([^\s)>]+)>?(?:\s+[^)]*)?\)", prose)
+            targets += [target for target in links if target not in {"aq", "s", "l", "g"}]
+            targets += re.findall(r"(?m)^\s*\[[^\]]+\]:\s*<?([^\s>]+)>?", prose)
+            for target in targets:
+                parsed = urlsplit(target)
+                if parsed.scheme or parsed.netloc or not parsed.path:
+                    continue
+                path = (document.parent / unquote(parsed.path)).resolve()
+                try:
+                    relative = path.relative_to(directory.resolve())
+                except ValueError as error:
+                    raise ValueError(f"Runtime link escapes standalone skill: {document}: {target}") from error
+                package_path = f"skills/{name}/{relative.as_posix()}"
+                if package_path not in packaged or not path.is_file():
+                    raise ValueError(f"Runtime reference is missing from package: {document}: {target}")
 
 
 def tracked_files(root):
@@ -52,9 +124,7 @@ def validate(root=ROOT):
         if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) or len(name) > 64:
             raise ValueError(f"Invalid skill name: {name}")
         directory = root / "skills" / name
-        fields, _ = skill_header((directory / "SKILL.md").read_text(encoding="utf-8"))
-        if fields.get("name") != name or not 1 <= len(fields.get("description", "")) <= 1024:
-            raise ValueError(f"Invalid Agent Skills metadata: {name}")
+        validate_standard_header((directory / "SKILL.md").read_text(encoding="utf-8"), name)
         if not skill.get("displayName") or not skill.get("summary"):
             raise ValueError(f"Missing SkillHub display metadata: {name}")
         if not (directory / "LICENSE").is_file():
@@ -73,8 +143,19 @@ def validate(root=ROOT):
         if path not in PLUGIN_FILES and not any(path.startswith(f"skills/{name}/") for name in names):
             continue
         parts = PurePosixPath(path).parts
-        if BLOCKED_PARTS.intersection(parts) or any(p == ".env" or p.startswith(".env.") for p in parts):
-            raise ValueError(f"Private or installed files must not be packaged: {path}")
+        # Development trees are kept in the repository, never in runtime archives.
+        if len(parts) > 2 and parts[0] == "skills" and parts[2] in DEVELOPMENT_PARTS:
+            continue
+        if len(parts) > 2 and parts[0] == "skills" and parts[2] == "ROADMAP.md":
+            continue
+        if (BLOCKED_PARTS.intersection(part.lower() for part in parts)
+                or any(p == ".env" or p.startswith(".env.") for p in parts)
+                or PurePosixPath(path).suffix.lower() in {".pyc", ".pyo"}
+                or PurePosixPath(path).name in {"_selftest.py", "ROADMAP.md"}
+                or PurePosixPath(path).name.startswith("test_")):
+            raise ValueError(f"Development, private or installed files must not be packaged: {path}")
+        if parts[0] == "skills" and not runtime_file(path, parts[1]):
+            raise ValueError(f"Unexpected runtime package input: {path}")
         source = root / path
         if source.is_symlink() or not source.is_file():
             raise ValueError(f"Package input is not a regular file: {path}")
@@ -86,6 +167,14 @@ def validate(root=ROOT):
         for filename in ("SKILL.md", "LICENSE", "README.md", "README.en.md"):
             if f"skills/{name}/{filename}" not in selected:
                 raise ValueError(f"Missing tracked package file: {name}/{filename}")
+    validate_runtime_references(root, selected, names)
+    budget = release.get("packageBudget", {"maxFiles": 200, "maxBytes": 5 * 1024 * 1024})
+    for key in ("maxFiles", "maxBytes"):
+        if type(budget.get(key)) is not int or budget[key] <= 0:
+            raise ValueError(f"Invalid project package budget: {key}")
+    total_bytes = sum((root / path).stat().st_size for path in selected)
+    if len(selected) > budget["maxFiles"] or total_bytes > budget["maxBytes"]:
+        raise ValueError(f"Project package budget exceeded: {len(selected)} files, {total_bytes} bytes")
     return release, selected
 
 
@@ -152,10 +241,19 @@ def main():
     args = parser.parse_args()
     if args.command == "check":
         release, files = validate()
-        print(f"{release['name']} {release['version']}: {len(release['skills'])} skills, {len(files)} tracked package files")
+        size = sum((ROOT / path).stat().st_size for path in files)
+        print(f"{release['name']} {release['version']}: {len(release['skills'])} skills, "
+              f"{len(files)} tracked runtime files, {size} uncompressed bytes")
+        for skill in release["skills"]:
+            selected = [path for path in files if path.startswith(f"skills/{skill['name']}/")]
+            print(f"  {skill['name']}: {len(selected)} files, "
+                  f"{sum((ROOT / path).stat().st_size for path in selected)} bytes")
     else:
         for path in build(args.out):
-            print(path)
+            with zipfile.ZipFile(path) as archive:
+                entries = archive.infolist()
+                print(f"{path}: {len(entries)} files, {sum(item.file_size for item in entries)} "
+                      f"uncompressed bytes, {path.stat().st_size} ZIP bytes")
 
 
 if __name__ == "__main__":

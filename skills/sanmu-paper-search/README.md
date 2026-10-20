@@ -19,7 +19,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    选择当前助手的用户级安装位置；已有安装先检查本地修改。
 2. 阅读技能 SKILL.md 和 README，在技能目录运行：
    python scripts/paper_search.py doctor
-   python -m unittest discover -s tests -v
+   python scripts/paper_search.py --help
 3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 是否配置，不显示值。没有凭证时说明可用范围，确需配置才指向官方注册页。
 4. 如需 Zotero，检查宿主插件与本地 API；不要直接读取数据库或 storage。没有 Zotero 也能使用核心检索。
 5. 在仓库之外的新工作目录做一次小规模公开文献查询，报告逐源状态、安装位置与限制；不改 Zotero 文献。
@@ -64,14 +64,14 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 | Unpaywall | DOI 对应 OA 位置 | `UNPAYWALL_EMAIL`，不用于关键词搜索 |
 | Zotero | 检查收藏与已有附件 | 宿主 Zotero 工具，或本地标准 JSON 导出 |
 
-不捆绑凭证，不依赖 OmniScholar、easyseek 或 ScanSci PDF。它们可作额外能力后端，但接入前需核对工具、来源策略、许可和输出；核心检索独立可用。
+按需配置上表中的 API 凭证即可使用核心检索。其他学术工具可作为补充来源，接入时核对其返回格式和访问许可。
 
 ## 结果与边界
 
 - 每次运行保存查询、逐源状态、规范题录、脱敏原始响应、可读清单和哈希，明确失败、空结果、截断及未执行。
 - 稳定 ID 对齐，保留字段冲突和来源。作者先消歧；预印本与正式版保留关系，不按标题直接混成一篇。
 - `metadata_only` 和 `abstract` 区分 API 返回的文本层级；筛选依据需实际阅读后记录。找到地址不等于下载，下载不等于读过。
-- 直接公开 PDF 可用 `scripts/fetch_pdf.py` 获取并生成来源/哈希/检查记录；SI 需助手从主文附件区逐项核对，首版不自动声称全量获取。
+- 直接公开 PDF 可用 `scripts/fetch_pdf.py` 获取，并生成来源、哈希和检查记录；SI 由助手从主文附件区逐项核对，记录已取得和缺失的附件。
 - 有界检索不证明查全；系统检索需逐源预算与筛选记录，见 [检索协议](references/protocol.md)。
 - 不绕过登录/付费访问、不直接操作 Zotero 数据库。私有 PDF、笔记、批注、凭证与测试运行不公开提交。
 
@@ -79,11 +79,13 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 
 ## 验证与设计参考
 
-```bash
-python -m unittest discover -s tests -v
-```
+安装后运行 `python scripts/paper_search.py doctor` 检查环境，再用上面的示例查询少量文献并执行 `check` 校验输出。
 
-离线测试使用模拟响应，覆盖字段归一化、身份合并、错误状态、输出保护和哈希；在线可用性需另做小规模实测。真实 Zotero 测试数据保留在本地工作区。
+开发测试位于[仓库测试目录](https://github.com/luffysolution-svg/sanmu-skills/tree/main/tests/sanmu-paper-search)，覆盖字段归一化、身份合并、错误状态、输出保护和哈希。从仓库根目录执行：
+
+```bash
+python -m unittest discover -s tests/sanmu-paper-search -v
+```
 
 设计参考：[K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup)、[research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search)、[OmniScholar](https://github.com/luffysolution-svg/omnischolar)、[paper-search-pro](https://github.com/O0000-code/paper-search-pro)、[easyseek](https://github.com/Rimagination/easyseek)。核心代码独立实现，不复制这些项目源码。按需阅读：[检索策略](references/retrieval.md) · [获取与交接](references/handoff.md)。
 

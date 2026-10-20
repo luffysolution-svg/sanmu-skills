@@ -18,10 +18,9 @@ python scripts/paper_search.py oa "/path/to/work/runs/seed" --out "/path/to/work
 python scripts/paper_search.py merge "/path/to/work/runs/topic" "/path/to/work/runs/references" --zotero "/path/to/work/zotero-items.json" --out "/path/to/work/runs/merged"
 python scripts/paper_search.py check "/path/to/work/runs/merged"
 python scripts/paper_search.py diff "/path/to/work/runs/seed" "/path/to/work/runs/updated" --out "/path/to/work/runs/diff"
-python -m unittest discover -s tests -v
 ```
 
-输出目录必须新建，防止覆盖用户筛选或已有成果。不要将本地测试输出提交到技能仓库。建议在用户工作目录内使用 `runs/`；测试和私有 Zotero 快照放工作目录。
+输出使用用户工作目录下的新建目录，例如 `runs/topic-日期/`，保留已有筛选结果。私有 Zotero 快照和运行产物存放在个人工作区。
 
 来源名是 `openalex`、`semantic-scholar`、`crossref`。可移植身份格式包括 DOI、`doi:...`、DOI URL、`openalex:W...`、`s2:...`、`pmid:...`、`arxiv:...`。并非所有来源都支持全部 ID，未支持情况需在逐源状态中保留。作者 ID 属于提供者，不能跨库复用。
 
@@ -47,7 +46,7 @@ python -m unittest discover -s tests -v
 - `3`：所有被请求来源失败。
 - `4`：清单完整性检查失败。
 
-stdout 输出结构化 JSON；不将网络错误隐藏为空结果。凭证仅从环境变量读取，不写进运行记录。大规模检索先制定协议；命令行初版有界预算不能冒称系统检索穷尽。
+stdout 输出结构化 JSON，网络错误保留为独立状态。凭证从环境变量读取，运行记录保留配置状态。大规模检索先制定协议，按每次执行的预算报告覆盖范围。
 
 ## 文件与交接
 

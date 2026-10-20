@@ -17,7 +17,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    Select the current assistant's user-level target; check local changes before updating.
 2. Read SKILL.md and README. From the skill directory run:
    python scripts/paper_search.py doctor
-   python -m unittest discover -s tests -v
+   python scripts/paper_search.py --help
 3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL and CROSSREF_EMAIL are configured. Never display values. Explain available capabilities without credentials; point to official registration only when needed.
 4. For Zotero, check the host integration and local API. Do not read its database or storage directly. Core search also works without Zotero.
 5. Run a small public-paper query into a new directory outside the repository. Report per-source status, installation path and limitations. Do not modify Zotero items.
@@ -62,13 +62,13 @@ On Windows, quote actual absolute paths. After checking candidates, use `author 
 | Unpaywall | OA locations by DOI, not keyword discovery | `UNPAYWALL_EMAIL` |
 | Zotero | Existing items and attachments | Host tools or a local standard JSON export |
 
-No bundled credentials or mandatory dependency on OmniScholar, easyseek or ScanSci PDF. Optional backends require explicit capability, source-policy, licensing and output checks.
+Configure the API credentials above as needed. Other scholarly tools can supplement coverage after checking their response formats and access terms.
 
 ## Outputs and limits
 
 Each run retains the query, per-source status, normalized records, redacted raw responses, readable report and integrity hashes. Empty results, failure, truncation and unexecuted work remain distinct. Stable identifiers drive matching; metadata conflicts and provenance are retained. Resolve authors before retrieving publications, and preserve preprint/publication relationships.
 
-Records distinguish returned metadata from available abstract text; a screening basis is recorded only after reading. A resolved URL is not a downloaded file, and a downloaded file has not necessarily been read. `scripts/fetch_pdf.py` can retrieve a direct public PDF and record URLs, SHA-256, format checks and identity-check status. SI still requires inspecting the publisher's actual attachment list; automatic complete SI acquisition is outside this release.
+Records distinguish returned metadata from available abstract text; a screening basis is recorded only after reading. A resolved URL is not a downloaded file, and a downloaded file has not necessarily been read. `scripts/fetch_pdf.py` can retrieve a direct public PDF and record URLs, SHA-256, format checks and identity-check status. For SI, inspect the publisher's attachment list and record which files were obtained and which remain missing.
 
 Bounded retrieval does not establish exhaustive coverage. Broader searches need a [protocol](references/protocol.md) and screening evidence. No login/paywall bypass or direct Zotero database access. Keep private papers, notes, annotations, credentials and test runs outside public commits.
 
@@ -76,11 +76,13 @@ Optionally hand acquired materials to [sanmu-doc2md](https://github.com/luffysol
 
 ## Validation and references
 
-```bash
-python -m unittest discover -s tests -v
-```
+After installation, run `python scripts/paper_search.py doctor`, try a small query from the examples above, and use `check` to verify the saved output.
 
-Offline tests use mock responses to cover normalization, identity merging, failure states, protected outputs and integrity checks. Live availability requires a separate small test. Real Zotero test data stays in the local workspace.
+[Development tests](https://github.com/luffysolution-svg/sanmu-skills/tree/main/tests/sanmu-paper-search) cover normalization, identity merging, failure states, protected outputs and integrity checks. From the repository root, run:
+
+```bash
+python -m unittest discover -s tests/sanmu-paper-search -v
+```
 
 Design references: [K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup), [research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search), [OmniScholar](https://github.com/luffysolution-svg/omnischolar), [paper-search-pro](https://github.com/O0000-code/paper-search-pro), and [easyseek](https://github.com/Rimagination/easyseek). Core code is independently implemented without copying their source. More: [retrieval strategy](references/retrieval.md), [acquisition and handoff](references/handoff.md).
 
