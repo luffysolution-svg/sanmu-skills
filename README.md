@@ -86,7 +86,7 @@ codex plugin add sanmu-skills@sanmu-skills
 
 ### 腾讯 SkillHub、SkillsMP 与 skills.sh
 
-- **腾讯 SkillHub**：三个独立适配包随 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases) 提供，可从 Release 下载使用。SkillHub 市场条目将在完成认证、提交与审核后开放。
+- **腾讯 SkillHub**：三个技能均已提交，当前处于安全审核中：[sanmu-doc2md](https://skillhub.cn/skills/sanmu-doc2md)、[sanmu-paper-reader](https://skillhub.cn/skills/sanmu-paper-reader)、[sanmu-paper-search](https://skillhub.cn/skills/sanmu-paper-search)。审核通过前以页面状态为准；也可从 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases) 下载独立适配包。
 - **SkillsMP**：从公开 GitHub 自动索引，实际展示以其同步结果为准；安装使用本页命令。
 - **skills.sh**：[合集页面](https://skills.sh/luffysolution-svg/sanmu-skills) 展示三个技能，使用上方 `npx skills add` 安装。
 

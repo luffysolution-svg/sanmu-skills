@@ -20,7 +20,7 @@ python distribution/build.py build --out dist/1.3.0
 
 静态检查校验标准 Agent Skills frontmatter、三个公开版本的一致性，以及 `SKILL.md` 和运行 `references/` 内的本地 Markdown 链接与反引号 `references/*.md` 路径。目标必须存在并进入同一个独立技能包；在线链接、围栏样例和 Obsidian 双链不作为本地文件检查。
 
-`manifest.json` 的 `packageBudget` 是本项目自定预算：合集运行文件不超过 200 个，解压后总大小不超过 5 MiB，超出则失败；这不是任何平台的硬限制。`check` 输出合集及各技能的文件数/原始字节数，`build` 输出每个 ZIP 的文件数、解压后与压缩后字节数。摘要只打印到终端，不生成质检报告。
+`manifest.json` 的 `packageBudget` 是本项目自定预算：合集运行文件不超过 200 个，解压后总大小不超过 5 MiB，超出则失败。腾讯网页上传入口的硬限制是单包 200 个文件、10 MB，这里沿用同一文件数并取更小的体积余量；`check` 输出合集及各技能的文件数/原始字节数，`build` 输出每个 ZIP 的文件数、解压后与压缩后字节数。摘要只打印到终端，不生成质检报告。
 
 ## 仓库开发布局
 
@@ -62,7 +62,19 @@ Codex 的仓库目录为 `.agents/plugins/marketplace.json`，通过本地来源
 
 ## 腾讯 SkillHub
 
-按[官方教程](https://skillhub.cn/tutorials)完成实名与 API Token 配置。Windows 发布教程使用 WSL；不要把 Token 写入源码、命令示例或提交记录。
+三个技能已提交，当前状态为安全审核中。页面状态是唯一依据，审核通过前不视为已上架：
+
+| 技能 | slug | 页面 |
+| --- | --- | --- |
+| sanmu-doc2md | `sanmu-doc2md` | https://skillhub.cn/skills/sanmu-doc2md |
+| sanmu-paper-reader | `sanmu-paper-reader` | https://skillhub.cn/skills/sanmu-paper-reader |
+| sanmu-paper-search | `sanmu-paper-search` | https://skillhub.cn/skills/sanmu-paper-search |
+
+条目已建立，slug 不可重复使用；后续版本在控制台「版本历史」提交，不改 slug。
+
+网页上传只接受构建产物 `skillhub/<技能名>-<版本>.zip`，不要选 `skills/<技能名>/` 源码目录。源码目录含 `node_modules/`、`__pycache__/` 与 `.pyc`，doc2md 会因此超过 200 个文件上限，其余技能会因二进制类型被跳过。平台限制为单包最多 200 个文件、解压后不超过 10 MB；当前三个包分别为 31、23、12 个文件，均在限制内。
+
+使用 API Token 发布时，按[官方教程](https://skillhub.cn/tutorials)完成实名与配置。Windows 发布教程使用 WSL；不要把 Token 写入源码、命令示例或提交记录。
 
 ```bash
 skillhub auth whoami
@@ -79,7 +91,7 @@ skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-reader --changelog "首次发
 skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-search --changelog "首次发布"
 ```
 
-返回 `pending_review` 表示已提交，审核通过后才能声称已上架。如果某个 `slug` 已被占用，核对本人账号和平台条目后再调整打包元数据；不改通用技能名。
+返回 `pending_review` 表示已提交，不等于已上架。已存在条目重新提交时，slug 沿用上表，仅更新版本与变更说明。
 
 ## SkillsMP 与 skills.sh
 

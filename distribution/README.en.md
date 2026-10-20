@@ -20,7 +20,7 @@ Stage new runtime files before building. Inputs use tracked paths from the Git i
 
 Static validation checks standard Agent Skills frontmatter, matching public versions, local Markdown links and inline `references/*.md` paths in `SKILL.md` and runtime references. Targets must exist inside the same standalone package. Online URLs, fenced examples and Obsidian wikilinks are not treated as local file links.
 
-The manifest's `packageBudget` sets a project budget of 200 runtime files and 5 MiB uncompressed for the collection. This is a repository policy, not a platform limit. `check` prints collection and per-skill counts and raw bytes; `build` prints file counts, uncompressed bytes and ZIP bytes for each archive. No quality report is generated.
+The manifest's `packageBudget` sets a project budget of 200 runtime files and 5 MiB uncompressed for the collection. The Tencent web uploader enforces 200 files and 10 MB per package; the project keeps the same file ceiling with a smaller size margin. `check` prints collection and per-skill counts and raw bytes; `build` prints file counts, uncompressed bytes and ZIP bytes for each archive. No quality report is generated.
 
 ## Repository development layout
 
@@ -62,7 +62,19 @@ A self-hosted GitHub marketplace is separate from Anthropic or OpenAI's official
 
 ## Tencent SkillHub
 
-Complete identity verification and configure an API Token using the [official guide](https://skillhub.cn/tutorials). The Windows publication guide uses WSL. Keep tokens out of source files, examples and commits.
+All three skills are submitted and currently in security review. The page status is authoritative; they are not listed publicly until review passes:
+
+| Skill | slug | Page |
+| --- | --- | --- |
+| sanmu-doc2md | `sanmu-doc2md` | https://skillhub.cn/skills/sanmu-doc2md |
+| sanmu-paper-reader | `sanmu-paper-reader` | https://skillhub.cn/skills/sanmu-paper-reader |
+| sanmu-paper-search | `sanmu-paper-search` | https://skillhub.cn/skills/sanmu-paper-search |
+
+The entries exist and their slugs are no longer available to others. Submit later versions from the console's version history without changing the slug.
+
+The web uploader accepts only built artifacts, `skillhub/<skill-name>-<version>.zip`; do not select `skills/<skill-name>/`. Source directories contain `node_modules/`, `__pycache__/` and `.pyc`, which push doc2md past the 200-file limit and make the other skills skip binary types. The platform allows at most 200 files and 10 MB uncompressed per package; the current packages contain 31, 23 and 12 files.
+
+To publish with an API token, complete identity verification and configure it using the [official guide](https://skillhub.cn/tutorials). The Windows publication guide uses WSL. Keep tokens out of source files, examples and commits.
 
 ```bash
 skillhub auth whoami
@@ -79,7 +91,7 @@ skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-reader --changelog "Initial r
 skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-search --changelog "Initial release"
 ```
 
-`pending_review` means submitted, not publicly listed. If a slug is taken, verify the account and existing entry before changing generated publication metadata; keep portable skill names unchanged.
+`pending_review` means submitted, not publicly listed. When resubmitting an existing entry, keep the slug from the table above and update only the version and changelog.
 
 ## SkillsMP and skills.sh
 

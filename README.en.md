@@ -86,7 +86,7 @@ Use a recent Codex CLI that supports `plugin marketplace`; start a new session a
 
 ### Tencent SkillHub, SkillsMP and skills.sh
 
-- **Tencent SkillHub**: download the three standalone packages from [GitHub Releases](https://github.com/luffysolution-svg/sanmu-skills/releases). Marketplace listings will become available after account verification, submission and review.
+- **Tencent SkillHub**: all three skills are submitted and currently in security review: [sanmu-doc2md](https://skillhub.cn/skills/sanmu-doc2md), [sanmu-paper-reader](https://skillhub.cn/skills/sanmu-paper-reader), [sanmu-paper-search](https://skillhub.cn/skills/sanmu-paper-search). Treat the page status as authoritative until review passes; standalone packages also remain available from [GitHub Releases](https://github.com/luffysolution-svg/sanmu-skills/releases).
 - **SkillsMP**: indexes public GitHub skills; listing depends on its next successful sync. Use the installation commands on this page.
 - **skills.sh**: the [collection page](https://skills.sh/luffysolution-svg/sanmu-skills) lists the three skills. Install with `npx skills add` above.
 
