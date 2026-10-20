@@ -65,7 +65,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    npx skills add luffysolution-svg/sanmu-skills --skill sanmu-paper-reader -g
    选择当前助手的安装目标；已有安装先检查本地修改。
 2. 阅读安装目录里的 SKILL.md 和 README.md。
-3. 核心解读由当前助手完成，不需要单独模型API或deep-research；离线证据工具需要Python 3.10+，没有第三方依赖。
+3. 核心解读由当前助手完成，不需要单独模型API或deep-research。证据、主题与基准工具使用Python 3.10+标准库；需要SI探针、PDF附图提取或子图裁切时，在独立虚拟环境执行 python -m pip install -r requirements.txt，安装PyMuPDF与Pillow。
 4. 从包含SKILL.md的技能目录运行：
    python -m unittest discover -s tests -v
    python scripts/evidence_tools.py --help
@@ -79,7 +79,13 @@ https://github.com/luffysolution-svg/sanmu-skills
 npx skills add luffysolution-svg/sanmu-skills --skill sanmu-paper-reader -g
 ```
 
-核心Skill无Python包依赖；附带脚本使用Python 3.10+标准库。PDF读取、OCR、Zotero由宿主或可选工具提供，均不强制绑定某个平台。若从本地未发布源码安装，把完整的 `skills/sanmu-paper-reader` 目录复制或链接到助手的技能目录；远程命令只能安装已经发布到仓库的版本。
+核心解读与证据、主题、基准工具使用Python 3.10+标准库。`si_probe.py`、`extract_si_figures.py`需要PyMuPDF，`crop_subfigures.py`需要Pillow；使用这些功能时，从技能目录在独立虚拟环境安装：
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+技能安装器不会自动安装上述依赖。PDF读取、OCR、Zotero还可由宿主或可选工具提供，均不强制绑定某个平台。若从本地未发布源码安装，把完整的 `skills/sanmu-paper-reader` 目录复制或链接到助手的技能目录；远程命令只能安装已经发布到仓库的版本。
 
 ## 使用场景
 

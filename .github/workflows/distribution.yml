@@ -1,0 +1,25 @@
+name: Distribution packages
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python distribution/build.py check
+      - run: python -m unittest discover -s distribution/tests -v
+      - run: python distribution/build.py build --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sanmu-distribution
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
+            dist/skillhub/*.zip

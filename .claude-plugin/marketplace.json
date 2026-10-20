@@ -1,0 +1,17 @@
+{
+  "name": "sanmu-skills",
+  "owner": {
+    "name": "三木 / Sanmu",
+    "url": "https://github.com/luffysolution-svg"
+  },
+  "metadata": {
+    "description": "三木的科研 Agent Skills：文档解析、文献精读与文献检索。"
+  },
+  "plugins": [
+    {
+      "name": "sanmu-skills",
+      "source": ".",
+      "description": "Academic document conversion, paper reading, and literature discovery."
+    }
+  ]
+}

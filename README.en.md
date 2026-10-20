@@ -11,7 +11,7 @@ Practical workflows, packaged as reusable skills for AI assistants.
 
 [简体中文](README.md) · **English**
 
-[Quick start](#quick-start) · [Skills](#skills) · [Usage](#usage) · [Contributing](#contributing)
+[Quick start](#quick-start) · [Marketplaces](#marketplaces) · [Skills](#skills) · [Usage](#usage) · [Contributing](#contributing)
 
 </div>
 
@@ -26,7 +26,7 @@ Please install and configure Sanmu's sanmu-skills collection:
 https://github.com/luffysolution-svg/sanmu-skills
 
 1. Check Git and Node.js, then install the collection for the current AI assistant at user scope:
-   npx skills add luffysolution-svg/sanmu-skills --skill '*' -g
+   npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
    Select the target matching the current assistant and check for local edits before updating an existing installation.
 2. Read each installed skill's README and configure its dependencies.
 3. For sanmu-doc2md, enter the skill directory containing SKILL.md, prefer a dedicated Python virtual environment, and run:
@@ -35,7 +35,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    python scripts/doctor.py
    python -m unittest discover -s tests -v
 4. Check MINERU_API_TOKEN configuration without displaying its value. If missing, direct me to https://mineru.net and explain how to set it locally.
-5. For sanmu-paper-reader, use Python 3.10+ to run python -m unittest discover -s tests -v from its skill directory. Its evidence tools have no third-party dependencies; check PDF/OCR/Zotero integrations only as needed.
+5. For sanmu-paper-reader, evidence, topic and benchmark tools use the Python 3.10+ standard library. For SI probing, PDF figure extraction or subfigure cropping, run python -m pip install -r requirements.txt in a dedicated virtual environment. Run python -m unittest discover -s tests -v from its directory; check PDF/OCR/Zotero integrations only as needed.
 6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python -m unittest discover -s tests -v from its directory. The core has no third-party dependencies; check only whether API credentials are configured and connect Zotero as needed.
 7. Report installation paths, validation results, and any remaining configuration steps.
 ```
@@ -47,7 +47,7 @@ Full AI installation instructions: [Document conversion](skills/sanmu-doc2md/REA
 Install the entire collection to your user directory:
 
 ```bash
-npx skills add luffysolution-svg/sanmu-skills --skill '*' -g
+npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
 ```
 
 The installer guides you through selecting an AI assistant and an installation method. Git and a Node.js version supported by the [skills CLI](https://github.com/vercel-labs/skills) are required.
@@ -57,6 +57,40 @@ Install a specific skill:
 ```bash
 npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 ```
+
+## Marketplaces
+
+### Claude Code marketplace
+
+Add this repository's marketplace and install the collection plugin:
+
+```bash
+claude plugin marketplace add luffysolution-svg/sanmu-skills
+claude plugin install sanmu-skills@sanmu-skills
+```
+
+Claude Code 2.1.275+ also supports this in-session command:
+
+```text
+/plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
+```
+
+### Codex marketplace
+
+```bash
+codex plugin marketplace add luffysolution-svg/sanmu-skills
+codex plugin add sanmu-skills@sanmu-skills
+```
+
+Use a recent Codex CLI that supports `plugin marketplace`; start a new session after installation, or manage plugins through `/plugins`. Both plugins include all three skills. Choose either the plugin or `npx skills` installation to avoid loading duplicate skills.
+
+### Tencent SkillHub, SkillsMP and skills.sh
+
+- **Tencent SkillHub**: search [SkillHub](https://skillhub.cn/) for `sanmu-doc2md`, `sanmu-paper-reader` or `sanmu-paper-search`. Availability depends on platform review. Three standalone packages are provided with [GitHub Releases](https://github.com/luffysolution-svg/sanmu-skills/releases).
+- **SkillsMP**: indexes public GitHub skills; listing depends on its next successful sync. Use the installation commands on this page.
+- **skills.sh**: the [collection page](https://skills.sh/luffysolution-svg/sanmu-skills) lists the three skills. Install with `npx skills add` above.
+
+Skill and plugin installation does not configure Python, KaTeX, OCR services or Zotero. Follow each skill's guide for dependencies and credentials. Maintainers can find versioning, packaging and publishing steps in the [distribution guide](https://github.com/luffysolution-svg/sanmu-skills/blob/main/distribution/README.en.md).
 
 ## Skills
 
@@ -135,7 +169,7 @@ python -m unittest discover -s skills/sanmu-doc2md/tests -v
 python skills/sanmu-doc2md/scripts/doctor.py
 ```
 
-Validate `sanmu-paper-reader` (Python 3.10+, no third-party dependencies):
+Validate `sanmu-paper-reader` (Python 3.10+; see its guide for optional SI/PDF/image dependencies):
 
 ```bash
 python -m unittest discover -s skills/sanmu-paper-reader/tests -v

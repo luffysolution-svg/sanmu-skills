@@ -2,7 +2,7 @@
 
 **Find traceable, readable papers from a topic, seed paper, or author.**
 
-[简体中文](README.md) · **English** · [Collection](../../README.en.md)
+[简体中文](README.md) · **English** · [Collection](https://github.com/luffysolution-svg/sanmu-skills/blob/main/README.en.md)
 
 Topic discovery, author publications, references/citations/recommendations, cross-source deduplication, full-text locations, and Zotero matching. Small requests return a concise shortlist; broader searches retain a protocol and coverage limitations. The core CLI uses Python 3.10+ and the standard library, with no mandatory research platform or model dependency.
 
@@ -72,7 +72,7 @@ Records distinguish returned metadata from available abstract text; a screening 
 
 Bounded retrieval does not establish exhaustive coverage. Broader searches need a [protocol](references/protocol.md) and screening evidence. No login/paywall bypass or direct Zotero database access. Keep private papers, notes, annotations, credentials and test runs outside public commits.
 
-Optionally hand acquired materials to [sanmu-doc2md](../sanmu-doc2md/README.en.md) for conversion and [sanmu-paper-reader](../sanmu-paper-reader/README.en.md) for interpretation. Neither is required for delivering a shortlist and acquisition record.
+Optionally hand acquired materials to [sanmu-doc2md](https://github.com/luffysolution-svg/sanmu-skills/blob/main/skills/sanmu-doc2md/README.en.md) for conversion and [sanmu-paper-reader](https://github.com/luffysolution-svg/sanmu-skills/blob/main/skills/sanmu-paper-reader/README.en.md) for interpretation. Neither is required for delivering a shortlist and acquisition record.
 
 ## Validation and references
 
@@ -84,4 +84,4 @@ Offline tests use mock responses to cover normalization, identity merging, failu
 
 Design references: [K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup), [research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search), [OmniScholar](https://github.com/luffysolution-svg/omnischolar), [paper-search-pro](https://github.com/O0000-code/paper-search-pro), and [easyseek](https://github.com/Rimagination/easyseek). Core code is independently implemented without copying their source. More: [retrieval strategy](references/retrieval.md), [acquisition and handoff](references/handoff.md).
 
-Covered by the collection's [MIT license](../../LICENSE). Database content, papers and third-party services retain their own terms.
+Covered by the [MIT license](LICENSE). Database content, papers and third-party services retain their own terms.

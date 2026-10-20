@@ -1,0 +1,23 @@
+{
+  "name": "sanmu-skills",
+  "version": "1.2.0",
+  "license": "MIT",
+  "repository": "https://github.com/luffysolution-svg/sanmu-skills",
+  "skills": [
+    {
+      "name": "sanmu-doc2md",
+      "displayName": "三木 · 学术文档转 Markdown",
+      "summary": "将论文、教材与课件整理为保留 LaTeX 公式、高清图表和 Zotero 元数据的 Markdown 知识库。"
+    },
+    {
+      "name": "sanmu-paper-reader",
+      "displayName": "三木 · 文献精读",
+      "summary": "精读论文与补充材料，核对图表证据、复现参数和性能基准，形成可追溯的研究笔记。"
+    },
+    {
+      "name": "sanmu-paper-search",
+      "displayName": "三木 · 文献检索",
+      "summary": "从课题、论文或作者检索文献，合并题录、扩展引文、定位全文与 SI，并匹配 Zotero 收藏。"
+    }
+  ]
+}

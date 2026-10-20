@@ -65,7 +65,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    npx skills add luffysolution-svg/sanmu-skills --skill sanmu-paper-reader -g
    Select the correct assistant target and check existing local edits before updating.
 2. Read SKILL.md and README.en.md in the installed skill directory.
-3. The current assistant performs the reading. No separate model API or deep-research skill is required. Optional offline evidence tools need Python 3.10+ and no third-party packages.
+3. The current assistant performs the reading. No separate model API or deep-research skill is required. Evidence, topic and benchmark tools use the Python 3.10+ standard library. For SI probing, PDF figure extraction or subfigure cropping, run python -m pip install -r requirements.txt in a dedicated virtual environment to install PyMuPDF and Pillow.
 4. From the directory containing SKILL.md, run:
    python -m unittest discover -s tests -v
    python scripts/evidence_tools.py --help
@@ -79,7 +79,13 @@ https://github.com/luffysolution-svg/sanmu-skills
 npx skills add luffysolution-svg/sanmu-skills --skill sanmu-paper-reader -g
 ```
 
-The reading instructions require no Python packages. Bundled tools use the Python 3.10+ standard library. PDF readers, OCR, and Zotero are optional host integrations. For an unpublished local checkout, copy or link the complete `skills/sanmu-paper-reader` directory into your assistant's skill directory; remote installation only retrieves published versions.
+Reading instructions and the evidence, topic and benchmark tools use the Python 3.10+ standard library. `si_probe.py` and `extract_si_figures.py` require PyMuPDF; `crop_subfigures.py` requires Pillow. To use these features, run from the skill directory in a dedicated virtual environment:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Skill installers do not install these dependencies automatically. PDF readers, OCR, and Zotero can also be provided by optional host integrations. For an unpublished local checkout, copy or link the complete `skills/sanmu-paper-reader` directory into your assistant's skill directory; remote installation only retrieves published versions.
 
 ## Scenarios
 

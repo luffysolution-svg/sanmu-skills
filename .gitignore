@@ -32,3 +32,6 @@ Thumbs.db
 
 # 预览产物
 *.log
+
+# 渠道发布包
+/dist/

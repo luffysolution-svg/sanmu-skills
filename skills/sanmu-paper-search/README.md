@@ -2,7 +2,7 @@
 
 **从课题、论文或作者出发，找到可核查、可阅读的文献。**
 
-**简体中文** · [English](README.en.md) · [返回合集](../../README.md)
+**简体中文** · [English](README.en.md) · [返回合集](https://github.com/luffysolution-svg/sanmu-skills)
 
 主题检索、作者作品、参考/施引/相似论文、跨来源去重、全文位置和 Zotero 收藏匹配。日常找几篇论文可以直接给候选；开题或扩展检索才记录完整协议。核心 CLI 为 Python 3.10+ 标准库实现，无强制科研服务或模型依赖。
 
@@ -75,7 +75,7 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 - 有界检索不证明查全；系统检索需逐源预算与筛选记录，见 [检索协议](references/protocol.md)。
 - 不绕过登录/付费访问、不直接操作 Zotero 数据库。私有 PDF、笔记、批注、凭证与测试运行不公开提交。
 
-全文取得后，可选交给 [sanmu-doc2md](../sanmu-doc2md/README.md) 转换，交给 [sanmu-paper-reader](../sanmu-paper-reader/README.md) 精读。两者未安装时仍能交付文献清单、来源与材料。
+全文取得后，可选交给 [sanmu-doc2md](https://github.com/luffysolution-svg/sanmu-skills/tree/main/skills/sanmu-doc2md) 转换，交给 [sanmu-paper-reader](https://github.com/luffysolution-svg/sanmu-skills/tree/main/skills/sanmu-paper-reader) 精读。两者未安装时仍能交付文献清单、来源与材料。
 
 ## 验证与设计参考
 
@@ -87,4 +87,4 @@ python -m unittest discover -s tests -v
 
 设计参考：[K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup)、[research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search)、[OmniScholar](https://github.com/luffysolution-svg/omnischolar)、[paper-search-pro](https://github.com/O0000-code/paper-search-pro)、[easyseek](https://github.com/Rimagination/easyseek)。核心代码独立实现，不复制这些项目源码。按需阅读：[检索策略](references/retrieval.md) · [获取与交接](references/handoff.md)。
 
-采用合集 [MIT 许可证](../../LICENSE)。数据库内容、论文与第三方服务各自的许可继续适用。
+采用 [MIT 许可证](LICENSE)。数据库内容、论文与第三方服务各自的许可继续适用。

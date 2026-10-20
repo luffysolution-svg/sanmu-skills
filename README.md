@@ -11,7 +11,7 @@
 
 **简体中文** · [English](README.en.md)
 
-[快速安装](#快速安装) · [技能目录](#技能目录) · [使用说明](#使用说明) · [参与贡献](#参与贡献)
+[快速安装](#快速安装) · [市场安装](#市场安装) · [技能目录](#技能目录) · [使用说明](#使用说明) · [参与贡献](#参与贡献)
 
 </div>
 
@@ -26,7 +26,7 @@
 https://github.com/luffysolution-svg/sanmu-skills
 
 1. 检查 Git 和 Node.js，通过以下命令安装合集到当前 AI 助手的用户级技能目录：
-   npx skills add luffysolution-svg/sanmu-skills --skill '*' -g
+   npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
    选择当前助手对应的安装目标；已有安装时先检查本地修改。
 2. 阅读已安装技能的 README，按各自要求配置依赖。
 3. 对 sanmu-doc2md，进入包含 SKILL.md 的技能目录，优先使用独立 Python 虚拟环境，再执行：
@@ -35,7 +35,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    python scripts/doctor.py
    python -m unittest discover -s tests -v
 4. 检查 MINERU_API_TOKEN 配置状态，不显示凭证值；未配置时指导我从 https://mineru.net 获取并在本地设置。
-5. 对 sanmu-paper-reader，使用 Python 3.10+ 从技能目录执行 python -m unittest discover -s tests -v；附带证据工具无第三方依赖，PDF/OCR/Zotero按实际输入检查可用性。
+5. 对 sanmu-paper-reader，证据、主题与基准工具使用 Python 3.10+ 标准库；需要 SI 探针、PDF 附图提取或子图裁切时，在独立虚拟环境执行 python -m pip install -r requirements.txt。再从技能目录执行 python -m unittest discover -s tests -v；PDF/OCR/Zotero按实际输入检查可用性。
 6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python -m unittest discover -s tests -v；核心无第三方依赖，学术 API 凭证仅检查是否配置，Zotero 按需连接。
 7. 汇报安装位置、验证结果和仍需配置的项目。
 ```
@@ -47,7 +47,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 安装整个合集到用户目录：
 
 ```bash
-npx skills add luffysolution-svg/sanmu-skills --skill '*' -g
+npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
 ```
 
 安装器会引导你选择目标 AI 助手和安装方式。需要 Git 和满足 [skills 安装器要求](https://github.com/vercel-labs/skills) 的 Node.js。
@@ -57,6 +57,40 @@ npx skills add luffysolution-svg/sanmu-skills --skill '*' -g
 ```bash
 npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 ```
+
+## 市场安装
+
+### Claude Code marketplace
+
+在终端添加本仓库的市场并安装合集插件：
+
+```bash
+claude plugin marketplace add luffysolution-svg/sanmu-skills
+claude plugin install sanmu-skills@sanmu-skills
+```
+
+Claude Code 2.1.275+ 也可在会话中一步安装：
+
+```text
+/plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
+```
+
+### Codex marketplace
+
+```bash
+codex plugin marketplace add luffysolution-svg/sanmu-skills
+codex plugin add sanmu-skills@sanmu-skills
+```
+
+需要支持 `plugin marketplace` 的新版 Codex CLI；安装后重开会话，也可在 `/plugins` 中管理。Claude 与 Codex 的合集插件均包含三个技能。选择插件或 `npx skills` 中的一种安装方式，避免重复加载。
+
+### 腾讯 SkillHub、SkillsMP 与 skills.sh
+
+- **腾讯 SkillHub**：在 [SkillHub](https://skillhub.cn/) 搜索 `sanmu-doc2md`、`sanmu-paper-reader` 或 `sanmu-paper-search`；上架以平台审核通过为准。三个独立适配包随 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases) 提供。
+- **SkillsMP**：从公开 GitHub 自动索引，实际展示以其同步结果为准；安装使用本页命令。
+- **skills.sh**：[合集页面](https://skills.sh/luffysolution-svg/sanmu-skills) 展示三个技能，使用上方 `npx skills add` 安装。
+
+技能或插件安装不会自动安装 Python、KaTeX、OCR 服务或 Zotero。运行依赖与凭证按各技能指南配置。维护者的打包、版本和发布步骤见 [渠道发布说明](https://github.com/luffysolution-svg/sanmu-skills/blob/main/distribution/README.md)。
 
 ## 技能目录
 
@@ -136,7 +170,7 @@ python -m unittest discover -s skills/sanmu-doc2md/tests -v
 python skills/sanmu-doc2md/scripts/doctor.py
 ```
 
-验证 `sanmu-paper-reader`（Python 3.10+，无第三方依赖）：
+验证 `sanmu-paper-reader`（Python 3.10+；SI/PDF/图像工具的可选依赖见其安装说明）：
 
 ```bash
 python -m unittest discover -s skills/sanmu-paper-reader/tests -v
