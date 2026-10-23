@@ -56,7 +56,7 @@ def build_query(args):
         if kind == "doi":
             return f'DOI:"{val}"', True
         if kind == "pmcid":
-            return f'PMCID:"{val}"', True
+            return f'PMCID:{val}', True
         if kind == "pmid":
             return f'EXT_ID:"{val}"', True
         return f'"{val}"', True
@@ -66,7 +66,7 @@ def build_query(args):
         if kind == "doi":
             return f'DOI:"{val}"', True
         if kind == "pmcid":
-            return f'PMCID:"{val}"', True
+            return f'PMCID:{val}', True
         if kind == "pmid":
             return f'EXT_ID:"{val}"', True
     except InputError:

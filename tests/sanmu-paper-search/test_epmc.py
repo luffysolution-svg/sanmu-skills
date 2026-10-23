@@ -125,7 +125,7 @@ class EPMCTests(unittest.TestCase):
         args_id.id = "PMC12710600"
         q_id, is_id2 = build_query(args_id)
         self.assertTrue(is_id2)
-        self.assertEqual(q_id, 'PMCID:"PMC12710600"')
+        self.assertEqual(q_id, 'PMCID:PMC12710600')
 
         args_doi = Args()
         args_doi.id = "10.1002/adma.202313513"
