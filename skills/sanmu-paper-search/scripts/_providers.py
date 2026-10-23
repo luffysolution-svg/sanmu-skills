@@ -8,6 +8,7 @@ import json
 import os
 import math
 import random
+import re
 import time
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
@@ -18,7 +19,8 @@ from _core import InputError, Redactor, doi, ids, location, now, record
 from _rate_limit import RateLimiter, RateLimitError
 
 BASE = {"openalex": "https://api.openalex.org", "semantic-scholar": "https://api.semanticscholar.org/graph/v1",
-        "crossref": "https://api.crossref.org", "unpaywall": "https://api.unpaywall.org/v2"}
+        "crossref": "https://api.crossref.org", "unpaywall": "https://api.unpaywall.org/v2",
+        "europepmc": "https://www.ebi.ac.uk/europepmc/webservices/rest"}
 # Graph FullPaper (lookup/search) includes TLDR; BasePaper/PaperWithLinks do not.
 S2_BASE_FIELDS = "paperId,corpusId,externalIds,title,year,authors,abstract,publicationTypes,isOpenAccess,openAccessPdf,url,citationCount,referenceCount,venue,journal,publicationDate"
 S2_FIELDS = S2_BASE_FIELDS + ",tldr"
@@ -168,7 +170,7 @@ def parse_id(value):
     lowered = value.lower()
     for prefix, kind in (("https://openalex.org/", "openalex"), ("openalex:", "openalex"),
                          ("semantic-scholar:", "semantic_scholar"), ("s2:", "semantic_scholar"),
-                         ("pmid:", "pmid"), ("arxiv:", "arxiv"), ("corpusid:", "corpus_id")):
+                         ("pmid:", "pmid"), ("pmcid:", "pmcid"), ("arxiv:", "arxiv"), ("corpusid:", "corpus_id")):
         if lowered.startswith(prefix):
             identifier = value[len(prefix):]
             if not identifier or any(c.isspace() for c in identifier):
@@ -176,7 +178,9 @@ def parse_id(value):
             return kind, identifier
     if value.startswith("W") and value[1:].isdigit():
         return "openalex", value
-    raise InputError("Use a DOI, openalex:W..., s2:paperId, pmid:..., arxiv:..., or corpusid:...")
+    if re.fullmatch(r"PMC\d+", value, re.I):
+        return "pmcid", value.upper()
+    raise InputError("Use a DOI, openalex:W..., s2:paperId, pmid:..., pmcid:..., arxiv:..., or corpusid:...")
 
 
 def s2_id(identifier):
@@ -195,6 +199,8 @@ def oa_id(identifier):
         return "https://doi.org/" + value
     if kind == "pmid":
         return "pmid:" + value
+    if kind == "pmcid":
+        return "pmcid:" + value
     raise SourceError("OpenAlex cannot resolve this ID type directly")
 
 

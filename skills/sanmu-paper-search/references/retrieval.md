@@ -2,7 +2,7 @@
 
 ## 主题检索
 
-核心 CLI 支持 OpenAlex、Semantic Scholar 和 Crossref：OpenAlex 用于跨学科主题与机构/作者作品，S2 用于论文相似性及引用图，Crossref 用于 DOI 和出版社题录核对。可选 Serper 的 `scholar` 补 Google Scholar，`search` 找出版社/仓储/SI 线索，`patents` 查专利；具体配置、参数及其余公开接口按需读 [Serper 指南](serper.md)。自然语言描述较长或希望补搜 publication 时，可选 [Exa](exa.md)；它保留网页结果，仅将可识别的结构化 publication 实体纳入候选题录，再用学术来源核验身份。需要补充领域覆盖时，通过宿主工具查询 PubMed/Europe PMC 或 arXiv，并单独记录来源。
+核心 CLI 支持 OpenAlex、Semantic Scholar 和 Crossref：OpenAlex 用于跨学科主题与机构/作者作品，S2 用于论文相似性及引用图，Crossref 用于 DOI 和出版社题录核对。可选 Serper 的 `scholar` 补 Google Scholar，`search` 找出版社/仓储/SI 线索，`patents` 查专利；具体配置、参数及其余公开接口按需读 [Serper 指南](serper.md)。自然语言描述较长或希望补搜 publication 时，可选 [Exa](exa.md)；它保留网页结果，仅将可识别的结构化 publication 实体纳入候选题录，再用学术来源核验身份。需要发掘预印本、筛选关联数据集/补充材料、核验撤稿关系，或直接下载 JATS 全文 XML 与补充材料原图解包时，使用 [Europe PMC](epmc.md)（内置独立的 `epmc` 命令，免 Key 公开访问）；需注意 Europe PMC 覆盖偏向生物医药与交叉综合期刊，材料专业期刊收录不均且期刊检索词只认 MEDLINE 缩写，不可作为材料通用检索的唯一主源。需要补充领域覆盖时，可通过宿主工具单独记录来源。
 
 材料问题可以按“对象 × 过程 × 目标/证据”展开。例如“受阻路易斯酸碱对光催化产氢”先查 `frustrated Lewis pairs photocatalytic hydrogen`，再查 `Lewis acid base pairs photothermal water splitting`；不能把 hydrogen evolution 与无牺牲剂整体分解水等同。根据召回论文中的真实术语修订查询，并记录修订原因。
 
@@ -25,9 +25,9 @@ Crossref 的主题补搜使用标题字段 `query.title`，避免 `Lewis` 等词
 
 ## 身份与版本
 
-DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的有意义后缀。arXiv 保留旧式分类前缀和版本信息。DOI、PMID、arXiv、OpenAlex、S2 标识符各有命名空间。
+DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的有意义后缀。arXiv 保留旧式分类前缀和版本信息。DOI、PMID、PMCID、arXiv、OpenAlex、S2 标识符各有命名空间。
 
-相同稳定 ID 的记录可合并来源；没有 ID 时只作保守题名/作者/年份匹配。明确不同 DOI 不能仅凭标题近似合并。预印本/正式版、撤稿通知/原文、勘误/原文、主文/SI 是关系，不是重复副本。字段冲突记录各来源值，优先出版社/登记机构不等于抹掉冲突。HTTP 200 之后仍要检查响应结构与目标身份。
+相同稳定 ID 的记录可合并来源；没有 ID 时只作保守题名/作者/年份匹配。明确不同 DOI 不能仅凭标题近似合并。预印本/正式版、撤稿通知/原文、勘误/原文、主文/SI 是关系，不是重复副本。Europe PMC 的 `commentCorrectionList` 原生提供撤稿与勘误关系，避免人工漏检。字段冲突记录各来源值，优先出版社/登记机构不等于抹掉冲突。HTTP 200 之后仍要检查响应结构与目标身份。
 
 ## 运行条件
 
@@ -41,3 +41,4 @@ DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的�
 - Semantic Scholar：https://api.semanticscholar.org/api-docs/
 - Crossref：https://www.crossref.org/documentation/retrieve-metadata/rest-api/
 - Unpaywall：https://unpaywall.org/products/api
+- Europe PMC：https://europepmc.org/RestfulWebService

@@ -20,7 +20,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 2. 阅读技能 SKILL.md 和 README，在技能目录运行：
    python scripts/paper_search.py doctor
    python scripts/paper_search.py --help
-3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 和可选 SERPER_API_KEY、EXA_API_KEY 是否配置，不显示值。Serper 按需补充 Google Scholar、网页、专利等公开检索，Exa 补充自然语言 publication 检索；没有凭证时说明可用范围，确需配置才指向官方注册页。
+3. 检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 和可选 SERPER_API_KEY、EXA_API_KEY 是否配置，不显示值。内置 Europe PMC 公共接口免 Key 开放访问，支持预印本、关联数据集、撤稿核验与 JATS XML / 补充材料原图解包获取；Serper 按需补充 Google Scholar、网页、专利等公开检索，Exa 补充自然语言 publication 检索；没有凭证时说明可用范围，确需配置才指向官方注册页。
 4. 如需 Zotero，检查宿主插件与本地 API；不要直接读取数据库或 storage。没有 Zotero 也能使用核心检索。
 5. 在仓库之外的新工作目录做一次小规模公开文献查询，报告逐源状态、安装位置与限制；不改 Zotero 文献。
 ```
@@ -68,6 +68,15 @@ python scripts/paper_search.py exa "papers on frustrated Lewis pairs for phototh
 
 Exa 使用 publication 检索；结构化实体可进入 `papers.json` 候选，完整结果与响应保留在 `results.json` / `response.json`。实体身份需再经学术来源核验，正文摘录另存，费用以 API 返回的 `costDollars` 为参考。配置、域名过滤和输出说明见 [Exa 指南](references/exa.md)。
 
+Europe PMC 检索与 JATS 全文 / 补充材料原图包一键获取（免 Key 公开访问）：
+
+```bash
+python scripts/paper_search.py epmc "photocatalytic hydrogen" --has-suppl --open-access --limit 5 --out /path/to/work/epmc-search
+python scripts/paper_search.py epmc PMC12710600 --fetch all --out /path/to/work/epmc-bundle
+```
+
+`epmc` 命令支持预印本（`--preprints`）、关联数据（`--has-data`）、撤稿/勘误核验（`commentCorrectionList` 原生提取），并通过 `--fetch all/xml/suppl` 下载 JATS XML 与解压二进制 SI ZIP（提取 SI PDF 与未压缩高清原图）。配置与边界见 [Europe PMC 指南](references/epmc.md)。
+
 Windows 使用实际绝对路径并加引号。作者候选核对后，用 `author --author-id ID --provider ...` 获取作品。`search` 和作者作品支持 `--year-from` / `--year-to`。原有学术检索的 `--limit 1..20` 为每源候选预算，跨源去重后全部保留；默认不做跨库相关性重排，助手根据实际阅读形成候选短名单。参数与记录格式见 [CLI 指南](references/cli.md)。
 
 ## 来源与依赖
@@ -77,6 +86,7 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 | OpenAlex | 主题、作者、引文和 OA 位置 | `OPENALEX_API_KEY`，无 key 的能力按官方限制降级 |
 | Semantic Scholar | 主题、作者、引文和相似推荐 | `SEMANTIC_SCHOLAR_API_KEY` 或 `S2_API_KEY`；共享匿名池可能限流 |
 | Crossref | 题录/DOI核对、补召回 | 可选 `CROSSREF_EMAIL` |
+| Europe PMC | 预印本、关联数据、撤稿核验、JATS 全文 XML 与补充材料 ZIP 解包 | 无需 Key，公开访问；[指南与边界](references/epmc.md) |
 | Unpaywall | DOI 对应 OA 位置 | `UNPAYWALL_EMAIL`，不用于关键词搜索 |
 | Serper（可选） | Google Scholar、网页、专利及其他公开信息，共 13 类接口 | `SERPER_API_KEY`，按请求计费；[配置与接口](references/serper.md) |
 | Exa（可选） | 自然语言 publication 候选发现 | `EXA_API_KEY`；[配置、参数与费用](references/exa.md) |

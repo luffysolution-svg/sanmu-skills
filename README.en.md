@@ -36,7 +36,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    python scripts/build_markdown.py --help
 4. Check MINERU_API_TOKEN configuration without displaying its value. If missing, direct me to https://mineru.net and explain how to set it locally.
 5. For sanmu-paper-reader, evidence, topic and benchmark tools use the Python 3.10+ standard library. For SI probing, PDF figure extraction or subfigure cropping, run python -m pip install -r requirements.txt in a dedicated virtual environment. From the skill directory run python scripts/evidence_tools.py --help and python scripts/benchmark_collector.py --help; check PDF/OCR/Zotero integrations as needed.
-6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python scripts/paper_search.py --help from its directory. The core has no third-party dependencies; check only whether API credentials and optional SERPER_API_KEY and EXA_API_KEY are configured and connect Zotero as needed. Serper adds Google Scholar, web, patent and other public searches; Exa adds optional natural-language publication discovery.
+6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python scripts/paper_search.py --help from its directory. The core has no third-party dependencies; built-in Europe PMC provides keyless public access for preprints, associated datasets, retraction verification, and JATS XML / supplementary ZIP bundle fetching; check only whether API credentials and optional SERPER_API_KEY and EXA_API_KEY are configured and connect Zotero as needed. Serper adds Google Scholar, web, patent and other public searches; Exa adds optional natural-language publication discovery.
 7. Report installation paths, validation results, and any remaining configuration steps.
 ```
 
@@ -124,7 +124,7 @@ Interprets papers, supporting information, Zotero attachments, and Markdown note
 
 ### sanmu-paper-search
 
-Search OpenAlex, Semantic Scholar and Crossref from a topic, seed paper or author. Retain provenance, merge evidence, failures and truncation; locate full text/SI and match Zotero holdings. Optional Serper adds Google Scholar, web, patents and other public information across 13 API types. Optional Exa adds natural-language publication discovery; see the [Exa guide](skills/sanmu-paper-search/references/exa.md) for parameters and cost records. Keep everyday searches lightweight, document broader protocols, and hand acquired materials to conversion and reading workflows.
+Search OpenAlex, Semantic Scholar and Crossref from a topic, seed paper or author. Retain provenance, merge evidence, failures and truncation; locate full text/SI and match Zotero holdings. Built-in Europe PMC provides keyless public access for preprints, associated datasets, retraction tracking, and JATS full-text XML / supplementary ZIP bundle fetching (extracting SI PDFs and high-resolution figures). Optional Serper adds Google Scholar, web, patents and other public information across 13 API types. Optional Exa adds natural-language publication discovery; see the [Exa guide](skills/sanmu-paper-search/references/exa.md) and [Europe PMC guide](skills/sanmu-paper-search/references/epmc.md) for parameters and details. Keep everyday searches lightweight, document broader protocols, and hand acquired materials to conversion and reading workflows.
 
 [Installation, commands and scope →](skills/sanmu-paper-search/README.en.md)
 

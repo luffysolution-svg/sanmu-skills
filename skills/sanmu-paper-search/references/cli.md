@@ -22,7 +22,7 @@ python scripts/paper_search.py diff "/path/to/work/runs/seed" "/path/to/work/run
 
 输出使用用户工作目录下的新建目录，例如 `runs/topic-日期/`，保留已有筛选结果。私有 Zotero 快照和运行产物存放在个人工作区。
 
-`search --sources` 的来源名是 `openalex`、`semantic-scholar`、`crossref`；Serper 和 Exa 分别使用独立的 `serper`、`exa` 子命令，见下文。可移植身份格式包括 DOI、`doi:...`、DOI URL、`openalex:W...`、`s2:...`、`pmid:...`、`arxiv:...`。并非所有来源都支持全部 ID，未支持情况需在逐源状态中保留。作者 ID 属于提供者，不能跨库复用。
+`search --sources` 的来源名是 `openalex`、`semantic-scholar`、`crossref`；Serper、Exa 与 Europe PMC 分别使用独立的 `serper`、`exa`、`epmc` 子命令，见下文。可移植身份格式包括 DOI、`doi:...`、DOI URL、`openalex:W...`、`s2:...`、`pmid:...`、`pmcid:...`、`arxiv:...`。并非所有来源都支持全部 ID，未支持情况需在逐源状态中保留。作者 ID 属于提供者，不能跨库复用。
 
 `search`、`author --author-id` 和 `author --from-paper` 支持 `--year-from 2024 --year-to 2025`；`related` 不支持年份参数，需在关系结果上另做筛选并保留阶段记录。`--limit` 是每源候选预算（1–20），跨源去重后全部保存，三源最多 60 条；保留源序，不宣称跨库相关性已统一排序。作者单源作品和 `oa` 输入处理同样受该预算约束。年份需为 1000–9999，起始年不得晚于结束年；参数校验在请求前完成。已知年份在源端（支持时）和本地过滤，返回的未知年份保留并计数；源端可能不返回缺日期文献，见 `year_filter`。S2 主题搜索发送 `year` 范围，作者作品发送 `publicationDateOrYear` 范围，两者均再本地复筛；OpenAlex/Crossref 使用各自的服务端日期过滤。
 
@@ -59,8 +59,29 @@ python scripts/paper_search.py exa "papers on frustrated Lewis pairs for phototh
 
 `results.json` 保存完整结果列表，`response.json` 保存全部脱敏请求/响应；仅可对齐当前题名的结构化 publication 实体进入 `papers.json`，无 DOI 时仍可作待核验候选，`read=false`。网页文本不写入摘要，网页命中与论文数分别计数，保留 `exa` 来源状态；所有产物纳入哈希清单。费用来自 `costDollars`，缺失记 `unknown`，不是最终账单。HTTP 429/502/503/504 最多三次请求尝试（含首次），网络异常不自动重发。
 
+## Europe PMC（公开接口、全文与补充材料）
+
+无需 API Key，通过独立的 `epmc` 子命令进行预印本、关联数据集与开放获取筛选，并一键获取 JATS 全文 XML 与补充材料 ZIP 包。详细背景与避坑见 [Europe PMC 指南](epmc.md)。
+
+```bash
+python scripts/paper_search.py epmc --help
+# 1. 筛选含有补充材料与开放获取的论文
+python scripts/paper_search.py epmc "photocatalytic hydrogen carbon nitride" --has-suppl --open-access --limit 10 --out "/path/to/work/runs/epmc-search"
+# 2. 筛选预印本与关联数据集
+python scripts/paper_search.py epmc "carbon nitride" --preprints --has-data --limit 5 --out "/path/to/work/runs/epmc-preprints"
+# 3. 精确核验题录与撤稿/勘误关系（通过 DOI、PMID 或 PMCID）
+python scripts/paper_search.py epmc 10.1002/adma.202313513 --out "/path/to/work/runs/epmc-seed"
+# 4. 下载 JATS 全文 XML 与补充材料解压包（提取 SI PDF 与高清单张原图）
+python scripts/paper_search.py epmc PMC12710600 --fetch all --out "/path/to/work/runs/epmc-bundle"
+```
+
+`--limit 1..20`（默认 10）为每查询上限；支持 `--year-from/to`、`--sort relevance|cited|date`，以及 `--has-suppl`、`--open-access`、`--has-data`、`--preprints`、`--has-fulltext`。`--fetch none|all|xml|suppl` 控制获取深度。
+
+`papers.json` 保存对齐题录（保留 PMCID、PMID、DOI 与 `commentCorrectionList` 撤稿/勘误关系）；`results.json` 与 `response.json` 保存脱敏响应。当包含 `--fetch` 时，产物另包含 `fulltext.xml`、`fulltext_summary.json`（分节/图表/公式统计）、`supplementary_manifest.json` 与解压目录 `supplementary/`（含 SI 正文 PDF 与高清原图）。所有文件均由 `manifest.json` 计算 SHA-256 哈希防篡改。
+
 ## 配置（仅环境变量，不写入记录）
 
+- Europe PMC：公共免凭证开放访问，`doctor` 显示 `europepmc_public_access: true`。
 - `SERPER_API_KEY`：可选 Serper 接口，缺失时不执行该服务；安全设置方法见 [Serper 指南](serper.md)。
 - `EXA_API_KEY`：可选 Exa publication 检索；安全设置方法见 [Exa 指南](exa.md)。
 - `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`：Semantic Scholar 配额。

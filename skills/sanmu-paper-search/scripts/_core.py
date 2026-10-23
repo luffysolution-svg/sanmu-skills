@@ -395,7 +395,7 @@ def prepare_out(path):
     return path
 
 
-def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None, serper_data=None, exa_data=None):
+def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None, serper_data=None, exa_data=None, epmc_data=None):
     errors = [s for s in sources.values() if s.get("status") == "error"]
     usable = [s for s in sources.values() if s.get("status") in ("ok", "not_found")]
     status = ("partial" if usable or papers else "failed") if errors else "success"
@@ -414,6 +414,15 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
     if exa_data is not None:
         artifacts["results.json"] = dumps(redactor.clean(exa_data["results"]))
         artifacts["response.json"] = dumps(redactor.clean(exa_data["responses"]))
+    if epmc_data is not None:
+        artifacts["results.json"] = dumps(redactor.clean(epmc_data.get("results", [])))
+        artifacts["response.json"] = dumps(redactor.clean(epmc_data.get("responses", [])))
+        if "fulltext_xml" in epmc_data and epmc_data["fulltext_xml"] is not None:
+            artifacts["fulltext.xml"] = epmc_data["fulltext_xml"]
+        if "fulltext_summary" in epmc_data and epmc_data["fulltext_summary"] is not None:
+            artifacts["fulltext_summary.json"] = dumps(redactor.clean(epmc_data["fulltext_summary"]))
+        if "supplementary_manifest" in epmc_data and epmc_data["supplementary_manifest"] is not None:
+            artifacts["supplementary_manifest.json"] = dumps(redactor.clean(epmc_data["supplementary_manifest"]))
     for i, response in enumerate(raw, 1):
         artifacts[f"raw/{i:04d}.json"] = dumps(redactor.clean(response))
     lines = ["# Paper search report", "", f"Status: {status}", f"Command: {command}"]
@@ -452,6 +461,12 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
                       f"Responses with unknown cost: {run['cost_unknown_responses']}",
                       "Text is remote content, not a verified abstract or full-text reading.",
                       "Publication entities remain candidates until scholarly identifiers are checked."])
+    if epmc_data is not None:
+        lines.extend(["", f"Europe PMC search hit count: {run.get('hit_count', 'unknown')}",
+                      f"Papers extracted: {len(papers)}",
+                      f"Full text XML fetched: {run.get('fulltext_xml_fetched', False)}",
+                      f"Supplementary files fetched: {run.get('supplementary_fetched', False)}",
+                      "Evidence includes Europe PMC core metadata, preprints, and retraction/correction relations."])
     artifacts["report.md"] = "\n".join(lines) + "\n"
     summary = ["| # | Year | Title | Authors | Venue / Type | DOI / Stable ID | Evidence |",
                "| --- | --- | --- | --- | --- | --- | --- |"]
@@ -462,6 +477,20 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
         stable = [f"{k}:{v}" for k, values in p["identifiers"].items() for v in values]
         summary.append(f"| {i} | {p.get('year') or 'n.d.'} | {title} | {authors or 'missing'} | "
                        f"{p.get('venue') or p.get('type') or 'n.a.'} | {', '.join(stable[:3]) or 'missing'} | {p.get('evidence_level')} |")
+    if epmc_data is not None:
+        summary = ["| # | Year | Title | Authors | Venue / Source | Identifiers | Relations | FT/SI |",
+                   "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+        for i, p in enumerate(papers, 1):
+            title = (p.get("title") or "[untitled]").replace("\n", " ").replace("|", "\\|")
+            names = [a.get("name") or "" for a in p.get("authors", [])]
+            authors = ", ".join(names[:2]) + (" et al." if len(names) > 2 else "")
+            stable = [f"{k}:{v}" for k in ("doi", "pmcid", "pmid") for v in p.get("identifiers", {}).get(k, [])]
+            rels = "; ".join(f"{r.get('type')}: {r.get('relation')} ({r.get('source')}:{r.get('id')})"
+                             for r in p.get("relations", [])) or "None"
+            extra_info = p.get("extra_epmc") or {}
+            ft_si = f"FT:{'Y' if extra_info.get('has_fulltext_xml') else 'N'}, SI:{'Y' if extra_info.get('has_suppl') else 'N'}"
+            summary.append(f"| {i} | {p.get('year') or 'n.d.'} | {title} | {authors or 'missing'} | "
+                           f"{p.get('venue') or p.get('type') or 'n.a.'} | {', '.join(stable) or 'missing'} | {rels} | {ft_si} |")
     if serper_data is not None:
         def cell(value):
             return " ".join(str(value if value is not None else "").split()).replace("|", "\\|")
@@ -481,10 +510,15 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
             summary.append("| " + " | ".join(cell(value) for value in
                            (i, item["type"], title, url, data.get("year"), snippet)) + " |")
     artifacts["summary.md"] = "\n".join(summary) + "\n"
-    for relative, text in artifacts.items():
+    for relative, text in list(artifacts.items()):
         target = out / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(redactor.text(text), encoding="utf-8", newline="\n")
+    for p in out.rglob("*"):
+        if p.is_file():
+            rel = p.relative_to(out).as_posix()
+            if rel not in artifacts and rel != "manifest.json":
+                artifacts[rel] = ""
     manifest = {"schema": SCHEMA, "algorithm": "sha256", "files": [
         {"path": relative, "sha256": sha256(out / relative), "size": (out / relative).stat().st_size}
         for relative in sorted(artifacts)]}
@@ -527,7 +561,7 @@ def check_bundle(path, include_metadata=False):
     if (root / "run.json").is_file():
         try:
             run = read_json(root / "run.json")
-            if isinstance(run, dict) and run.get("command") in ("serper", "exa"):
+            if isinstance(run, dict) and run.get("command") in ("serper", "exa", "epmc"):
                 for required in ("results.json", "response.json"):
                     if required not in seen:
                         issues.append("Not in manifest: " + required)

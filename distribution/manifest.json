@@ -1,6 +1,6 @@
 {
   "name": "sanmu-skills",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "license": "MIT",
   "repository": "https://github.com/luffysolution-svg/sanmu-skills",
   "packageBudget": {
@@ -21,7 +21,7 @@
     {
       "name": "sanmu-paper-search",
       "displayName": "三木 · 文献检索",
-      "summary": "检索文献、扩展引文和匹配 Zotero；可选 Exa 语义补搜，或用 Serper 补充 Google 学术、专利、网页与图像线索及公开页面提取。"
+      "summary": "检索文献、扩展引文和匹配 Zotero；集成 Europe PMC 结构化 JATS 全文与补充材料原图包获取、预印本与撤稿核验，可选 Exa 语义补搜及 Serper 检索。"
     }
   ]
 }

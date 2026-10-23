@@ -1,6 +1,6 @@
 ---
 name: sanmu-paper-search
-description: 从课题、种子论文或作者发现学术文献，查询参考、施引、相似论文和作者作品，合并去重并记录检索范围。用于找相关论文、全文或 SI、Google Scholar 补搜、Google 网页与专利检索、更新方向检索，以及整理 Zotero 分类与附件信息。支持同名作者消歧、日常检索和带协议的系统检索准备；按需用 Serper 补充公开信息、Exa 补充自然语言文献发现。
+description: 从课题、种子论文或作者发现学术文献，查询参考、施引、相似论文和作者作品，合并去重并记录检索范围。用于查找相关论文、获取 JATS 全文 XML 与补充材料 ZIP（自动提取 SI PDF 与高清单张原图）、核对撤稿与勘误关系、Google Scholar/专利补搜、Exa 自然语言文献发现，以及整理 Zotero 分类与附件信息。当用户需要开题调研、种子扩展、同名作者消歧、获取补充材料与高清原图、追踪预印本与关联数据，或核验撤稿状态时激活。
 ---
 
 # 文献发现与获取（sanmu-paper-search）
@@ -17,6 +17,7 @@ description: 从课题、种子论文或作者发现学术文献，查询参考�
 | 开题、范围综述、尽量查全或更新检索 | 冻结协议、分页与筛选记录，对已知文献和遗漏逐项检查 | [检索协议](references/protocol.md) |
 | Google Scholar 补搜、Google 网页/专利及相关公开信息 | 按需配置 Serper，选相应接口，核对返回内容与来源 | [Serper 指南](references/serper.md) |
 | 自然语言描述补搜文献 | 按需配置 Exa，保留 publication 候选并用学术来源核验身份 | [Exa 指南](references/exa.md) |
+| Europe PMC 查预印本/关联数据、核验撤稿、获取 JATS 全文与 SI/原图包 | 执行 epmc 命令，按需加 `--fetch` 提取 XML 与补充材料 ZIP | [Europe PMC 指南](references/epmc.md) |
 | 已有题录，找全文/SI、核对 Zotero 收藏 | 先查本地已有材料，定位可访问版本与附件 | [获取与交接](references/handoff.md) |
 | 整理文献库：重建分类、批量归档、规范附件名 | 宿主 Zotero 工具建子集合、迁移条目、改附件显示标题；物理文件名交 Zotero「根据父级元数据重命名」 | [获取与交接](references/handoff.md) |
 
@@ -60,13 +61,15 @@ python scripts/paper_search.py --help
 
 直接公开 PDF 可用 `scripts/fetch_pdf.py` 保存文件、来源与 SHA-256；其格式检查和可选文字层身份核对不是科学内容验收。文件身份未核验时保留待核验状态。SI 发现依赖宿主网页读取能力，需从对应出版社页面查实际附件，逐个记录名称、类型、链接、取得状态与主文关系；缺少网页工具时交出版社链接并标“尚未核对”，没取得标“未获取”，不猜附件地址或声称已全部取得。
 
+针对 Europe PMC 收录文献，可直接执行 `epmc --fetch all/xml/suppl` 一键拉取 JATS 全文 XML 与补充材料二进制 ZIP 并安全解压，直接获得 SI 正文 PDF 与未压缩的正文高清原图（如 Wiley `-g001.jpg`、RSC `-f1.webp`），解压文件全量计入哈希清单；SI PDF 直接供给 `sanmu-paper-reader` 的 `si_probe.py` 探针和 `extract_si_figures.py`，JATS XML 直接供给 `sanmu-doc2md` 转换为 Markdown，避免公式与表格 OCR 误差。
+
 交付时区分 `discovered`、`metadata_checked`、`file_obtained`、`identity_checked` 与 `read`，不把前一步状态升级成后一步。主文和 SI 转换可选交给 `sanmu-doc2md`；相关性、图表、机理和实验条件深入核验可选交给 `sanmu-paper-reader`，未安装时交付清单与文件即可。
 
 ## 5. 交付与验收
 
 先回答用户要找什么、找到了什么，再给候选表：原文标题、年份、DOI/稳定 ID、入选理由及依据层级、全文/SI/本地状态。只列实际核对过的字段；不按期刊档次代替文章相关性或科学质量。
 
-长期任务保存 `run.json`、`papers.json`、脱敏原始响应、`report.md` 和哈希清单；Serper 另以 `results.json` / `response.json` 保留接口结果，`papers.json` 为空，核对稳定 ID 后再进入论文流程。Exa 也保留完整结果与请求/响应，只将可规范化的 publication 实体存为待核验候选，细节见 [Exa 指南](references/exa.md)。筛选理由、排除原因与人工决定另行记录，不改原始响应。运行目录放用户工作区，不放技能仓库或公开提交；更新检索用新目录，比较新增、缺失与元数据变化，缺失不自动视为撤稿。
+长期任务保存 `run.json`、`papers.json`、脱敏原始响应、`report.md` 和哈希清单；Europe PMC 保存规范 `papers.json`（含 PMCID 与撤稿关系）、`results.json` 与 `response.json`，带 `--fetch` 时另包含 `fulltext.xml`、`fulltext_summary.json`、`supplementary_manifest.json` 与解压后的补充材料。Serper 另以 `results.json` / `response.json` 保留接口结果，`papers.json` 为空，核对稳定 ID 后再进入论文流程。Exa 也保留完整结果与请求/响应，只将可规范化的 publication 实体存为待核验候选，细节见 [Exa 指南](references/exa.md)。筛选理由、排除原因与人工决定另行记录，不改原始响应。运行目录放用户工作区，不放技能仓库或公开提交；更新检索用新目录，比较新增、缺失与元数据变化，缺失不自动视为撤稿。
 
 完成前核对：
 

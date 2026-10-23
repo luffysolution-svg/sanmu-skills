@@ -78,6 +78,21 @@ def parser():
     cmd.add_argument("--exclude-domain", action="append", default=[])
     cmd.add_argument("--text-chars", type=int, default=3000)
     cmd.add_argument("--out", required=True)
+    cmd = commands.add_parser("epmc", help="Europe PMC search, preprint discovery, and JATS XML / SI bundle fetching")
+    cmd.add_argument("query", nargs="?", help="Search query, or DOI/PMID/PMCID for lookup/fetch")
+    cmd.add_argument("--id", help="Explicit DOI, PMID, or PMCID (e.g. PMC12710600 or 10.1002/adma.202313513)")
+    cmd.add_argument("--limit", type=bounded, default=10, help="Local per-query result cap (1..20)")
+    cmd.add_argument("--year-from", type=int)
+    cmd.add_argument("--year-to", type=int)
+    cmd.add_argument("--sort", choices=("relevance", "cited", "date"), default="relevance")
+    cmd.add_argument("--has-suppl", action="store_true", help="Only papers with supplementary files (HAS_SUPPL:y)")
+    cmd.add_argument("--open-access", action="store_true", help="Only open access papers (OPEN_ACCESS:y)")
+    cmd.add_argument("--has-data", action="store_true", help="Only papers with associated data (HAS_DATA:y)")
+    cmd.add_argument("--preprints", action="store_true", help="Only preprints (SRC:PPR)")
+    cmd.add_argument("--has-fulltext", action="store_true", help="Only papers with full text in Europe PMC (HAS_FT:y)")
+    cmd.add_argument("--fetch", choices=("none", "all", "xml", "suppl"), default="none",
+                     help="Fetch JATS XML and/or supplementary ZIP files into output")
+    cmd.add_argument("--out", required=True)
     for name in ("search", "lookup", "related"):
         cmd = commands.add_parser(name)
         cmd.add_argument("query" if name == "search" else "id")
@@ -183,7 +198,8 @@ def execute(args, client):
                                   "openalex_email": bool(env.get("OPENALEX_EMAIL")),
                                   "unpaywall_email": bool(env.get("UNPAYWALL_EMAIL")),
                                   "crossref_email": bool(env.get("CROSSREF_EMAIL")),
-                                  "polite_email": bool(env.get("POLITE_EMAIL"))}}, 0
+                                  "polite_email": bool(env.get("POLITE_EMAIL")),
+                                  "europepmc_public_access": True}}, 0
     if args.command == "check":
         result = check_bundle(args.run, args.include_metadata)
         return result, 4 if result["status"] == "failed" else 0
@@ -192,6 +208,9 @@ def execute(args, client):
     if args.command == "exa":
         from _exa import execute as execute_exa
         return execute_exa(args, client)
+    if args.command == "epmc":
+        from _epmc import execute as execute_epmc
+        return execute_epmc(args, client)
     # Input errors are diagnosed before reserving a directory or issuing a request.
     command = args.command
     year_from, year_to = getattr(args, "year_from", None), getattr(args, "year_to", None)

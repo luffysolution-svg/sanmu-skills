@@ -18,7 +18,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 2. Read SKILL.md and README. From the skill directory run:
    python scripts/paper_search.py doctor
    python scripts/paper_search.py --help
-3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL, CROSSREF_EMAIL and optional SERPER_API_KEY and EXA_API_KEY are configured. Never display values. Serper adds Google Scholar, web, patent and other public searches on demand; Exa adds natural-language publication discovery. Explain available capabilities without credentials; point to official registration only when needed.
+3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL, CROSSREF_EMAIL and optional SERPER_API_KEY and EXA_API_KEY are configured. Never display values. Built-in Europe PMC provides keyless public access for preprints, associated datasets, retraction/erratum verification, and JATS XML / supplementary ZIP bundle fetching; Serper adds Google Scholar, web, patent and other public searches on demand; Exa adds natural-language publication discovery. Explain available capabilities without credentials; point to official registration only when needed.
 4. For Zotero, check the host integration and local API. Do not read its database or storage directly. Core search also works without Zotero.
 5. Run a small public-paper query into a new directory outside the repository. Report per-source status, installation path and limitations. Do not modify Zotero items.
 ```
@@ -66,6 +66,15 @@ python scripts/paper_search.py exa "papers on frustrated Lewis pairs for phototh
 
 Exa searches the publication category. Eligible structured entities become candidates in `papers.json`; `results.json` / `response.json` retain the full results and responses. Verify entity identity through scholarly sources; extracted text stays separate from abstracts. Reported `costDollars` provides a cost reference. See the [Exa guide](references/exa.md) for configuration, domain filters and output details.
 
+Europe PMC discovery and JATS full-text XML / supplementary file bundle fetching (keyless public access):
+
+```bash
+python scripts/paper_search.py epmc "photocatalytic hydrogen" --has-suppl --open-access --limit 5 --out /path/to/work/epmc-search
+python scripts/paper_search.py epmc PMC12710600 --fetch all --out /path/to/work/epmc-bundle
+```
+
+The `epmc` command supports preprints (`--preprints`), associated datasets (`--has-data`), retraction/erratum tracking (via native `commentCorrectionList`), and downloads JATS XML plus unpacks binary supplementary ZIPs (`--fetch all/xml/suppl`) to extract SI PDFs and high-resolution figures. See the [Europe PMC guide](references/epmc.md).
+
 On Windows, quote actual absolute paths. After checking candidates, use `author --author-id ID --provider ...` for publications. Topic search and author publications support `--year-from` / `--year-to`. For the core scholarly commands, `--limit 1..20` is a per-source candidate budget; all deduplicated candidates are retained in source order, without cross-provider relevance reranking. The assistant reads and screens the shortlist. See the [CLI contract](references/cli.md).
 
 ## Sources
@@ -75,6 +84,7 @@ On Windows, quote actual absolute paths. After checking candidates, use `author 
 | OpenAlex | Topics, authors, citations and OA locations | `OPENALEX_API_KEY`; anonymous capabilities depend on current limits |
 | Semantic Scholar | Topics, authors, graph relations and recommendations | `SEMANTIC_SCHOLAR_API_KEY` or `S2_API_KEY`; the anonymous pool may throttle |
 | Crossref | DOI/metadata verification and supplementary discovery | Optional `CROSSREF_EMAIL` |
+| Europe PMC | Preprints, associated datasets, retraction checks, JATS full-text XML and SI bundle extraction | Keyless public access; [guide and limits](references/epmc.md) |
 | Unpaywall | OA locations by DOI, not keyword discovery | `UNPAYWALL_EMAIL` |
 | Serper (optional) | Google Scholar, web, patents and other public information across 13 API types | `SERPER_API_KEY`; requests consume credits; [configuration and routes](references/serper.md) |
 | Exa (optional) | Natural-language publication candidate discovery | `EXA_API_KEY`; [configuration, parameters and cost records](references/exa.md) |
