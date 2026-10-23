@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "skills" / "sanmu-paper-search" / "scripts"
@@ -267,6 +268,63 @@ class EPMCTests(unittest.TestCase):
                 self.assertEqual(code, 2)
                 err_msg = res["error"]["message"] if isinstance(res.get("error"), dict) else str(res.get("error"))
                 self.assertIn(expected_err, err_msg)
+
+    @staticmethod
+    def zip_of(entries):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for name, data in entries:
+                zf.writestr(name, data)
+        return buf.getvalue()
+
+    def test_safe_extract_skips_windows_unsafe_names(self):
+        unsafe = ["CON.txt", "aux", "a:stream.txt", "C:/x.txt", "trail.", "space ", "q?.pdf",
+                  'quote".pdf', "pipe|x", "lt<x", "ctl\x01x", "/abs.txt", "\\abs2.txt", "sub/../../up.txt"]
+        data = self.zip_of([(n, b"x") for n in unsafe] + [("ok/fig.png", b"png")])
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = safe_extract_zip(data, Path(tmp) / "supplementary")
+            self.assertEqual([f["path"] for f in manifest["files"]], ["supplementary/ok/fig.png"])
+            files = [p.relative_to(tmp).as_posix() for p in Path(tmp).rglob("*") if p.is_file()]
+            self.assertEqual(files, ["supplementary/ok/fig.png"])
+
+    def test_safe_extract_rejects_duplicates_and_caps(self):
+        import _epmc
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                safe_extract_zip(self.zip_of([("Fig.png", b"a"), ("fig.PNG", b"b")]), Path(tmp) / "d")
+            bomb = self.zip_of([("a.csv", b"0" * 5000), ("b.csv", b"0" * 5000)])
+            with mock.patch.object(_epmc, "MAX_SUPPL_FILE_BYTES", 4000), \
+                    self.assertRaisesRegex(ValueError, "size limit"):
+                safe_extract_zip(bomb, Path(tmp) / "f")
+            with mock.patch.object(_epmc, "MAX_SUPPL_TOTAL_BYTES", 8000), \
+                    self.assertRaisesRegex(ValueError, "size limit"):
+                safe_extract_zip(bomb, Path(tmp) / "t")
+            with mock.patch.object(_epmc, "MAX_SUPPL_MEMBERS", 1), \
+                    self.assertRaisesRegex(ValueError, "members"):
+                safe_extract_zip(bomb, Path(tmp) / "m")
+            self.assertFalse(any(Path(tmp).rglob("*.csv")))
+
+    def test_bad_supplementary_archive_is_source_failure_with_consistent_bundle(self):
+        search_payload = {"version": "6.9", "hitCount": 1, "resultList": {"result": [epmc_entry()]}}
+        dup = self.zip_of([("Fig.png", b"a"), ("fig.png", b"b")])
+        for payload in (b"not a zip", dup):
+            def opener(req, timeout):
+                if "/search?" in req.full_url:
+                    return MockResponse(search_payload)
+                return MockResponse(payload, headers={"Content-Type": "application/zip"})
+
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "run"
+                code, run = self.invoke(["epmc", "--id", "PMC12710600", "--fetch", "suppl", "--out", str(out)],
+                                        Client({}, opener))
+                self.assertEqual(code, 1)
+                self.assertEqual(run["status"], "partial")
+                self.assertFalse(run["supplementary_fetched"])
+                self.assertEqual(run["source_status"]["epmc_supplementary"]["status"], "error")
+                self.assertFalse((out / "supplementary").exists())
+                self.assertFalse((out / "supplementary_manifest.json").exists())
+                check = check_bundle(out)
+                self.assertEqual(check["status"], "success", check["issues"])
 
 
 if __name__ == "__main__":

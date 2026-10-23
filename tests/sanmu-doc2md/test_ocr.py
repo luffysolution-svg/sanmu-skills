@@ -522,6 +522,44 @@ class OCRTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '重复'):
             ocr.validate_archive(archive)
 
+    def test_member_path_rejects_windows_invalid_characters(self):
+        for name in ['a<b.png', 'a>b', 'a"b', 'a|b', 'a?b', 'a*b', 'dir/a\x01b', 'tab\tname', 'a\x1fb']:
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                ocr.member_path(name)
+        self.assertEqual(ocr.member_path('images\\fig-1 (a).png'), 'images/fig-1 (a).png')
+
+    def test_archive_uncompressed_and_file_size_caps(self):
+        archive = self.root / 'big.zip'
+        archive.write_bytes(zip_bytes(extra={'images/a.bin': b'0' * 4000}))
+        with patch.object(ocr, 'MAX_UNZIPPED_BYTES', 3000), self.assertRaisesRegex(ValueError, '解压后超过'):
+            ocr.validate_archive(archive)
+        with patch.object(ocr, 'MAX_DOWNLOAD_BYTES', 10), self.assertRaisesRegex(ValueError, '上限'):
+            ocr.validate_archive(archive)
+        self.assertIn('images/a.bin', ocr.validate_archive(archive))
+
+    def test_streamed_download_cap_stops_without_retry(self):
+        target = self.root / 'result.zip'
+        payload = zip_bytes(extra={'pad.bin': os.urandom(4096)})
+        with patch.object(ocr, 'MAX_DOWNLOAD_BYTES', 1000), \
+                patch.object(ocr.requests, 'get', return_value=response(content=payload)) as get, \
+                patch.object(ocr.subprocess, 'run') as run, \
+                self.assertRaisesRegex(ocr.TransferError, '下载上限'):
+            ocr.download(SECRET, target)
+        self.assertEqual(get.call_count, 1)
+        run.assert_not_called()
+        self.assertFalse(target.exists())
+        self.assertFalse(Path(str(target) + '.part').exists())
+
+    def test_curl_fallback_is_size_capped(self):
+        with patch.object(ocr.requests, 'get', side_effect=requests.Timeout(SECRET)), \
+                patch.object(ocr.shutil, 'which', return_value='curl'), \
+                patch.object(ocr, 'real_ips', return_value=['8.8.8.8']), \
+                patch.object(ocr.subprocess, 'run', return_value=argparse.Namespace(returncode=63, stderr='')) as run, \
+                self.assertRaises(ocr.TransferError):
+            ocr.download(SECRET, self.root / 'out.zip')
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[cmd.index('--max-filesize') + 1], str(ocr.MAX_DOWNLOAD_BYTES))
+
     def test_empty_layout_and_invalid_image_reference_rejected(self):
         archive = self.root / 'bad.zip'
         for payload in [zip_bytes(layout={'pdf_info': []}), zip_bytes(layout={'pdf_info': ['bad']}),

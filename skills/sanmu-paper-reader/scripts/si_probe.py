@@ -234,6 +234,9 @@ def format_markdown_report(probe_result: Dict[str, Any]) -> str:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description="SI Fast-Probe Tool")
     parser.add_argument("pdf_path", help="Path to Supporting Information PDF")
     parser.add_argument("--search", help="Comma-separated search keywords")

@@ -147,6 +147,9 @@ def extract_si_figures(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description="Locate SI figures and save embedded images or labelled page previews")
     parser.add_argument("pdf_path", help="Path to Supporting Information PDF")
     parser.add_argument("--out-dir", required=True, help="Directory to save extracted figures")

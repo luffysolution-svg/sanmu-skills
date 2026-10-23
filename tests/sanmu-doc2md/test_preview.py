@@ -184,6 +184,69 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(status, 404)
         self.assertNotIn(b'PRIVATE', body)
 
+    def request_with_host(self, host):
+        connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+        try:
+            connection.putrequest('GET', '/', skip_host=True)
+            if host is not None:
+                connection.putheader('Host', host)
+            connection.endheaders()
+            response = connection.getresponse()
+            return response.status, response.read(), dict(response.getheaders())
+        finally:
+            connection.close()
+
+    def test_foreign_host_header_rejected(self):
+        port = self.server.server_port
+        for host in ['evil.example', f'evil.example:{port}', '127.0.0.1', f'127.0.0.1:{port + 1}',
+                     f'localhost.evil.example:{port}', None]:
+            with self.subTest(host=host):
+                status, body, headers = self.request_with_host(host)
+                self.assertEqual(status, 403)
+                self.assertNotIn(b'Chapter', body)
+                self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
+        for host in [f'127.0.0.1:{port}', f'localhost:{port}', f'LocalHost:{port}']:
+            with self.subTest(host=host):
+                self.assertEqual(self.request_with_host(host)[0], 200)
+
+    def test_security_headers_and_csp_allow_page_script(self):
+        import base64
+        import hashlib
+        status, body, headers = self.get_response('/')
+        self.assertEqual(status, 200)
+        self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
+        csp = headers['Content-Security-Policy']
+        self.assertIn("default-src 'none'", csp)
+        self.assertIn("img-src 'self' data:", csp)
+        self.assertIn("script-src 'self' 'sha256-", csp)
+        inline = re.findall(r'<script>(.*?)</script>', body.decode('utf-8'), re.S)
+        self.assertEqual(len(inline), 1)
+        digest = base64.b64encode(hashlib.sha256(inline[0].encode('utf-8')).digest()).decode()
+        self.assertIn(f"'sha256-{digest}'", csp)
+        self.assertNotIn(b'integrity=', body)
+        (self.root / 'x.svg').write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"/>')
+        _, _, headers = self.get_response('/x.svg')
+        self.assertEqual(headers['Content-Security-Policy'], "script-src 'none'")
+        self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
+        self.assertNotIn('Content-Security-Policy', self.get_response('/images/a.png')[2])
+
+    def test_cdn_page_uses_sri_and_cdn_csp(self):
+        import preview_server
+        STATE['katex'] = preview_server.CDN
+        status, body, headers = self.get_response('/')
+        self.assertEqual(status, 200)
+        self.assertEqual(body.count(b'integrity="sha384-'), 2)
+        self.assertEqual(body.count(b'crossorigin="anonymous"'), 2)
+        self.assertIn(f'script-src {preview_server.CDN}/ ', headers['Content-Security-Policy'])
+        local = SCRIPTS / 'node_modules' / 'katex' / 'dist'
+        if (local / 'katex.min.js').is_file() and preview_server.CDN.endswith(
+                json.loads((local.parent / 'package.json').read_text(encoding='utf-8'))['version'] + '/dist'):
+            import base64
+            import hashlib
+            for name, key in (('katex.min.css', 'css'), ('katex.min.js', 'js')):
+                digest = base64.b64encode(hashlib.sha384((local / name).read_bytes()).digest()).decode()
+                self.assertIn(f'sha384-{digest}', preview_server.SRI[key])
+
     def test_shared_scanner_render_nodes_and_error_visibility(self):
         parser = MathNodes()
         parser.feed(render_markdown(self.text))

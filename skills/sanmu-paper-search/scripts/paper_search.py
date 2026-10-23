@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import zipfile
 from pathlib import Path
 
 from _core import (InputError, PROVIDERS, SCHEMA, Redactor, check_bundle, deduplicate, dumps,
@@ -429,7 +430,7 @@ def main(argv=None, client=None):
         result, code = execute(args, client)
     except InputError as exc:
         result, code = {"schema": SCHEMA, "status": "failed", "error": {"kind": "input", "message": str(exc)}}, 2
-    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, zipfile.BadZipFile) as exc:
         result, code = {"schema": SCHEMA, "status": "failed", "error": {"kind": "runtime", "message": str(exc)}}, 3
     print(dumps(client.redactor.clean(result)))
     return code

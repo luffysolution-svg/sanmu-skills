@@ -202,6 +202,9 @@ def export_markdown_table(csv_path: Path) -> str:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description="Benchmark Collector Tool")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 

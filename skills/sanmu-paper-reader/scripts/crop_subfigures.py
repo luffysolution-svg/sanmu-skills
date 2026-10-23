@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -64,33 +65,38 @@ def crop_subfigures(
     target_dir = Path(out_dir).resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    master_im = Image.open(src_path)
-    mw, mh = master_im.size
-    results: List[Dict[str, Any]] = []
-
     for spec in crop_specs:
         name = spec.get("name", "subfig")
-        box = spec.get("box")  # [ymin, xmin, ymax, xmax]
-        if not box or len(box) != 4:
-            continue
+        # The name becomes a file name: keep it to one portable path component.
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", name) or name in (".", ".."):
+            raise CropError(f"Invalid crop name (use 1-64 of A-Z a-z 0-9 . _ -): {name!r}")
 
-        normalized = spec.get("normalized", True)
-        cropped_im = crop_image_box(master_im, box, normalized=normalized)
+    results: List[Dict[str, Any]] = []
+    # Context managers release file handles promptly (Windows locks open files).
+    with Image.open(src_path) as master_im:
+        for spec in crop_specs:
+            name = spec.get("name", "subfig")
+            box = spec.get("box")  # [ymin, xmin, ymax, xmax]
+            if not box or len(box) != 4:
+                continue
 
-        filename = f"{name}.png"
-        out_file = target_dir / filename
-        cropped_im.save(out_file, "PNG")
+            normalized = spec.get("normalized", True)
+            filename = f"{name}.png"
+            out_file = target_dir / filename
+            with crop_image_box(master_im, box, normalized=normalized) as cropped_im:
+                cropped_im.save(out_file, "PNG")
+                width, height = cropped_im.width, cropped_im.height
 
-        results.append({
-            "name": name,
-            "filename": filename,
-            "path": str(out_file),
-            "relative_path": out_file.name,
-            "width": cropped_im.width,
-            "height": cropped_im.height,
-            "box": box,
-            "description": spec.get("description", "")
-        })
+            results.append({
+                "name": name,
+                "filename": filename,
+                "path": str(out_file),
+                "relative_path": out_file.name,
+                "width": width,
+                "height": height,
+                "box": box,
+                "description": spec.get("description", "")
+            })
 
     # Save crop manifest
     manifest_file = target_dir / f"{src_path.stem}_crops_manifest.json"
@@ -100,6 +106,9 @@ def crop_subfigures(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description="Subfigure Precision Crop Tool")
     parser.add_argument("image_path", help="Path to the master figure image")
     parser.add_argument("--out-dir", required=True, help="Directory to save cropped subfigures")

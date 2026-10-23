@@ -253,6 +253,9 @@ def write_output(filename, data, protected):
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = CLIParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     inv = commands.add_parser("inventory")

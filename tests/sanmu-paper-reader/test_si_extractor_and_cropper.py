@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 import io
 import fitz
 from PIL import Image
-from scripts.crop_subfigures import crop_image_box, crop_subfigures
+from scripts.crop_subfigures import CropError, crop_image_box, crop_subfigures
 from scripts.extract_si_figures import extract_si_figures
 
 
@@ -134,6 +134,31 @@ class CropSubfiguresTests(unittest.TestCase):
         self.assertTrue(manifest.exists())
         data = json.loads(manifest.read_text(encoding="utf-8"))
         self.assertEqual(len(data), 2)
+        # Source and outputs must not stay open (Windows would refuse to delete them).
+        self.src_file.unlink()
+        (out_dir / "panel_a.png").unlink()
+
+    def test_crop_rejects_unsafe_names_before_writing(self):
+        out_dir = self.temp_path / "subfigs"
+        for name in ["../escape", "a/b", "a\\b", "", ".", "..", "x" * 65, "c:evil", "名字", 7]:
+            spec = [{"name": "ok", "box": [0, 0, 1, 1]}, {"name": name, "box": [0, 0, 1, 1]}]
+            with self.assertRaises(CropError):
+                crop_subfigures(self.src_file, out_dir, spec)
+        self.assertFalse(list(out_dir.glob("*.png")))
+        self.assertFalse(list(self.temp_path.glob("escape*")))
+        self.assertEqual(len(crop_subfigures(self.src_file, out_dir, [{"name": "Fig_1b-2.v1", "box": [0, 0, 1, 1]}])), 1)
+
+    def test_main_reconfigures_stdout_to_utf8(self):
+        import contextlib
+        from scripts import crop_subfigures as module
+        buffer = io.BytesIO()
+        stdout = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict")
+        spec = json.dumps([{"name": "p", "box": [0, 0, 1, 1], "description": "β-相 催化"}])
+        with contextlib.redirect_stdout(stdout):
+            code = module.main([str(self.src_file), "--out-dir", str(self.temp_path / "o"), "--spec-json", spec])
+            stdout.flush()
+        self.assertEqual(code, 0)
+        self.assertIn("β-相 催化", buffer.getvalue().decode("utf-8"))
 
 
 if __name__ == "__main__":

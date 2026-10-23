@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import html
 import mimetypes
 import re
@@ -48,6 +50,39 @@ CSS = (
     '.math-error{color:#b91c1c;background:#fef2f2;padding:2px 6px;border-radius:3px}'
     'a{color:#146c98}nav{margin-bottom:2em;color:#5b6672}'
 )
+
+PAGE_SCRIPT = (
+    'const nodes=document.querySelectorAll(".math-inline[data-display],.math-display[data-display]");'
+    'let rendered=0;for(const node of nodes){if(node.classList.contains("math-error"))continue;'
+    'try{katex.render(node.textContent,node,{displayMode:node.dataset.display==="true",'
+    'throwOnError:true,strict:false,trust:false});rendered++;}'
+    'catch(e){node.classList.add("math-error");node.dataset.error=e.message;}}'
+    'document.documentElement.dataset.formulas=String(nodes.length);'
+    'document.documentElement.dataset.rendered=String(rendered);'
+    'document.documentElement.dataset.mathErrors=String(document.querySelectorAll(".math-error").length);'
+    'const stats=document.documentElement.dataset;'
+    'stats.expectedFormulas=stats.expectedFormulas||String(nodes.length);'
+    'stats.formulaCountMatches=String(Number(stats.expectedFormulas)===nodes.length);'
+    'stats.hostCheck="Obsidian reading/live preview requires real-client verification";'
+    'const images=Array.from(document.querySelectorAll("img"));'
+    'stats.images=String(images.length);'
+    'const finish=()=>{stats.loadedImages=String(images.filter(i=>i.naturalWidth>0).length);'
+    'stats.imageErrors=String(images.filter(i=>!(i.naturalWidth>0)).length);'
+    'stats.ready="true";};'
+    'if(images.every(i=>i.complete))finish();else '
+    'Promise.all(images.map(i=>i.complete?Promise.resolve():new Promise(resolve=>{'
+    'i.addEventListener("load",resolve,{once:true});i.addEventListener("error",resolve,{once:true});'
+    '}))).then(finish);'
+)
+SCRIPT_HASH = 'sha256-' + base64.b64encode(hashlib.sha256(PAGE_SCRIPT.encode('utf-8')).digest()).decode('ascii')
+# SRI for the pinned CDN build, computed from katex@0.19.0 dist (identical to
+# node_modules/katex/dist); update together with CDN. Local --katex-dir is not pinned.
+SRI = {
+    'css': ' integrity="sha384-3rdsX6e5mueWyoweR9NIVmtEsUkokpBT/0ALqKKIBMr9j4qhHkaIkAcGgsE6uVlp"'
+           ' crossorigin="anonymous"',
+    'js': ' integrity="sha384-QFFtAGzvvj+bfgCGxXJlNZZR1nXEZgvG8tDLCCY1F19xl20WlfTYgguB4VcNdxYk"'
+          ' crossorigin="anonymous"',
+}
 
 STATE: dict = {'root': None, 'katex': CDN}
 
@@ -104,6 +139,11 @@ class Handler(BaseHTTPRequestHandler):
         # BaseHTTPRequestHandler collapses leading // in self.path. Inspect
         # the original request-target as well, before that normalization.
         original_target = self.requestline.split()[1]
+        # DNS-rebinding defense: a rebound attacker origin still sends its own Host.
+        port = self.server.server_address[1]
+        if (self.headers.get('Host') or '').lower() not in (f'127.0.0.1:{port}', f'localhost:{port}'):
+            self.send_error(403, 'Forbidden host')
+            return
         try:
             request = unquote(self.path.split('?', 1)[0], errors='strict')
         except UnicodeError:
@@ -183,38 +223,23 @@ class Handler(BaseHTTPRequestHandler):
         page = (
             f'<!doctype html><html lang="zh-CN" data-expected-formulas="{expected}"><head><meta charset="utf-8">'
             f'<title>{html.escape(target.stem)}</title>'
-            f'<link rel="stylesheet" href="{prefix}/katex.min.css">'
+            f'<link rel="stylesheet" href="{prefix}/katex.min.css"{"" if local else SRI["css"]}>'
             f'<style>{CSS}</style></head><body>'
             + ('<nav><a href="/">返回目录</a></nav>' if str(target) != str(root / '00-目录.md') else '')
             + body
-            + f'<script src="{prefix}/katex.min.js"></script>'
-            '<script>'
-            'const nodes=document.querySelectorAll(".math-inline[data-display],.math-display[data-display]");'
-            'let rendered=0;for(const node of nodes){if(node.classList.contains("math-error"))continue;'
-            'try{katex.render(node.textContent,node,{displayMode:node.dataset.display==="true",'
-            'throwOnError:true,strict:false,trust:false});rendered++;}'
-            'catch(e){node.classList.add("math-error");node.dataset.error=e.message;}}'
-            'document.documentElement.dataset.formulas=String(nodes.length);'
-            'document.documentElement.dataset.rendered=String(rendered);'
-            'document.documentElement.dataset.mathErrors=String(document.querySelectorAll(".math-error").length);'
-            'const stats=document.documentElement.dataset;'
-            'stats.expectedFormulas=stats.expectedFormulas||String(nodes.length);'
-            'stats.formulaCountMatches=String(Number(stats.expectedFormulas)===nodes.length);'
-            'stats.hostCheck="Obsidian reading/live preview requires real-client verification";'
-            'const images=Array.from(document.querySelectorAll("img"));'
-            'stats.images=String(images.length);'
-            'const finish=()=>{stats.loadedImages=String(images.filter(i=>i.naturalWidth>0).length);'
-            'stats.imageErrors=String(images.filter(i=>!(i.naturalWidth>0)).length);'
-            'stats.ready="true";};'
-            'if(images.every(i=>i.complete))finish();else '
-            'Promise.all(images.map(i=>i.complete?Promise.resolve():new Promise(resolve=>{'
-            'i.addEventListener("load",resolve,{once:true});i.addEventListener("error",resolve,{once:true});'
-            '}))).then(finish);'
-            '</script></body></html>'
+            + f'<script src="{prefix}/katex.min.js"{"" if local else SRI["js"]}></script>'
+            f'<script>{PAGE_SCRIPT}</script></body></html>'
         )
+        # The inline script is static, so a hash pins it; scripts in the
+        # rendered Markdown body are blocked. KaTeX sets inline styles.
+        assets = "'self'" if local else CDN + '/'
+        csp = (f"default-src 'none'; script-src {assets} '{SCRIPT_HASH}'; "
+               f"style-src {assets} 'unsafe-inline'; font-src {assets} data:; img-src 'self' data:; "
+               "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
         data = page.encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Security-Policy', csp)
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -225,10 +250,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         data = safe_path(target).read_bytes()
         self.send_response(200)
-        self.send_header('Content-Type', content_type or mimetypes.guess_type(target.name)[0] or 'application/octet-stream')
+        content_type = content_type or mimetypes.guess_type(target.name)[0] or 'application/octet-stream'
+        self.send_header('Content-Type', content_type)
+        if content_type == 'image/svg+xml':
+            # Opened directly, an SVG is a document: never run its scripts.
+            self.send_header('Content-Security-Policy', "script-src 'none'")
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def end_headers(self):
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        super().end_headers()
 
     def log_message(self, *args):
         pass

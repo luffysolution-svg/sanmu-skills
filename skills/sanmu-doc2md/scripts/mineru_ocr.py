@@ -33,6 +33,10 @@ MAX_PAGES = 600
 # Reference contract says 200 MB, not MiB. Use the conservative byte limit.
 MAX_BYTES = 200_000_000
 MAX_BATCH = 200
+# Result archives for long books (600 pages, many images) can be large; these
+# caps only stop runaway/hostile downloads and zip bombs, not real results.
+MAX_DOWNLOAD_BYTES = 2 * 1024 ** 3
+MAX_UNZIPPED_BYTES = 4 * 1024 ** 3
 RETRIES = 3
 
 
@@ -41,6 +45,10 @@ class TransferError(RuntimeError):
 
 
 class ExpiredURL(TransferError):
+    pass
+
+
+class TooLarge(TransferError):
     pass
 
 
@@ -129,7 +137,8 @@ def member_path(name: str) -> str:
         raise ValueError('压缩包或资源引用包含非法路径')
     parts = PurePosixPath(name).parts
     if (not parts or name.startswith('/') or any(p in ('.', '..') or ':' in p
-            or p.endswith((' ', '.')) or re.fullmatch(r'(?i)(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?', p)
+            or p.endswith((' ', '.')) or re.search(r'[<>"|?*\x00-\x1f]', p)
+            or re.fullmatch(r'(?i)(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?', p)
             for p in parts)):
         raise ValueError('压缩包或资源引用包含非法路径')
     return '/'.join(parts)
@@ -163,12 +172,17 @@ def validate_payload(names: set[str], load) -> None:
 def archive_members(zf: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     members = {}
     folded = set()
+    total = 0
     for item in zf.infolist():
         name = member_path(item.filename)
         if stat.S_ISLNK(item.external_attr >> 16):
             raise ValueError('压缩包包含符号链接')
         if item.is_dir():
             continue
+        # ZipExtFile never yields more than file_size, so the declared sizes bound extraction.
+        total += item.file_size
+        if total > MAX_UNZIPPED_BYTES:
+            raise ValueError(f'压缩包解压后超过 {MAX_UNZIPPED_BYTES} 字节上限')
         if name.casefold() in folded or PurePosixPath(name).name == '_ok':
             raise ValueError('压缩包包含重复或保留路径')
         folded.add(name.casefold())
@@ -177,6 +191,8 @@ def archive_members(zf: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
 
 
 def validate_archive(path: Path) -> dict[str, zipfile.ZipInfo]:
+    if safe_path(path).stat().st_size > MAX_DOWNLOAD_BYTES:
+        raise ValueError(f'压缩包超过 {MAX_DOWNLOAD_BYTES} 字节上限')
     try:
         with zipfile.ZipFile(safe_path(path)) as zf:
             members = archive_members(zf)
@@ -206,12 +222,18 @@ def download(url: str, target: Path) -> None:
                     expired = True
                     break
                 response.raise_for_status()
+                received = 0
                 with partial.open('wb') as stream:
                     for block in response.iter_content(1024 * 1024):
+                        received += len(block)
+                        if received > MAX_DOWNLOAD_BYTES:
+                            raise TooLarge(f'结果压缩包超过 {MAX_DOWNLOAD_BYTES} 字节下载上限')
                         stream.write(block)
             validate_archive(partial)
             os.replace(partial, safe_path(target))
             return
+        except TooLarge:
+            raise
         except (requests.RequestException, ValueError, OSError, zipfile.BadZipFile, RuntimeError):
             if attempt + 1 < RETRIES:
                 backoff(attempt)
@@ -228,6 +250,7 @@ def download(url: str, target: Path) -> None:
         # restricted to this host and this fallback command, not global state.
         cmd = [curl, '--resolve', f'{host}:443:{ip}', '--noproxy', host,
                '--connect-timeout', '20', '--max-time', '600', '--fail',
+               '--max-filesize', str(MAX_DOWNLOAD_BYTES),
                '--silent', '--show-error', '-o', str(partial), url]
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=620)

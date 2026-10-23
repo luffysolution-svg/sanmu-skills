@@ -1,24 +1,32 @@
 """Europe PMC scholarly search, preprint discovery, and JATS XML / SI bundle fetching."""
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import math
 import random
 import re
+import shutil
 import zipfile
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request
 
-from _core import InputError, deduplicate, ids, location, now, prepare_out, record, sha256, write_bundle
+from _core import InputError, deduplicate, ids, location, now, prepare_out, record, write_bundle
 from _providers import SourceError, parse_id, plain_text
 
 ENDPOINT = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 MAX_RESPONSE = 64 * 1024 * 1024  # 64 MiB limit for binary bundles
+# Zip-bomb guards for SI bundles. The compressed bundle is already capped at
+# MAX_RESPONSE; real SI (PDF, images, CSV/CIF) rarely expands beyond ~8x, while
+# bombs expand 1000x+. 512 MiB total keeps a single run's disk use bounded.
+MAX_SUPPL_TOTAL_BYTES = 512 * 1024 * 1024
+MAX_SUPPL_FILE_BYTES = 256 * 1024 * 1024
+MAX_SUPPL_MEMBERS = 2000
 
 
 def retry_delay(headers, attempt):
@@ -262,32 +270,65 @@ def categorize_file(path_str):
     return "other"
 
 
+def member_path(name):
+    """Normalize a ZIP member name; reject paths unsafe on Windows or POSIX (ValueError)."""
+    name = name.replace("\\", "/")
+    parts = PurePosixPath(name).parts
+    if (not parts or name.startswith("/") or any(p in (".", "..") or ":" in p
+            or p.endswith((" ", ".")) or re.search(r'[<>"|?*\x00-\x1f]', p)
+            or re.fullmatch(r"(?i)(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?", p)
+            for p in parts)):
+        raise ValueError("Unsafe supplementary archive member path")
+    return "/".join(parts)
+
+
 def safe_extract_zip(zip_bytes, target_dir):
+    """Extract an SI bundle. Unsafe member names are skipped; duplicates or caps raise ValueError."""
     target_dir = Path(target_dir).resolve()
-    target_dir.mkdir(parents=True, exist_ok=True)
     extracted_entries = []
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-        for member in zf.infolist():
-            filename = member.filename
-            if filename.startswith(("/", "\\")) or ".." in Path(filename).parts:
-                continue
-            dest = (target_dir / filename).resolve()
-            if not dest.is_relative_to(target_dir):
+        members, folded, declared = [], set(), 0
+        infos = zf.infolist()
+        if len(infos) > MAX_SUPPL_MEMBERS:
+            raise ValueError(f"Supplementary archive has more than {MAX_SUPPL_MEMBERS} members")
+        for member in infos:
+            try:
+                name = member_path(member.filename)
+            except ValueError:
                 continue
             if member.is_dir():
-                dest.mkdir(parents=True, exist_ok=True)
-            else:
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(member) as src, open(dest, "wb") as dst:
-                    dst.write(src.read())
-                rel_path = dest.relative_to(target_dir).as_posix()
-                extracted_entries.append({
-                    "name": dest.name,
-                    "path": f"supplementary/{rel_path}",
-                    "size": dest.stat().st_size,
-                    "sha256": sha256(dest),
-                    "category": categorize_file(dest.name)
-                })
+                continue
+            if name.casefold() in folded:
+                raise ValueError("Supplementary archive has case-insensitive duplicate member names")
+            folded.add(name.casefold())
+            declared += member.file_size
+            if member.file_size > MAX_SUPPL_FILE_BYTES or declared > MAX_SUPPL_TOTAL_BYTES:
+                raise ValueError("Supplementary archive exceeds uncompressed size limit")
+            members.append((name, member))
+        target_dir.mkdir(parents=True, exist_ok=True)
+        total = 0
+        for name, member in members:
+            dest = (target_dir / name).resolve()
+            if not dest.is_relative_to(target_dir):
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            digest, size = hashlib.sha256(), 0
+            # Count actual bytes too: declared sizes in the archive are untrusted.
+            with zf.open(member) as src, open(dest, "wb") as dst:
+                while chunk := src.read(1024 * 1024):
+                    size += len(chunk)
+                    total += len(chunk)
+                    if size > MAX_SUPPL_FILE_BYTES or total > MAX_SUPPL_TOTAL_BYTES:
+                        raise ValueError("Supplementary archive exceeds uncompressed size limit")
+                    digest.update(chunk)
+                    dst.write(chunk)
+            extracted_entries.append({
+                "name": dest.name,
+                "path": f"supplementary/{name}",
+                "size": size,
+                "sha256": digest.hexdigest(),
+                "category": categorize_file(dest.name)
+            })
     cat_counts = {}
     for entry in extracted_entries:
         cat_counts[entry["category"]] = cat_counts.get(entry["category"], 0) + 1
@@ -372,6 +413,11 @@ def execute(args, client):
                     supplementary_fetched = True
                 except SourceError as exc:
                     sources_status["epmc_supplementary"] = {"status": "error", "error": str(exc)}
+                except (zipfile.BadZipFile, OSError, ValueError) as exc:
+                    # Drop partial extraction so the bundle manifest only lists a consistent run.
+                    shutil.rmtree(out / "supplementary", ignore_errors=True)
+                    sources_status["epmc_supplementary"] = {
+                        "status": "error", "error": f"Supplementary archive rejected: {exc}"}
         else:
             sources_status["epmc_fetch"] = {
                 "status": "skipped",

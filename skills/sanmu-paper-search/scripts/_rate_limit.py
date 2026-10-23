@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import stat
 import tempfile
 import time
 
@@ -25,6 +26,31 @@ class RateLimiter:
         self.sleep = sleep or time.sleep
         self.states = {}
         self.logical_now = 0.0
+        self._private_dir = None
+
+    def _lock_dir(self):
+        """On POSIX the shared temp dir may be pre-created by another user: require a
+        real directory we own, else fall back to a uid-suffixed dir, else a private one."""
+        if not hasattr(os, "getuid"):
+            self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            return self.directory
+        fallback = Path(tempfile.gettempdir()) / f"sanmu-paper-search-uid{os.getuid()}"
+        for candidate in (self.directory, fallback):
+            try:
+                try:
+                    candidate.mkdir(mode=0o700, parents=True)
+                    os.chmod(candidate, 0o700)
+                except FileExistsError:
+                    pass
+                info = os.lstat(candidate)
+            except OSError:
+                continue
+            if stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid():
+                return candidate
+        # Last resort: still safe, only loses cross-process sharing.
+        if self._private_dir is None:
+            self._private_dir = Path(tempfile.mkdtemp(prefix="sanmu-paper-search-"))
+        return self._private_dir
 
     def _now(self):
         return max(self.clock(), self.logical_now) if not self.shared else self.clock()
@@ -35,8 +61,8 @@ class RateLimiter:
         if not self.shared:
             yield self.states.setdefault(token, {})
             return
-        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        descriptor = os.open(self.directory / (token + ".lock"), os.O_RDWR | os.O_CREAT, 0o600)
+        descriptor = os.open(self._lock_dir() / (token + ".lock"),
+                             os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
         with os.fdopen(descriptor, "r+b") as handle:
             # Both OS lock APIs permit locking byte zero before any state is written.
             deadline = time.monotonic() + max_wait
