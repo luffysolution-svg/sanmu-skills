@@ -65,7 +65,7 @@ python scripts/paper_search.py serper --type webpage --url "https://www.nature.c
 
 ### 批量：同接口单次 POST
 
-`--batch` 读取本地 JSON 文件，内容必须是 **1–100 个请求对象的数组**，全部发往同一个 `--type`。这不是循环执行 100 次 CLI，不跨接口混合。文件示例内容：
+`--batch` 读取本地 JSON 文件，内容是 **1–100 个请求对象组成的数组**，全部发往同一个 `--type`。这不是循环执行 100 次 CLI，不跨接口混合。文件示例内容：
 
 ```json
 [

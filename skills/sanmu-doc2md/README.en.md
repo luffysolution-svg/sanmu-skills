@@ -106,6 +106,7 @@ references/
   book-workflow.md             Splitting and assembling long textbooks
   research-documents.md        Academic naming, metadata, and two-column workflow
   zotero-sync.md               Read-only API access and MCP-based synchronization
+  repairs.md                   Source-verified repairs for text, figures, captions, and scan noise
 scripts/
   doctor.py                    Runtime and credential configuration checks
   mineru_ocr.py                Split, submit, poll, and download OCR tasks

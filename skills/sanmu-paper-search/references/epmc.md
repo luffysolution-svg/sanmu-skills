@@ -1,28 +1,35 @@
 # Europe PMC：预印本、JATS 全文与补充材料获取指南
 
-Europe PMC（EPMC）是 EMBL-EBI 维护的开放学术基础设施，覆盖 4400 万+ 题录与 1000 万+ 全文，无需 API Key 或申请凭证即可公开访问。
+Europe PMC（EPMC）是 EMBL-EBI 维护的开放学术基础设施，覆盖四千多万条题录和约一千万篇全文（v1.6.0 集成时的数据），无需 API Key 即可公开访问。
 
-在 `sanmu-paper-search` 中，Europe PMC 定位为**首选全文/SI 结构化获取源与预印本/数据集补充源**，而非通用主题检索的唯一替代。
+在本技能里，Europe PMC 主要用来获取结构化全文和 SI、补充预印本和数据集线索；它不适合替代 OpenAlex 和 Semantic Scholar 做通用主题检索，原因见下文的收录范围。
+
+## 目录
+
+- 能做什么、不适合做什么
+- CLI 命令与示例
+- 参数参考
+- 产物结构与下游交接
 
 ---
 
-## 核心价值与能力边界
+## 能做什么、不适合做什么
 
-### 1. 三大优势（科研高价值）
-- **补充材料 ZIP 包自动化获取（`--fetch suppl`）**：直接从 `/{PMCID}/supplementaryFiles` 获取完整二进制压缩包并安全解包。直接提取未压缩的 SI PDF（供下游 `si_probe.py` 探针和 `extract_si_figures.py` 切片），以及正文高分辨率独立原图（如 Wiley `-g001.jpg`、RSC `-f1.webp`），绕过出版社网页的反爬阻断与网页图片防盗链 403。
-- **结构化 JATS XML（`--fetch xml`）**：获取标准的 JATS XML 全文，包含清晰的分节（`<sec>`）、图表题注（`<fig><caption>`）、表格定义（`<table-wrap>`）和 MathML 公式（`<disp-formula>`），免除 PDF OCR 带来的化学式及数学公式识别错误。
-- **撤稿与勘误关系追踪**：从 `commentCorrectionList` 原生提取定向关系（`Retraction in`、`Erratum in`、`Update in`），在 `papers.json` 与 `summary.md` 中显式标出撤稿风险，防止文献误用。
+### 能做什么
+- **补充材料 ZIP 包自动化获取（`--fetch suppl`）**：从 `/{PMCID}/supplementaryFiles` 获取完整压缩包并安全解压，通常能直接拿到 SI 的 PDF（可交给 `si_probe.py` 和 `extract_si_figures.py`），以及正文的高分辨率原图（如 Wiley `-g001.jpg`、RSC `-f1.webp`）。这些文件来自 Europe PMC 的官方开放接口，不经过出版社网页，所以不会遇到网页端常见的访问拦截或图片 403。
+- **结构化 JATS XML（`--fetch xml`）**：获取标准的 JATS XML 全文，包含分节（`<sec>`）、图表题注（`<fig><caption>`）、表格（`<table-wrap>`）和 MathML 公式（`<disp-formula>`）。这是出版方提供的结构化文本，没有 OCR 带来的化学式和公式识别错误。
+- **撤稿与勘误关系追踪**：从 `commentCorrectionList` 原生提取定向关系（`Retraction in`、`Erratum in`、`Update in`），在 `papers.json` 和 `summary.md` 中标出撤稿风险，避免引用已撤稿的工作。
 
-### 2. 边界与避坑提示
-- **收录范围以 MEDLINE 为主**：综合性期刊（如 *Adv. Mater.* 约 95%、*Angewandte* 约 75%、*JACS* 高）与生物交叉领域收录完整；但传统材料/化工期刊（如 *Chem. Eng. J.* 0.1%、*J. Catal.* 0.2%、*Appl. Catal. B* 2%）为选择性收录，**不可作为材料通用检索的唯一主源**，常规跨学科发现请优先保留 OpenAlex 与 Semantic Scholar。
-- **期刊字段依赖 MEDLINE 缩写**：Europe PMC 的 `JOURNAL:` 语法只认 MEDLINE 规范缩写（如 `Advanced Materials` 会返回 0，必须为 `Adv Mater`）。直接检索时建议通过标题、关键词或 DOI 定位。
+### 不适合做什么
+- **收录以 MEDLINE 为主**：综合性期刊和生物交叉领域收录较全，传统材料和化工期刊只是选择性收录。v1.6.0 集成时实测的收录比例：*Adv. Mater.* 约 95%、*Angewandte* 约 75%、*JACS* 较高；*Chem. Eng. J.* 0.1%、*J. Catal.* 0.2%、*Appl. Catal. B* 2%。所以它不能作为材料方向检索的唯一来源，常规发现仍以 OpenAlex 和 Semantic Scholar 为主。
+- **期刊字段依赖 MEDLINE 缩写**：Europe PMC 的 `JOURNAL:` 语法只认 MEDLINE 规范缩写（如 `Advanced Materials` 会返回 0 条，要写成 `Adv Mater`）。直接检索时更推荐用标题、关键词或 DOI 定位。
 - **作者消歧能力有限**：EPMC 的作者 ID 仅为论文级 ORCID 列表，未做全库稳定作者网络对齐；作者与团队查新仍建议首选 OpenAlex 稳定作者 ID（`A...`）。
 
 ---
 
 ## CLI 命令与示例
 
-从技能目录执行，输出必须指向个人工作区新建目录：
+从技能目录执行，`--out` 指向个人工作区里一个尚不存在的新目录（已有目录会被拒绝，以免覆盖之前的结果）：
 
 ```bash
 # 1. 验证公共环境连通性（doctor 显示 europepmc_public_access: true）
@@ -38,7 +45,7 @@ python scripts/paper_search.py epmc "carbon nitride hydrogen evolution" --prepri
 python scripts/paper_search.py epmc 10.1002/adma.202313513 --out "/path/to/work/runs/epmc-seed"
 python scripts/paper_search.py epmc PMC12710600 --out "/path/to/work/runs/epmc-pmc"
 
-# 5. 全文 JATS XML 与补充材料原图包一键获取（重点推荐）
+# 5. 获取 JATS 全文 XML 和补充材料原图包
 python scripts/paper_search.py epmc PMC12710600 --fetch all --out "/path/to/work/runs/epmc-bundle"
 
 # 6. 验证产物哈希与完整性
@@ -61,7 +68,7 @@ paper_search.py epmc [QUERY]
   --preprints                   仅筛选预印本（SRC:PPR）
   --has-fulltext                仅筛选在 Europe PMC 具有全文的论文（HAS_FT:y）
   --fetch none|all|xml|suppl    获取 JATS 全文 XML、补充材料解压包或两者兼备（默认 none）
-  --out DIR                     保存产物的目标工作目录（必须为未创建的新目录）
+  --out DIR                     保存产物的目录（需为尚不存在的新目录）
 ```
 
 ---
@@ -89,10 +96,9 @@ runs/epmc-bundle/
     └── *.xlsx / *.docx         # 补充测试数据与合成参数表
 ```
 
-### 与三木技能家族无缝交接：
+### 交接给其他三木技能
 1. **交接给 `sanmu-paper-reader`**：
-   - 提取的 SI PDF（`supplementary/*.pdf`）可直接作为 `si_probe.py` 的输入进行催化/表征/配方探针分析：
-     `python ../sanmu-paper-reader/scripts/si_probe.py ./supplementary/paper-si.pdf --out ./probe-result`
-   - 提取的高清单张原图（`supplementary/*-g*.jpg`）可直接用于精读图表对齐，无需人工从 PDF 截图。
-2. **交接给 `sanmu-doc2md`**：
-   - 提取的 `fulltext.xml` 可作为精准 JATS 输入，直接转换为高品质 Markdown，数学公式保持 MathML/LaTeX 结构，无需经历 OCR 识别损耗。
+   - 提取的 SI PDF（`supplementary/*.pdf`）可以直接交给 `si_probe.py`，定向搜索催化、表征和配方参数（路径假设两个技能装在同一目录下）：
+     `python ../sanmu-paper-reader/scripts/si_probe.py ./supplementary/paper-si.pdf --search "TEOA,xenon" --out ./probe-result.txt`
+   - 提取的高清原图（`supplementary/*-g*.jpg`）可以直接用于图文对照，不必从 PDF 截图。
+2. **关于 `fulltext.xml`**：`sanmu-doc2md` 目前不接受 XML 输入。XML 本身已经是结构化全文，Agent 可以直接阅读；对同一篇论文做了 PDF 转换时，也可以拿 XML 里的 MathML 公式和表格来核对 OCR 结果。

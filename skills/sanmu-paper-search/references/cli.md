@@ -1,5 +1,15 @@
 # CLI 与记录契约
 
+## 目录
+
+- 学术检索命令与参数（search、lookup、author、related、oa、merge、check、diff）
+- Serper（可选）
+- Exa（可选）
+- Europe PMC
+- 配置（环境变量）
+- 状态与退出码
+- 文件与交接、PDF 获取
+
 从本技能目录执行，Python 3.10+，核心不需要 pip 安装。`paper_search.py --help` 和子命令 `--help` 是参数依据。
 
 ```bash

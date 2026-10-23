@@ -116,6 +116,7 @@ references/
   book-workflow.md              超长教材与学术专著分片识别、重组指引
   research-documents.md         学术论文与学位论文标准命名、元数据与双栏规范
   zotero-sync.md                只读 API 与 MCP 同步、回读验证
+  repairs.md                    回源修复：文字、图块、题注与扫描噪声
 scripts/
   doctor.py                     环境与凭证配置检查、基础公式编译探测
   mineru_ocr.py                 大文档切分 (split) / 批量提交 / 轮询 / 容错下载

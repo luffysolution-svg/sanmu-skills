@@ -1,6 +1,13 @@
 # MinerU 云端 OCR API
 
-MinerU 官方 API 可对 PDF / 图片做 OCR，同时输出文字、LaTeX 公式、表格结构和插图切分。需要 Token（读环境变量 `MINERU_API_TOKEN`）。
+MinerU 官方 API 可对 PDF / 图片做 OCR，同时输出文字、LaTeX 公式、表格结构和插图切分。需要 Token（读环境变量 `MINERU_API_TOKEN`）。`scripts/mineru_ocr.py` 已经封装了下面的全部流程，这里的细节主要用于排查问题和理解输出。
+
+## 目录
+
+- 接口契约：申请上传链接、上传、查询、下载
+- 结果 zip 结构、块类型与 bbox 坐标系
+- 坑：结果下载域名连不上
+- 限额与本地模型
 
 ## 接口契约
 
@@ -27,7 +34,7 @@ Content-Type: application/json
 参数要点：
 
 - `model_version`：本流程使用 `vlm`；输出仍须核对原页。
-- `enable_formula` / `enable_table`：必须开，否则不给公式 LaTeX 和表格结构。
+- `enable_formula` / `enable_table`：要打开，否则拿不到公式 LaTeX 和表格结构。
 - `language`：中文文档用 `ch`。
 - `files[]` 里的 `is_ocr`、`page_ranges` 属于**每个文件**；`model_version`、`enable_formula`、`enable_table`、`language` 属于**顶层**。放错位置会静默忽略。
 - `data_id` 是自己分配的标识，用于回传时对应文件，建议用有意义的名字。
@@ -43,9 +50,9 @@ with open(path,'rb') as f:
     requests.put(url, data=f, timeout=300)
 ```
 
-- **不要**带 `Authorization`
-- **不要**用 `multipart/form-data`
-- 按 `files` 的顺序对应，别弄错
+- 不带 `Authorization`（预签名 URL 自带授权，额外的认证头可能导致签名校验失败）
+- 不用 `multipart/form-data`，直接传文件字节
+- URL 与 `files` 按顺序一一对应
 
 上传完成会自动创建解析任务，不需要再调接口提交。
 
@@ -92,11 +99,11 @@ images/                       # 切出的插图
 | `page_footnote` | `text` | 保留学术注释、来源、版权说明及公式解释；只有核对为运行页脚或噪声后才过滤 |
 | `ref_text` | `text` / `ref_text` | 参考文献段落，原生转为正文，不按页脚删除 |
 
-**注意 `image` 和 `chart` 是两种类型，字段名不同**（`image_caption` vs `chart_caption`）。只处理 `image` 会漏掉所有曲线图。
+`image` 和 `chart` 是两种类型，字段名不同（`image_caption` 与 `chart_caption`）。只处理 `image` 会漏掉所有曲线图。
 
 ### bbox 坐标系
 
-**本工具读取的 `content_list.json` 中，`bbox` 是 0–1000 的归一化坐标** `[x0, y0, x1, y1]`。换算为目标页面的像素或 PDF point：
+本工具读取的 `content_list.json` 中，`bbox` 是 0–1000 的归一化坐标 `[x0, y0, x1, y1]`。换算为目标页面的像素或 PDF point：
 
 ```python
 x0 = box[0] / 1000 * page_width
@@ -110,35 +117,11 @@ norm_box = [box_pt[0] / page_width * 1000, box_pt[1] / page_height * 1000,
             box_pt[2] / page_width * 1000, box_pt[3] / page_height * 1000]
 ```
 
-先核对数据格式、该页尺寸与 PDF 页面的方向和原点；不能凭数值小于 1000 猜坐标单位，也不能写死全书宽高。图题位置从 layout 的 `image_caption` / `chart_caption` 子块读取；题注也可能误归入对应的 footnote 子块，需回源确认。content_list 中携带题注的图块框并非题注自身的位置。
+先核对数据格式、该页尺寸以及 PDF 页面的方向和原点。数值都小于 1000 并不能说明它是归一化坐标，全书宽高也不能写死，因为同一本书里可能夹着横页或尺寸不同的插页。图题位置从 layout 的 `image_caption` / `chart_caption` 子块读取；题注也可能误归入对应的 footnote 子块，需回源确认。content_list 中携带题注的图块框并非题注自身的位置。
 
-### 回源修复图块
+### 回源修复
 
-教材模式配合 `--manifest`、`--chapters`、`--pdf` 和 `--repairs repairs.json` 使用。`page` 为从 1 开始的全书 PDF 页码，所有 repairs 框均为 0–1000 坐标。先按原页核对，保留原始 OCR 数据；脚本不自动推断子图和图题归属。
-
-原位修正裁框及图题：
-
-```json
-[{
-  "page": 9,
-  "bbox": [400, 100, 900, 400],
-  "action": "update_image",
-  "old": {
-    "type": "image",
-    "img_path": "images/original.jpg",
-    "bbox": [400, 100, 900, 400],
-    "image_caption": ["图 1-2 原识别题注"],
-    "image_footnote": []
-  },
-  "new_bbox": [100, 100, 900, 400],
-  "image_caption": ["图 1-2 核对后的题注"],
-  "reason": "原页确认左侧子图被漏裁，并核对图下题注"
-}]
-```
-
-- `bbox` 定位原图；`new_bbox` 可省略以仅修题注。`old` 必须完整匹配原图的五个字段；缺失的 `img_path` 按 `""`、题注/脚注按 `[]` 填写。原块为 `chart` 时，old 使用 `chart_caption`、`chart_footnote`；顶层更新仍用 `image_caption`、`image_footnote`，脚本写回对应图型字段。值不匹配、定位歧义或重复修改同一块即停止。
-- `add_image` 也接受 `image_caption` / `image_footnote` 字符串列表，以 `after:{"bbox":[...],"text":"原始锚点"}` 决定阅读顺序。`skip` 跳过多余图块，`old` 为该块原始 `text`（缺失时 `""`）。合并时更新保留图块为确认后的并集框并跳过碎块；拆图时更新原块并按保留锚点顺序补图。同框补图冲突检查仍保留，不能以已跳过为由绕过。
-- 新增或更新后的图块保持明确边界，不再自动合并。新增图与改变裁框的图要求原 PDF 重裁，失败即停止，不回退旧裁片；仅改题注不要求重裁。审计留在外部构建状态，旧资产默认保留。
+修正文字、裁框、题注，以及补图、合图、拆图，都写进 `repairs.json`，格式见 [repairs.md](repairs.md)。所有 repairs 框都用 0–1000 坐标。
 
 ## 坑：结果下载域名连不上
 
@@ -151,7 +134,7 @@ curl: (35) schannel: failed to receive handshake, SSL/TLS connection failed
 
 `https://mineru.net` 本身能通（所以容易误判为"网络正常"），只有这个 CDN 域名不通。
 
-**处理**：用公共 DoH 拿真实 IP，再指定连接目标。保留 TLS 校验，不要 `-k`，不要改系统代理设置。
+**处理**：用公共 DoH 拿真实 IP，再指定连接目标。TLS 校验保持开启（不用 `-k`），也不改系统代理设置：问题出在 DNS，不在证书，关掉校验只会引入中间人风险。
 
 ```bash
 # 取真实 IP
@@ -175,4 +158,4 @@ curl --resolve cdn-mineru.openxlab.org.cn:443:<真实IP> -L -o out.zip "<full_zi
 
 ## 本地模型（无 Token 时）
 
-MinerU 也提供本地部署（`pip install mineru`），需要单独配置模型和运行环境。版本、模型与输出格式可能不同，不能假定与云端功能或结果等价；本技能的 `submit` 使用云端 API，本地结果须先核对数据结构再接入。
+MinerU 也提供本地部署（`pip install mineru`），需要单独配置模型和运行环境。版本、模型和输出格式可能与云端不同，别默认两者等价；本技能的 `submit` 使用云端 API，本地结果须先核对数据结构再接入。
