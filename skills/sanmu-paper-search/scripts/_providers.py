@@ -6,6 +6,8 @@ import html
 from html.parser import HTMLParser
 import json
 import os
+import math
+import random
 import time
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
@@ -13,28 +15,65 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from _core import InputError, Redactor, doi, ids, location, now, record
+from _rate_limit import RateLimiter, RateLimitError
 
 BASE = {"openalex": "https://api.openalex.org", "semantic-scholar": "https://api.semanticscholar.org/graph/v1",
         "crossref": "https://api.crossref.org", "unpaywall": "https://api.unpaywall.org/v2"}
-S2_FIELDS = "paperId,corpusId,externalIds,title,year,authors,abstract,publicationTypes,isOpenAccess,openAccessPdf,url"
+# Graph FullPaper (lookup/search) includes TLDR; BasePaper/PaperWithLinks do not.
+S2_BASE_FIELDS = "paperId,corpusId,externalIds,title,year,authors,abstract,publicationTypes,isOpenAccess,openAccessPdf,url,citationCount,referenceCount,venue,journal,publicationDate"
+S2_FIELDS = S2_BASE_FIELDS + ",tldr"
+S2_RECOMMENDATION_FIELDS = S2_BASE_FIELDS
 S2_AUTHOR_FIELDS = "name,authorId,affiliations,paperCount,citationCount,url"
 
 
 class SourceError(Exception):
-    def __init__(self, message, status=None):
+    def __init__(self, message, status=None, kind=None):
         super().__init__(message)
         self.status = status
+        self.kind = kind
 
 
 class Client:
-    def __init__(self, env=None, opener=None, sleep=None, clock=None):
+    def __init__(self, env=None, opener=None, sleep=None, clock=None, *, rate_limiter=None, shared_rate_limit=None):
         self.env = os.environ if env is None else env
         self.redactor = Redactor(self.env)
         self.opener = opener or urlopen
         self.sleep = sleep or time.sleep
         self.clock = clock or time.monotonic
+        shared = (opener is None and sleep is None and clock is None) if shared_rate_limit is None else shared_rate_limit
+        self.rate_limiter = rate_limiter or RateLimiter(shared=shared, clock=clock, sleep=self.sleep)
         self.last = {}
         self.raw = []
+
+    def wait(self, source, key=None, interval=None, max_wait=10.0):
+        interval = (1.05 if source == "semantic-scholar" else 0.15) if interval is None else interval
+        try:
+            return self.rate_limiter.wait(source, key, interval, max_wait)
+        except (RateLimitError, OSError) as exc:
+            raise SourceError("Rate limit: " + str(exc), kind="rate_limited") from exc
+
+    def cooldown(self, source, key, seconds):
+        try:
+            self.rate_limiter.cooldown(source, key, seconds)
+        except (RateLimitError, OSError) as exc:
+            raise SourceError("Cannot persist rate-limit cooldown: " + str(exc), kind="rate_limited") from exc
+
+    @staticmethod
+    def retry_after(headers):
+        value = next((v for k, v in headers.items() if k.lower() == "retry-after"), None)
+        try:
+            seconds = float(value)
+            if math.isfinite(seconds):
+                return max(0.0, seconds)
+        except (ValueError, TypeError):
+            pass
+        try:
+            date = email.utils.parsedate_to_datetime(value)
+            if date.tzinfo is None:
+                date = date.replace(tzinfo=timezone.utc)
+            return max(0.0, (date - datetime.now(timezone.utc)).total_seconds())
+        except (ValueError, TypeError, OverflowError, AttributeError):
+            return 1.0
 
     def post_serper(self, mode, payload):
         from _serper import post
@@ -43,6 +82,7 @@ class Client:
     def get(self, source, path, params=None):
         params = dict(params or {})
         headers = {"User-Agent": "sanmu-paper-search/1.0 (metadata; Python stdlib)", "Accept": "application/json"}
+        key = self.env.get("OPENALEX_API_KEY") if source == "openalex" else None
         if source == "semantic-scholar":
             key = self.env.get("S2_API_KEY") or self.env.get("SEMANTIC_SCHOLAR_API_KEY")
             if key:
@@ -58,17 +98,19 @@ class Client:
         if source == "crossref" and (self.env.get("CROSSREF_EMAIL") or polite_email):
             params["mailto"] = self.env.get("CROSSREF_EMAIL") or polite_email
         if source == "unpaywall":
-            email = self.env.get("UNPAYWALL_EMAIL") or polite_email
-            if not email:
+            contact_email = self.env.get("UNPAYWALL_EMAIL") or polite_email
+            if not contact_email:
                 raise SourceError("UNPAYWALL_EMAIL is not configured")
-            params["email"] = email
+            params["email"] = contact_email
         base = "https://api.semanticscholar.org" if source == "semantic-scholar" and path.startswith("/recommendations/") else BASE[source]
         url = base + path + (("?" + urlencode(params)) if params else "")
+        waited = 0.0
         for attempt in range(3):
-            interval = 1.05 if source == "semantic-scholar" else 0.15
-            if source in self.last:
-                self.sleep(max(0, interval - (self.clock() - self.last[source])))
-            self.last[source] = self.clock()
+            try:
+                waited += self.wait(source, key, max_wait=max(0.0, 10.0 - waited))
+            except SourceError as exc:
+                exc.status = 429
+                raise
             status, response_headers, body = None, {}, None
             try:
                 with self.opener(Request(url, headers=headers, method="GET"), timeout=25) as response:
@@ -82,7 +124,7 @@ class Client:
                 status = exc.code
                 response_headers = dict(exc.headers or {})
                 body = exc.read(1024 * 1024).decode("utf-8", errors="replace")
-            except (URLError, OSError, TimeoutError) as exc:
+            except (URLError, OSError, TimeoutError, UnicodeDecodeError) as exc:
                 detail = self.redactor.text(str(exc))
                 self.raw.append({"provider": source, "url": self.redactor.text(url), "attempt": attempt + 1,
                                  "status": None, "error": detail, "retrieved_at": now()})
@@ -97,19 +139,19 @@ class Client:
                 data = {"unparsed_body": body}
             self.raw.append(self.redactor.clean({"provider": source, "url": url, "attempt": attempt + 1,
                                                  "status": status, "body": data, "retrieved_at": now()}))
-            if status == 429 and attempt < 2:
-                retry = next((v for k, v in response_headers.items() if k.lower() == "retry-after"), "1")
-                try:
-                    delay = max(0.0, float(retry))
-                except (ValueError, TypeError):
-                    try:
-                        delay = max(0, (email.utils.parsedate_to_datetime(retry) - datetime.now(timezone.utc)).total_seconds())
-                    except (ValueError, TypeError, OverflowError):
-                        delay = 1.0
-                if delay > 10:
-                    raise SourceError("HTTP 429; Retry-After exceeds bounded 10 second retry budget", 429)
-                self.sleep(delay)
-                continue
+            if status in (429, 502, 503, 504):
+                backoff = 2 ** attempt + random.uniform(0, 0.25)
+                delay = max(self.retry_after(response_headers), backoff) if status == 429 else backoff
+                if status == 429:
+                    # Persist even on the final attempt or when this call cannot wait.
+                    self.cooldown(source, key, delay)
+                if attempt < 2:
+                    if delay > 10.0 - waited:
+                        raise SourceError(f"HTTP {status}; Retry-After/backoff exceeds bounded 10 second retry wait budget", status)
+                    if status != 429:
+                        self.sleep(delay)
+                        waited += delay
+                    continue
             if status is None or status >= 400:
                 raise SourceError(f"HTTP {status}", status)
             if not isinstance(data, dict) or "unparsed_body" in data:
@@ -224,6 +266,11 @@ def normalize(source, data):
         p = record(source, data.get("paperId"), data.get("title"), data.get("year"), identifiers,
                    authors, data.get("abstract"), ",".join(data.get("publicationTypes") or []) or None, locations)
         p["oa_status"] = {"is_oa": data.get("isOpenAccess")}
+        for field, remote in (("url", "url"), ("venue", "venue"), ("journal", "journal"),
+                              ("citation_count", "citationCount"), ("reference_count", "referenceCount"),
+                              ("publication_date", "publicationDate"), ("tldr", "tldr")):
+            if remote in data:
+                p[field] = data[remote]
         return p
     titles = data.get("title") or []
     authors = [{"name": a.get("name") or " ".join(filter(None, [a.get("given"), a.get("family")])),
@@ -262,6 +309,14 @@ class Providers:
                 raise SourceError("OpenAlex page metadata must be an object")
             key = rows_key or {"openalex": "results", "crossref": "items", "semantic-scholar": "data"}[source]
             entries = envelope.get(key)
+            if source == "semantic-scholar" and nested_key == "citedPaper" and entries is None:
+                info = data.get("citingPaperInfo")
+                if isinstance(info, dict):
+                    pdf = info.get("openAccessPdf")
+                    disclaimer = info.get("disclaimer") or (pdf.get("disclaimer") if isinstance(pdf, dict) else None)
+                    if "elided" in str(disclaimer or "").lower():
+                        raise SourceError("publisher_restricted: publisher has elided this paper's references",
+                                          200, kind="publisher_restricted")
             if not isinstance(entries, list):
                 raise SourceError("Page response has no results array: " + key)
             normalized = []
@@ -309,7 +364,7 @@ class Providers:
         if year_from is None and year_to is None:
             return {}
         if source == "semantic-scholar":
-            return {"year": f"{year_from or ''}:{year_to or ''}"}
+            return {"year": f"{year_from or ''}-{year_to or ''}"}
         if source == "openalex":
             filters = ([f"from_publication_date:{year_from}-01-01"] if year_from else [])
             filters += [f"to_publication_date:{year_to}-12-31"] if year_to else []
@@ -323,7 +378,7 @@ class Providers:
         papers, cursor, offset, pages = [], "*", 0, 0
         total, truncated = None, False
         while len(papers) < limit and pages < 4:
-            size = min(10, limit - len(papers))
+            size = min(20 if source == "semantic-scholar" else 10, limit - len(papers))
             if source == "openalex":
                 data, normalized = self._page(source, "/works", {"search": query, "per-page": size, "cursor": cursor, **years}, papers, pages)
                 entries = data.get("results")
@@ -366,7 +421,8 @@ class Providers:
                 data = self.client.get(source, "/author/search", {"query": query, "limit": limit, "fields": S2_AUTHOR_FIELDS})
                 entries, total = data.get("data"), data.get("total")
                 candidates = [{"provider": source, "author_id": a.get("authorId"), "name": a.get("name"),
-                               "affiliations": a.get("affiliations") or [], "paper_count": a.get("paperCount")}
+                               "affiliations": a.get("affiliations") or [], "paper_count": a.get("paperCount"),
+                               "citation_count": a.get("citationCount"), "url": a.get("url")}
                               for a in entries or []]
             if not isinstance(entries, list):
                 raise SourceError("Author response has no candidates array")
@@ -380,7 +436,7 @@ class Providers:
             raise InputError("Semantic Scholar author ID must be numeric")
         papers, pages, cursor, offset, total, more = [], 0, "*", 0, None, False
         while len(papers) < limit and pages < 4:
-            size = min(10, limit - len(papers))
+            size = min(20 if source == "semantic-scholar" else 10, limit - len(papers))
             if source == "openalex":
                 year_filter = self._year_params(source, year_from, year_to).get("filter")
                 filters = "author.id:" + author_id + (("," + year_filter) if year_filter else "")
@@ -390,8 +446,10 @@ class Providers:
                 total = (data.get("meta") or {}).get("count")
                 following = (data.get("meta") or {}).get("next_cursor")
             else:
+                date_filter = ({"publicationDateOrYear": f"{year_from or ''}:{year_to or ''}"}
+                               if year_from is not None or year_to is not None else {})
                 data, normalized = self._page(source, "/author/" + quote(author_id, safe="") + "/papers",
-                                       {"fields": S2_FIELDS, "limit": size, "offset": offset}, papers, pages)
+                                       {"fields": S2_BASE_FIELDS, "limit": size, "offset": offset, **date_filter}, papers, pages)
                 entries, following = data.get("data"), data.get("next")
             if not isinstance(entries, list):
                 raise SourceError("Author papers response has no results array")
@@ -430,7 +488,7 @@ class Providers:
                 return papers, status
             papers, cursor, pages, total, more = [], "*", 0, None, False
             while len(papers) < limit and pages < 4:
-                size = min(10, limit - len(papers))
+                size = min(20 if source == "semantic-scholar" else 10, limit - len(papers))
                 data, normalized = self._page(source, "/works", {"filter": "cites:" + seed_id, "per-page": size, "cursor": cursor}, papers, pages)
                 entries, meta = data.get("results"), data.get("meta") or {}
                 if not isinstance(entries, list):
@@ -451,16 +509,16 @@ class Providers:
             if not canonical:
                 raise SourceError("Semantic Scholar seed has no paperId")
             data, normalized = self._page(source, "/recommendations/v1/papers/forpaper/" + quote(canonical, safe=""),
-                                   {"limit": limit, "fields": S2_FIELDS}, [], 0, rows_key="recommendedPapers")
+                                   {"limit": limit, "fields": S2_RECOMMENDATION_FIELDS}, [], 0, rows_key="recommendedPapers")
             entries = data["recommendedPapers"]
             return normalized[:limit], {"status": "ok", "fetched": min(len(entries), limit),
                     "pages": 1, "truncated": len(entries) >= limit, "relation": relation, "total": None}
         papers, offset, pages, more = [], 0, 0, False
         while len(papers) < limit and pages < 4:
-            size = min(10, limit - len(papers))
+            size = min(20 if source == "semantic-scholar" else 10, limit - len(papers))
             key = "citedPaper" if relation == "references" else "citingPaper"
             data, normalized = self._page(source, "/paper/" + quote(paper_id, safe="") + "/" + relation,
-                                   {"fields": S2_FIELDS, "limit": size, "offset": offset}, papers, pages, nested_key=key)
+                                   {"fields": S2_BASE_FIELDS, "limit": size, "offset": offset}, papers, pages, nested_key=key)
             entries = data["data"]
             papers.extend(normalized[:size])
             papers = papers[:limit]

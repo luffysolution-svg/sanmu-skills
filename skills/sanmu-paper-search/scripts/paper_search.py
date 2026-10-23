@@ -68,6 +68,16 @@ def parser():
     cmd.add_argument("--year-to", type=int, help="Scholar only; sent as as_yhi")
     cmd.add_argument("--batch", help="Explicit JSON file: 1..100 request objects, one POST to the selected endpoint")
     cmd.add_argument("--out", required=True)
+    cmd = commands.add_parser("exa", help="Optional publication discovery with Exa; preserves results and reported costs")
+    cmd.add_argument("query")
+    cmd.add_argument("--type", choices=("auto", "lite"), default="auto")
+    cmd.add_argument("--limit", type=bounded, default=5)
+    cmd.add_argument("--year-from", type=int)
+    cmd.add_argument("--year-to", type=int)
+    cmd.add_argument("--include-domain", action="append", default=[])
+    cmd.add_argument("--exclude-domain", action="append", default=[])
+    cmd.add_argument("--text-chars", type=int, default=3000)
+    cmd.add_argument("--out", required=True)
     for name in ("search", "lookup", "related"):
         cmd = commands.add_parser(name)
         cmd.add_argument("query" if name == "search" else "id")
@@ -111,8 +121,11 @@ def parser():
 
 
 def _error(exc, fetched=0):
-    return {"status": "error", "error": str(exc), "http_status": getattr(exc, "status", None),
-            "fetched": fetched, "truncated": True}
+    result = {"status": "error", "error": str(exc), "http_status": getattr(exc, "status", None),
+              "fetched": fetched, "truncated": True}
+    if getattr(exc, "kind", None):
+        result["reason"] = exc.kind
+    return result
 
 
 def collect(adapter, names, method, *args):
@@ -166,6 +179,7 @@ def execute(args, client):
                 "configuration": {"semantic_scholar_api_key": bool(env.get("S2_API_KEY") or env.get("SEMANTIC_SCHOLAR_API_KEY")),
                                   "openalex_api_key": bool(env.get("OPENALEX_API_KEY")),
                                   "serper_api_key": bool(env.get("SERPER_API_KEY")),
+                                  "exa_api_key": bool(env.get("EXA_API_KEY", "").strip()),
                                   "openalex_email": bool(env.get("OPENALEX_EMAIL")),
                                   "unpaywall_email": bool(env.get("UNPAYWALL_EMAIL")),
                                   "crossref_email": bool(env.get("CROSSREF_EMAIL")),
@@ -175,6 +189,9 @@ def execute(args, client):
         return result, 4 if result["status"] == "failed" else 0
     if args.command == "serper":
         return execute_serper(args, client)
+    if args.command == "exa":
+        from _exa import execute as execute_exa
+        return execute_exa(args, client)
     # Input errors are diagnosed before reserving a directory or issuing a request.
     command = args.command
     year_from, year_to = getattr(args, "year_from", None), getattr(args, "year_to", None)
@@ -256,7 +273,10 @@ def execute(args, client):
                     statuses["paper:" + provider] = seed_status
                     if found:
                         statuses["paper:" + provider]["author_mode"] = "paper_authors"
-                        break
+                        selected_namespace = "semantic_scholar" if args.provider == "semantic-scholar" else args.provider
+                        if any(a.get("identifiers", {}).get(selected_namespace)
+                               for paper in found for a in paper.get("authors", [])):
+                            break
                 except SourceError as exc:
                     statuses["paper:" + provider] = _error(exc)
                 except (ValueError, TypeError, KeyError, AttributeError) as exc:
@@ -276,23 +296,28 @@ def execute(args, client):
                         for author in authors
                         for provider, key in namespace.items()
                         for value in (author.get("identifiers") or {}).get(key, [])]
-            extra["author_candidates"] = as_candidates(matched or ([] if wanted else seed_authors))
-            extra["author_mode"] = "papers" if wanted and matched else "paper_authors"
-            ids_for = [c["author_id"] for c in extra["author_candidates"] if c["provider"] == args.provider]
+            extra["author_candidates"] = as_candidates(matched or seed_authors)
+            extra["author_mode"] = "paper_authors"
+            ids_for = unique([c["author_id"] for c in as_candidates(matched) if c["provider"] == args.provider])
             query["from_paper"] = args.from_paper
-            if wanted and not matched:
+            if not seeds:
+                statuses[args.provider] = _error(SourceError("Seed paper could not be resolved; author identity is unknown"))
+                extra["author_mode"] = "unresolved"
+            elif wanted and not matched:
                 statuses[args.provider] = {"status": "not_found", "fetched": 0, "pages": 1, "truncated": False,
                                            "error": "Author name is not in the seed paper author list",
                                            "author_mode": "no_match", "from_paper": args.from_paper}
-                papers = []
-            elif not wanted:
+            elif not wanted or len(ids_for) > 1:
+                mode = "ambiguous" if wanted else "paper_authors"
+                extra["author_mode"] = mode
                 statuses[args.provider] = {"status": "ok", "fetched": 0, "pages": 1, "truncated": False,
-                                           "author_mode": "paper_authors", "from_paper": args.from_paper}
-                papers = []
-            elif ids_for:
+                                           "author_mode": mode, "from_paper": args.from_paper}
+            elif len(ids_for) == 1:
+                extra["author_mode"] = "papers"
                 query["author_id"] = args.author_id = ids_for[0]
             else:
-                raise InputError("No %s author ID for this paper; the seed paper was not found" % args.provider)
+                statuses[args.provider] = _error(SourceError("Seed authors have no ID for the selected provider"))
+                extra["author_mode"] = "unresolved"
         if args.from_paper and not args.author_id:
             pass  # Seed paper authored list or name mismatch; nothing further to fetch.
         else:
@@ -362,7 +387,7 @@ def execute(args, client):
         extra["year_filter"] = {"year_from": year_from, "year_to": year_to,
             "unknown_year_count": unknown, "locally_removed": len(papers) - len(filtered),
             "unknown_year_policy": "keep_returned_unknown; provider-side filters may omit undated records",
-            "mode": "local_bounded_candidates" if command == "author" and args.provider == "semantic-scholar" else "provider_and_local"}
+            "mode": "provider_and_local"}
         papers = filtered
     papers = deduplicate(papers)
     limit = getattr(args, "limit", None)

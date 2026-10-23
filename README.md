@@ -36,7 +36,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    python scripts/build_markdown.py --help
 4. 检查 MINERU_API_TOKEN 配置状态，不显示凭证值；未配置时指导我从 https://mineru.net 获取并在本地设置。
 5. 对 sanmu-paper-reader，证据、主题与基准工具使用 Python 3.10+ 标准库；需要 SI 探针、PDF 附图提取或子图裁切时，在独立虚拟环境执行 python -m pip install -r requirements.txt。从技能目录运行 python scripts/evidence_tools.py --help 和 python scripts/benchmark_collector.py --help；PDF/OCR/Zotero 按实际输入检查。
-6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python scripts/paper_search.py --help；核心无第三方依赖，学术 API 凭证与可选 SERPER_API_KEY 仅检查是否配置，Zotero 按需连接；Serper 支持 Google Scholar、网页、专利等公开检索。
+6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python scripts/paper_search.py --help；核心无第三方依赖，学术 API 凭证与可选 SERPER_API_KEY、EXA_API_KEY 仅检查是否配置，Zotero 按需连接；Serper 支持 Google Scholar、网页、专利等公开检索，Exa 按需补充自然语言 publication 检索。
 7. 汇报安装位置、验证结果和仍需配置的项目。
 ```
 
@@ -125,7 +125,7 @@ codex plugin add sanmu-skills@sanmu-skills
 
 ### sanmu-paper-search
 
-从研究问题、种子论文或作者出发，查询 OpenAlex、Semantic Scholar 与 Crossref，保留来源、去重依据、失败和截断状态；定位全文/SI并匹配已有 Zotero 材料。可选配置 Serper，补充 Google Scholar、网页、专利等 13 类公开接口。日常检索保持轻量，扩展任务记录协议，取得材料后衔接转换与精读。
+从研究问题、种子论文或作者出发，查询 OpenAlex、Semantic Scholar 与 Crossref，保留来源、去重依据、失败和截断状态；定位全文/SI并匹配已有 Zotero 材料。可选配置 Serper，补充 Google Scholar、网页、专利等 13 类公开接口；配置 Exa 可用自然语言补搜 publication，参数与费用记录见 [Exa 指南](skills/sanmu-paper-search/references/exa.md)。日常检索保持轻量，扩展任务记录协议，取得材料后衔接转换与精读。
 
 [查看安装、命令与能力边界 →](skills/sanmu-paper-search/README.md)
 

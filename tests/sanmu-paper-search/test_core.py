@@ -229,9 +229,9 @@ class CoreTests(unittest.TestCase):
             _, dated = invoke("author", "--author-id", "42", "--provider", "semantic-scholar", "--year-from", "2026")
             self.assertEqual(dated["counts"]["papers"], 0)
             self.assertEqual(dated["year_filter"]["locally_removed"], 1)
-            self.assertEqual(dated["year_filter"]["mode"], "local_bounded_candidates")
+            self.assertEqual(dated["year_filter"]["mode"], "provider_and_local")
             _, dated = invoke("search", "test", "--sources", "semantic-scholar", "--year-from", "2024", "--year-to", "2026")
-            self.assertTrue(any("year=2024%3A2026" in u for u in seen))
+            self.assertTrue(any("year=2024-2026" in u for u in seen))
             self.assertEqual(dated["limit_scope"], "per_source_candidate_budget")
             for relation, direction in (("references", "seed_to_result"), ("citations", "result_to_seed"),
                                         ("recommendations", "similarity_not_citation")):

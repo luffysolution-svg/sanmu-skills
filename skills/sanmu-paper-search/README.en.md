@@ -18,7 +18,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 2. Read SKILL.md and README. From the skill directory run:
    python scripts/paper_search.py doctor
    python scripts/paper_search.py --help
-3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL, CROSSREF_EMAIL and optional SERPER_API_KEY are configured. Never display values. Serper adds Google Scholar, web, patent and other public searches on demand. Explain available capabilities without credentials; point to official registration only when needed.
+3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL, CROSSREF_EMAIL and optional SERPER_API_KEY and EXA_API_KEY are configured. Never display values. Serper adds Google Scholar, web, patent and other public searches on demand; Exa adds natural-language publication discovery. Explain available capabilities without credentials; point to official registration only when needed.
 4. For Zotero, check the host integration and local API. Do not read its database or storage directly. Core search also works without Zotero.
 5. Run a small public-paper query into a new directory outside the repository. Report per-source status, installation path and limitations. Do not modify Zotero items.
 ```
@@ -58,7 +58,15 @@ python scripts/paper_search.py serper "single atom carbon nitride photocatalytic
 
 See the [Serper guide](references/serper.md) for all 13 public API types, safe PowerShell/Bash configuration, batch requests and credit limits. For Serper, `--limit` caps retained results per query across pages locally. Typed results and complete responses go into `results.json` / `response.json`; `papers.json` stays empty. Verify stable IDs before entering the paper workflow. Scholar snippets are not abstracts, publication details may truncate authors, PDF links do not establish OA, and webpage extraction may omit article content.
 
-On Windows, quote actual absolute paths. After checking candidates, use `author --author-id ID --provider ...` for publications. Topic search and author publications support `--year-from` / `--year-to`. For the core scholarly commands, `--limit` is a per-source budget; all deduplicated candidates are retained in source order, without cross-provider relevance reranking. The assistant reads and screens the shortlist. See the [CLI contract](references/cli.md).
+For optional natural-language publication discovery, configure `EXA_API_KEY` and run:
+
+```bash
+python scripts/paper_search.py exa "papers on frustrated Lewis pairs for photothermal hydrogen evolution" --type auto --limit 5 --year-from 2023 --out /path/to/work/exa
+```
+
+Exa searches the publication category. Eligible structured entities become candidates in `papers.json`; `results.json` / `response.json` retain the full results and responses. Verify entity identity through scholarly sources; extracted text stays separate from abstracts. Reported `costDollars` provides a cost reference. See the [Exa guide](references/exa.md) for configuration, domain filters and output details.
+
+On Windows, quote actual absolute paths. After checking candidates, use `author --author-id ID --provider ...` for publications. Topic search and author publications support `--year-from` / `--year-to`. For the core scholarly commands, `--limit 1..20` is a per-source candidate budget; all deduplicated candidates are retained in source order, without cross-provider relevance reranking. The assistant reads and screens the shortlist. See the [CLI contract](references/cli.md).
 
 ## Sources
 
@@ -69,13 +77,14 @@ On Windows, quote actual absolute paths. After checking candidates, use `author 
 | Crossref | DOI/metadata verification and supplementary discovery | Optional `CROSSREF_EMAIL` |
 | Unpaywall | OA locations by DOI, not keyword discovery | `UNPAYWALL_EMAIL` |
 | Serper (optional) | Google Scholar, web, patents and other public information across 13 API types | `SERPER_API_KEY`; requests consume credits; [configuration and routes](references/serper.md) |
+| Exa (optional) | Natural-language publication candidate discovery | `EXA_API_KEY`; [configuration, parameters and cost records](references/exa.md) |
 | Zotero | Existing items and attachments | Host tools or a local standard JSON export |
 
 Configure the API credentials above as needed. Other scholarly tools can supplement coverage after checking their response formats and access terms.
 
 ## Outputs and limits
 
-Each run retains the query, per-source status, normalized records, redacted raw responses, readable report and integrity hashes. Empty results, failure, truncation and unexecuted work remain distinct. Stable identifiers drive matching; metadata conflicts and provenance are retained. Resolve authors before retrieving publications, and preserve preprint/publication relationships.
+Each run retains the query, per-source status, normalized records, redacted raw responses, readable report and integrity hashes. Empty results, failure, truncation and unexecuted work remain distinct. Stable identifiers drive matching; metadata conflicts and provenance are retained. Resolve authors before retrieving publications; a name filter on seed-paper authors must match uniquely before collecting works. Preserve preprint/publication relationships. S2 throttling is shared across processes using the same key and accepts seconds or HTTP dates in `Retry-After`. Publisher-elided references retain a restricted status. See the [CLI contract](references/cli.md) for year filtering and common metadata fields.
 
 Records distinguish returned metadata from available abstract text; a screening basis is recorded only after reading. A resolved URL is not a downloaded file, and a downloaded file has not necessarily been read. `scripts/fetch_pdf.py` can retrieve a direct public PDF and record URLs, SHA-256, format checks and identity-check status. For SI, inspect the publisher's attachment list and record which files were obtained and which remain missing.
 

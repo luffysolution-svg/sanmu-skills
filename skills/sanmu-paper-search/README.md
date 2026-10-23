@@ -20,7 +20,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 2. 阅读技能 SKILL.md 和 README，在技能目录运行：
    python scripts/paper_search.py doctor
    python scripts/paper_search.py --help
-3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 和可选 SERPER_API_KEY 是否配置，不显示值。Serper 按需补充 Google Scholar、网页、专利等公开检索；没有凭证时说明可用范围，确需配置才指向官方注册页。
+3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 和可选 SERPER_API_KEY、EXA_API_KEY 是否配置，不显示值。Serper 按需补充 Google Scholar、网页、专利等公开检索，Exa 补充自然语言 publication 检索；没有凭证时说明可用范围，确需配置才指向官方注册页。
 4. 如需 Zotero，检查宿主插件与本地 API；不要直接读取数据库或 storage。没有 Zotero 也能使用核心检索。
 5. 在仓库之外的新工作目录做一次小规模公开文献查询，报告逐源状态、安装位置与限制；不改 Zotero 文献。
 ```
@@ -60,7 +60,15 @@ python scripts/paper_search.py serper "single atom carbon nitride photocatalytic
 
 其余 12 类公开接口、PowerShell/Bash 安全配置、批量请求与费用边界见 [Serper 指南](references/serper.md)。Serper 的 `--limit` 是每查询跨页合计的本地上限，结果保存在 `results.json` / `response.json`；`papers.json` 为空，核对稳定 ID 后再交给论文流程。
 
-Windows 使用实际绝对路径并加引号。作者候选核对后，用 `author --author-id ID --provider ...` 获取作品。`search` 和作者作品支持 `--year-from` / `--year-to`。原有学术检索的 `--limit` 为每源预算，跨源去重后全部保留；默认不做跨库相关性重排，助手根据实际阅读形成候选短名单。参数与记录格式见 [CLI 指南](references/cli.md)。
+自然语言补搜文献可选 Exa（先配置 `EXA_API_KEY`）：
+
+```bash
+python scripts/paper_search.py exa "papers on frustrated Lewis pairs for photothermal hydrogen evolution" --type auto --limit 5 --year-from 2023 --out /path/to/work/exa
+```
+
+Exa 使用 publication 检索；结构化实体可进入 `papers.json` 候选，完整结果与响应保留在 `results.json` / `response.json`。实体身份需再经学术来源核验，正文摘录另存，费用以 API 返回的 `costDollars` 为参考。配置、域名过滤和输出说明见 [Exa 指南](references/exa.md)。
+
+Windows 使用实际绝对路径并加引号。作者候选核对后，用 `author --author-id ID --provider ...` 获取作品。`search` 和作者作品支持 `--year-from` / `--year-to`。原有学术检索的 `--limit 1..20` 为每源候选预算，跨源去重后全部保留；默认不做跨库相关性重排，助手根据实际阅读形成候选短名单。参数与记录格式见 [CLI 指南](references/cli.md)。
 
 ## 来源与依赖
 
@@ -71,6 +79,7 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 | Crossref | 题录/DOI核对、补召回 | 可选 `CROSSREF_EMAIL` |
 | Unpaywall | DOI 对应 OA 位置 | `UNPAYWALL_EMAIL`，不用于关键词搜索 |
 | Serper（可选） | Google Scholar、网页、专利及其他公开信息，共 13 类接口 | `SERPER_API_KEY`，按请求计费；[配置与接口](references/serper.md) |
+| Exa（可选） | 自然语言 publication 候选发现 | `EXA_API_KEY`；[配置、参数与费用](references/exa.md) |
 | Zotero | 检查收藏与已有附件 | 宿主 Zotero 工具，或本地标准 JSON 导出 |
 
 按需配置上表中的 API 凭证即可使用核心检索。其他学术工具可作为补充来源，接入时核对其返回格式和访问许可。
@@ -78,7 +87,8 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 ## 结果与边界
 
 - 每次运行保存查询、逐源状态、规范题录、脱敏原始响应、可读清单和哈希，明确失败、空结果、截断及未执行。
-- 稳定 ID 对齐，保留字段冲突和来源。作者先消歧；预印本与正式版保留关系，不按标题直接混成一篇。
+- 稳定 ID 对齐，保留字段冲突和来源。作者先消歧，种子作者姓名需唯一匹配才取作品；预印本与正式版保留关系，不按标题直接混成一篇。
+- S2 按同 key 跨进程限速，识别秒数/日期形式的 `Retry-After`；出版社省略参考文献时保留受限状态。年份过滤和常用字段见 [CLI 指南](references/cli.md)。
 - `metadata_only` 和 `abstract` 区分 API 返回的文本层级；筛选依据需实际阅读后记录。找到地址不等于下载，下载不等于读过。
 - 直接公开 PDF 可用 `scripts/fetch_pdf.py` 获取，并生成来源、哈希和检查记录；SI 由助手从主文附件区逐项核对，记录已取得和缺失的附件。
 - 有界检索不证明查全；系统检索需逐源预算与筛选记录，见 [检索协议](references/protocol.md)。

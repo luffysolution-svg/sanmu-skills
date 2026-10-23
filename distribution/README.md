@@ -13,7 +13,7 @@
 ```bash
 python distribution/build.py check
 python -m unittest discover -s distribution/tests -v
-python distribution/build.py build --out dist/1.4.0
+python distribution/build.py build --out dist/1.5.0
 ```
 
 新运行文件必须先加入 Git 暂存区再构建。构建以 Git 索引中的跟踪路径读取当前文件；发布前须暂存迁移，未暂存的运行文件缺失会报错，防止静默漏包。技能包仅接收根部 `SKILL.md`、README、LICENSE、requirements，以及 `scripts/`、`references/`、`assets/`。测试、样例、开发文档与 ROADMAP 不打包；嵌套测试、缓存、`_selftest.py`、凭证及本地依赖进入运行输入时检查失败。输出目录已存在时拒绝覆盖，复测请指定新目录。
@@ -42,9 +42,9 @@ python -m unittest discover -s tests/sanmu-paper-search -v
 
 输出包括：
 
-- `sanmu-skills-1.4.0.zip`：通用插件包，包含三个技能、根 `plugin.json`、Claude 插件声明及许可证；也可作为 OpenAI 公共插件目录的待提交包，仍需平台检查与审核。
+- `sanmu-skills-1.5.0.zip`：通用插件包，包含三个技能、根 `plugin.json`、Claude 插件声明及许可证；也可作为 OpenAI 公共插件目录的待提交包，仍需平台检查与审核。
 - `skillhub/<技能名>/`：可直接交给腾讯 CLI 的目录。
-- `skillhub/<技能名>-1.4.0.zip`：与对应目录内容一致的归档，根部包含 `SKILL.md`。网页是否接收此格式以实际上传入口为准。
+- `skillhub/<技能名>-1.5.0.zip`：与对应目录内容一致的归档，根部包含 `SKILL.md`。网页是否接收此格式以实际上传入口为准。
 - `SHA256SUMS`：四个 ZIP 的 SHA-256 校验值。
 
 腾讯包在原 `SKILL.md` 头部追加 `slug`、`displayName`、`version`、`summary`、`license`；通用源码不添加腾讯顶层专用字段。正文及资源保持一致。
@@ -70,23 +70,23 @@ Codex 的仓库目录为 `.agents/plugins/marketplace.json`，通过本地来源
 | sanmu-paper-reader | `sanmu-paper-reader` |
 | sanmu-paper-search | `sanmu-paper-search` |
 
-上传选构建产物 `skillhub/<技能名>-<版本>.zip`，不要选 `skills/<技能名>/` 源码目录：其中的 `node_modules/`、`__pycache__/` 会让 doc2md 超过平台 200 个文件上限，其余技能会因 `.pyc` 被跳过。平台限制为单包 200 个文件、10 MB；当前三个包为 31、23、14 个文件。后续版本在控制台「版本历史」更新，slug 不变。
+上传选构建产物 `skillhub/<技能名>-<版本>.zip`，不要选 `skills/<技能名>/` 源码目录：其中的 `node_modules/`、`__pycache__/` 会让 doc2md 超过平台 200 个文件上限，其余技能会因 `.pyc` 被跳过。平台限制为单包 200 个文件、10 MB；各版本文件数与大小以本次 `build` 输出为准。后续版本在控制台「版本历史」更新，slug 不变。
 
 使用 API Token 发布时，按[官方教程](https://skillhub.cn/tutorials)完成实名与配置。Windows 发布教程使用 WSL；不要把 Token 写入源码、命令示例或提交记录。
 
 ```bash
 skillhub auth whoami
-skillhub publish ./dist/1.4.0/skillhub/sanmu-doc2md --dry-run
-skillhub publish ./dist/1.4.0/skillhub/sanmu-paper-reader --dry-run
-skillhub publish ./dist/1.4.0/skillhub/sanmu-paper-search --dry-run
+skillhub publish ./dist/1.5.0/skillhub/sanmu-doc2md --dry-run
+skillhub publish ./dist/1.5.0/skillhub/sanmu-paper-reader --dry-run
+skillhub publish ./dist/1.5.0/skillhub/sanmu-paper-search --dry-run
 ```
 
 预检通过后，分别提交三个目录：
 
 ```bash
-skillhub publish ./dist/1.4.0/skillhub/sanmu-doc2md --changelog "首次发布"
-skillhub publish ./dist/1.4.0/skillhub/sanmu-paper-reader --changelog "首次发布"
-skillhub publish ./dist/1.4.0/skillhub/sanmu-paper-search --changelog "首次发布"
+skillhub publish ./dist/1.5.0/skillhub/sanmu-doc2md --changelog "1.5.0：修复 S2 检索与限速，新增可选 Exa 补搜"
+skillhub publish ./dist/1.5.0/skillhub/sanmu-paper-reader --changelog "1.5.0：修复 S2 检索与限速，新增可选 Exa 补搜"
+skillhub publish ./dist/1.5.0/skillhub/sanmu-paper-search --changelog "1.5.0：修复 S2 检索与限速，新增可选 Exa 补搜"
 ```
 
 返回 `pending_review` 表示已提交，不等同于已经公开上架。

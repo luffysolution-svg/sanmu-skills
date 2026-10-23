@@ -12,7 +12,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit, parse_qsl, urlencode, qu
 SCHEMA = "sanmu-paper-search/v1"
 PROVIDERS = ("openalex", "semantic-scholar", "crossref")
 SECRET_NAMES = ("S2_API_KEY", "SEMANTIC_SCHOLAR_API_KEY", "OPENALEX_API_KEY",
-                "UNPAYWALL_EMAIL", "CROSSREF_EMAIL", "SERPER_API_KEY", "OPENALEX_EMAIL", "POLITE_EMAIL")
+                "UNPAYWALL_EMAIL", "CROSSREF_EMAIL", "SERPER_API_KEY", "EXA_API_KEY", "OPENALEX_EMAIL", "POLITE_EMAIL")
 # Canonicalized names are shared by structured fields and parsed URL queries.
 SENSITIVE = {"apikey", "authorization", "token", "accesstoken", "email", "mailto",
              "password", "secret", "xapikey", "key", "signature", "credential",
@@ -247,8 +247,10 @@ def _combine(group):
     result["versions"] = unique([v for p in group for v in p.get("versions", [])] + [
         {k: p.get(k) for k in ("title", "year", "type", "identifiers", "authors", "abstract", "provenance")}
         for p in group]) if len(group) > 1 else result.get("versions", [])
-    for field in ("title", "year", "type", "authors", "abstract"):
-        alternatives = unique([p[field] for p in group if p.get(field)])
+    for field in ("title", "year", "type", "authors", "abstract", "url", "venue", "journal",
+                  "publication_date", "citation_count", "reference_count", "tldr"):
+        alternatives = unique([p[field] for p in group if p.get(field) or
+                               (field in ("citation_count", "reference_count") and p.get(field) == 0)])
         if len(alternatives) > 1:
             result["conflicts"].append({"field": field, "values": alternatives})
         if alternatives:
@@ -393,7 +395,7 @@ def prepare_out(path):
     return path
 
 
-def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None, serper_data=None):
+def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None, serper_data=None, exa_data=None):
     errors = [s for s in sources.values() if s.get("status") == "error"]
     usable = [s for s in sources.values() if s.get("status") in ("ok", "not_found")]
     status = ("partial" if usable or papers else "failed") if errors else "success"
@@ -409,6 +411,9 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
     if serper_data is not None:
         artifacts["results.json"] = dumps(redactor.clean(serper_data["results"]))
         artifacts["response.json"] = dumps(redactor.clean(serper_data["responses"]))
+    if exa_data is not None:
+        artifacts["results.json"] = dumps(redactor.clean(exa_data["results"]))
+        artifacts["response.json"] = dumps(redactor.clean(exa_data["responses"]))
     for i, response in enumerate(raw, 1):
         artifacts[f"raw/{i:04d}.json"] = dumps(redactor.clean(response))
     lines = ["# Paper search report", "", f"Status: {status}", f"Command: {command}"]
@@ -440,6 +445,13 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
                          f"DOI={', '.join(p['identifiers'].get('doi', [])) or 'missing'}")
         lines.extend(["", "Metadata/abstract evidence only. OA resolution does not download or verify a PDF.",
                       "License and OA flags are separate; a URL alone is not evidence of open access."])
+    if exa_data is not None:
+        lines.extend(["", f"Exa returned results: {run['result_count']}",
+                      f"Reported cost subtotal (USD): {run['cost_usd_reported']}",
+                      f"Cost completeness: {'incomplete / unknown' if run['cost_unknown_responses'] else 'all responses reported'}",
+                      f"Responses with unknown cost: {run['cost_unknown_responses']}",
+                      "Text is remote content, not a verified abstract or full-text reading.",
+                      "Publication entities remain candidates until scholarly identifiers are checked."])
     artifacts["report.md"] = "\n".join(lines) + "\n"
     summary = ["| # | Year | Title | Authors | Venue / Type | DOI / Stable ID | Evidence |",
                "| --- | --- | --- | --- | --- | --- | --- |"]
@@ -449,7 +461,7 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
         authors = ", ".join(names[:3]) + (" et al." if len(names) > 3 else "")
         stable = [f"{k}:{v}" for k, values in p["identifiers"].items() for v in values]
         summary.append(f"| {i} | {p.get('year') or 'n.d.'} | {title} | {authors or 'missing'} | "
-                       f"{p.get('type') or 'n.a.'} | {', '.join(stable[:3]) or 'missing'} | {p.get('evidence_level')} |")
+                       f"{p.get('venue') or p.get('type') or 'n.a.'} | {', '.join(stable[:3]) or 'missing'} | {p.get('evidence_level')} |")
     if serper_data is not None:
         def cell(value):
             return " ".join(str(value if value is not None else "").split()).replace("|", "\\|")
@@ -515,7 +527,7 @@ def check_bundle(path, include_metadata=False):
     if (root / "run.json").is_file():
         try:
             run = read_json(root / "run.json")
-            if isinstance(run, dict) and run.get("command") == "serper":
+            if isinstance(run, dict) and run.get("command") in ("serper", "exa"):
                 for required in ("results.json", "response.json"):
                     if required not in seen:
                         issues.append("Not in manifest: " + required)
