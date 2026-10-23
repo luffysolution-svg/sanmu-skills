@@ -2,149 +2,126 @@
 
 # sanmu-skills
 
-**Sanmu's Agent Skills collection**
+**Sanmu's Agent Skills collection for research**
 
-Practical workflows, packaged as reusable skills for AI assistants.
+Document conversion · paper reading · literature search: working methods from day-to-day research, packaged as installable, reusable skills.
 
+[![Release](https://img.shields.io/github/v/release/luffysolution-svg/sanmu-skills?label=release)](https://github.com/luffysolution-svg/sanmu-skills/releases/latest)
 [![Tests](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml)
+[![Agent Skills](https://img.shields.io/badge/Agent%20Skills-standard-orange.svg)](https://agentskills.io)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [简体中文](README.md) · **English**
 
-[Quick start](#quick-start) · [Marketplaces](#marketplaces) · [Skills](#skills) · [Usage](#usage) · [Contributing](#contributing)
+[Skills](#skills) · [Installation](#installation) · [Usage](#usage) · [Contributing](#contributing)
 
 </div>
 
-## Quick start
+## Skills
+
+| Skill | In one sentence | Typical requests |
+| --- | --- | --- |
+| [**sanmu-doc2md**](skills/sanmu-doc2md/README.en.md) | Turns papers, textbooks and slides into a Markdown knowledge base that keeps formulas, high-resolution figures and source page numbers | "Convert this scanned textbook to Markdown, one file per chapter" "Turn this paper into an Obsidian note without breaking the formulas" |
+| [**sanmu-paper-reader**](skills/sanmu-paper-reader/README.en.md) | Reads papers and SI closely; every conclusion can be traced back to its location in the source and its experimental conditions | "Read this paper closely and explain Fig. 4" "Can the hydrogen evolution performance of these three papers be compared directly?" |
+| [**sanmu-paper-search**](skills/sanmu-paper-search/README.en.md) | Finds literature from a topic, paper or author, and records honestly where it searched and what it missed | "Find papers on FLP photothermal hydrogen evolution" "Has this paper been retracted?" "Download the original figures from its SI" |
+
+The three skills can be used separately or chained: **search** → get the PDF / SI → **convert** → **read**. If one of them is not installed, the other two still work.
+
+### sanmu-doc2md
+
+- **Route by document type**: textbooks are split by chapter, slides are organized by lecture, and papers become standalone notes with two-way links to their SI.
+- **Formulas and figures stay intact**: every formula goes through a KaTeX preflight check; figures are taken from the source file's original images first, and fragmented multi-panel figures can be recropped from the source.
+- **Errors can be traced back**: original page numbers are kept, and every correction is written to a repairs file with a guard on the original value; the raw OCR output is left untouched.
+- **Zotero integration**: syncs metadata, reading notes and PDF annotations; writes go through the official MCP and are read back to confirm.
+
+### sanmu-paper-reader
+
+- **Five scenarios**: single-paper close reading, cross-paper comparison, interdisciplinary transfer, cross-topic organization, and knowledge-base questions.
+- **Traceable evidence**: each claim records its source location, units and operating conditions; the authors' conclusions, your interpretation and hypotheses still to be tested are written separately.
+- **Materials and chemistry checks**: synthesis and characterization, catalysis and electrochemistry, DFT, spectroscopy and mechanisms, performance comparison, selected according to what the paper actually contains.
+- **Optional extras**: figure-text alignment, Mermaid mechanism diagrams, draft SOPs for reproduction preparation, benchmark tables, targeted SI search.
+
+### sanmu-paper-search
+
+- **Multi-source search**: OpenAlex, Semantic Scholar, Crossref, with optional Google Scholar (Serper) and Exa semantic search as supplements.
+- **Citation expansion and author disambiguation**: references, citing papers and similar papers are recorded separately; authors with the same name are pinned with stable IDs.
+- **Full text and SI**: Europe PMC provides JATS full text and supplementary original-figure bundles without a key, and checks retractions and errata.
+- **Honest reporting**: success, zero results, truncation and failure are recorded separately; "nothing found" is never reported as "does not exist".
+
+## Installation
+
+### Installation channels
+
+| Channel | How to install | Contents |
+| --- | --- | --- |
+| **npx skills** (general) | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g` | Three skills, can be selected individually |
+| **Claude Code** | Plugin marketplace, see below | Collection plugin |
+| **Codex** | Plugin marketplace, see below | Collection plugin |
+| **Tencent SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | Individual skills |
+| **WorkBuddy** | Search for "三木" in the client under 专家·技能·连接器 → 技能 (Experts · Skills · Connectors → Skills) | Individual skills |
+| **skills.sh / SkillsMP** | [Collection page](https://skills.sh/luffysolution-svg/sanmu-skills); install with the npx command | Three skills |
+| **GitHub Release** | [Download ZIP](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) | Collection package and per-platform packages |
+
+Pick one method. Installing through both the plugin and npx loads the skills twice. Installing the skills does not install Python dependencies, KaTeX, OCR credentials or Zotero; configure these as described in each skill's guide.
 
 ### Ask your AI assistant to install it (recommended)
 
-Copy this prompt into your coding assistant:
+Send the following to the AI coding assistant you are using:
 
 ```text
 Please install and configure Sanmu's sanmu-skills collection:
 https://github.com/luffysolution-svg/sanmu-skills
 
-1. Check Git and Node.js, then install the collection for the current AI assistant at user scope:
+1. Check Git and Node.js, then install the collection into the current assistant's user-level skill directory:
    npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
-   Select the target matching the current assistant and check for local edits before updating an existing installation.
-2. Read each installed skill's README and configure its dependencies.
-3. For sanmu-doc2md, enter the skill directory containing SKILL.md, prefer a dedicated Python virtual environment, and run:
+   If it is already installed, check for local edits first.
+2. sanmu-doc2md: go to its skill directory (the one containing SKILL.md), preferably in a dedicated Python virtual environment:
    python -m pip install -r requirements.txt
    npm --prefix scripts install --ignore-scripts --no-audit --no-fund
    python scripts/doctor.py
-   python scripts/build_markdown.py --help
-4. Check MINERU_API_TOKEN configuration without displaying its value. If missing, direct me to https://mineru.net and explain how to set it locally.
-5. For sanmu-paper-reader, evidence, topic and benchmark tools use the Python 3.10+ standard library. For SI probing, PDF figure extraction or subfigure cropping, run python -m pip install -r requirements.txt in a dedicated virtual environment. From the skill directory run python scripts/evidence_tools.py --help and python scripts/benchmark_collector.py --help; check PDF/OCR/Zotero integrations as needed.
-6. For sanmu-paper-search, use Python 3.10+ to run python scripts/paper_search.py doctor and python scripts/paper_search.py --help from its directory. The core has no third-party dependencies; built-in Europe PMC provides keyless public access for preprints, associated datasets, retraction verification, and JATS XML / supplementary ZIP bundle fetching; check only whether API credentials and optional SERPER_API_KEY and EXA_API_KEY are configured and connect Zotero as needed. Serper adds Google Scholar, web, patent and other public searches; Exa adds optional natural-language publication discovery.
-7. Report installation paths, validation results, and any remaining configuration steps.
+   Check whether MINERU_API_TOKEN is configured (do not display its value); if not, tell me to apply for one at https://mineru.net.
+3. sanmu-paper-reader: the core tools only need Python 3.10+; install requirements.txt only when SI search, PDF figure extraction or subfigure cropping is needed.
+   Run python scripts/evidence_tools.py --help to confirm the entry point.
+4. sanmu-paper-search: the core has no third-party dependencies; run python scripts/paper_search.py doctor.
+   Only check whether API credentials are configured (OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY, optional SERPER_API_KEY / EXA_API_KEY); do not display values.
+5. Tell me the installation path, the check results, and what I still need to configure.
 ```
 
-Full AI installation instructions: [Document conversion](skills/sanmu-doc2md/README.en.md#option-1-ask-your-ai-assistant-to-install-and-configure-it-recommended) · [Paper reading](skills/sanmu-paper-reader/README.en.md#ask-your-ai-assistant-to-install-it-recommended) · [Paper search](skills/sanmu-paper-search/README.en.md#ask-your-ai-assistant-to-install-it-recommended)
+Full installation instructions for each skill: [doc2md](skills/sanmu-doc2md/README.en.md#installation) · [reader](skills/sanmu-paper-reader/README.en.md#installation) · [search](skills/sanmu-paper-search/README.en.md#installation)
 
-### Command-line installation
-
-Install the entire collection to your user directory:
+### Command line
 
 ```bash
+# The whole collection
 npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
-```
 
-The installer guides you through selecting an AI assistant and an installation method. Git and a Node.js version supported by the [skills CLI](https://github.com/vercel-labs/skills) are required.
-
-Install a specific skill:
-
-```bash
+# A single skill
 npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
+
+# List and update
+npx skills add luffysolution-svg/sanmu-skills --list
+npx skills update
 ```
 
-## Marketplaces
+Requires Git and a Node.js version supported by the [skills installer](https://github.com/vercel-labs/skills).
 
-### Claude Code marketplace
-
-Add this repository's marketplace and install the collection plugin:
+### Claude Code
 
 ```bash
 claude plugin marketplace add luffysolution-svg/sanmu-skills
 claude plugin install sanmu-skills@sanmu-skills
 ```
 
-Claude Code 2.1.275+ also supports this in-session command:
+You can also do it in one step inside a session: `/plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills`
 
-```text
-/plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
-```
-
-### Codex marketplace
+### Codex
 
 ```bash
 codex plugin marketplace add luffysolution-svg/sanmu-skills
 codex plugin add sanmu-skills@sanmu-skills
 ```
 
-Use a recent Codex CLI that supports `plugin marketplace`; start a new session after installation, or manage plugins through `/plugins`. Both plugins include all three skills. Choose either the plugin or `npx skills` installation to avoid loading duplicate skills.
-
-### Tencent SkillHub, SkillsMP and skills.sh
-
-- **Tencent SkillHub**: all three skills are published: [sanmu-doc2md](https://skillhub.cn/skills/sanmu-doc2md), [sanmu-paper-reader](https://skillhub.cn/skills/sanmu-paper-reader), [sanmu-paper-search](https://skillhub.cn/skills/sanmu-paper-search). Standalone packages also remain available from [GitHub Releases](https://github.com/luffysolution-svg/sanmu-skills/releases).
-- **SkillsMP**: indexes public GitHub skills; listing depends on its next successful sync. Use the installation commands on this page.
-- **skills.sh**: the [collection page](https://skills.sh/luffysolution-svg/sanmu-skills) lists the three skills. Install with `npx skills add` above.
-
-Skill and plugin installation does not configure Python, KaTeX, OCR services or Zotero. Follow each skill's guide for dependencies and credentials. Maintainers can find versioning, packaging and publishing steps in the [distribution guide](https://github.com/luffysolution-svg/sanmu-skills/blob/main/distribution/README.en.md).
-
-## Skills
-
-| Skill | Purpose | Documentation |
-| --- | --- | --- |
-| **sanmu-doc2md** | Turn papers, textbooks, and slides into a Markdown knowledge base with LaTeX formulas, high-resolution figures, and Zotero metadata. | [Usage guide](skills/sanmu-doc2md/README.en.md) |
-| **sanmu-paper-reader** | Evidence-grounded paper reading, cross-paper comparison, interdisciplinary transfer, cross-topic synthesis, and library questions, with materials and chemistry checks. | [Usage guide](skills/sanmu-paper-reader/README.en.md) |
-| **sanmu-paper-search** | Discover papers from topics, seeds or authors, verify metadata, expand citations, locate full text/SI, and match Zotero holdings. | [Usage guide](skills/sanmu-paper-search/README.en.md) |
-
-### sanmu-doc2md
-
-A workflow for academic documents with dense formulas, complex figures, and challenging layouts, covering recognition, correction, knowledge-base assembly, and validation.
-
-- **Document-specific organization**: chapters for textbooks, lectures for slides, and standalone notes for papers.
-- **Scientific content preservation**: compile every formula and extract or recrop figures from the source.
-- **Reference management**: Zotero metadata, annotation synchronization, and links between papers and supporting information.
-- **Maintainable output**: relative paths, dedicated image directories, external build state, and guarded incremental updates.
-
-[Explore the full guide and examples →](skills/sanmu-doc2md/README.en.md)
-
-### sanmu-paper-reader
-
-Interprets papers, supporting information, Zotero attachments, and Markdown notes with condition-aware claim extraction and traceable evidence.
-
-- **Scenario-based workflows**: single-paper reading, cross-paper comparison, interdisciplinary transfer, cross-topic synthesis, and library questions.
-- **Figures and evidence**: link claims to source figures, crop subfigures when useful, and retain experimental conditions and source locations.
-- **Reproduction preparation**: organize synthesis quantities, processing conditions and missing parameters into recipe cards; draw mechanism diagrams when the task calls for them.
-- **SI and benchmarks**: locate text and figure captions in SI, verify exported images against source pages, and store checked performance metrics as separate condition records.
-
-[Explore the full guide and examples →](skills/sanmu-paper-reader/README.en.md)
-
-### sanmu-paper-search
-
-Search OpenAlex, Semantic Scholar and Crossref from a topic, seed paper or author. Retain provenance, merge evidence, failures and truncation; locate full text/SI and match Zotero holdings. Built-in Europe PMC provides keyless public access for preprints, associated datasets, retraction tracking, and JATS full-text XML / supplementary ZIP bundle fetching (extracting SI PDFs and high-resolution figures). Optional Serper adds Google Scholar, web, patents and other public information across 13 API types. Optional Exa adds natural-language publication discovery; see the [Exa guide](skills/sanmu-paper-search/references/exa.md) and [Europe PMC guide](skills/sanmu-paper-search/references/epmc.md) for parameters and details. Keep everyday searches lightweight, document broader protocols, and hand acquired materials to conversion and reading workflows.
-
-[Installation, commands and scope →](skills/sanmu-paper-search/README.en.md)
-
-## Usage
-
-After installation, describe your task in an AI assistant that supports Agent Skills. For example:
-
-> Turn this scanned textbook into a Markdown knowledge base, organized by chapter. Preserve formulas and high-resolution figures, and validate the complete output.
-
-Each skill's guide documents its runtime and input requirements. `sanmu-doc2md` requires Python and KaTeX; cloud OCR also requires MinerU credentials. Follow [Installation and dependencies](skills/sanmu-doc2md/README.en.md#installation-and-dependencies), then run `scripts/doctor.py` to check your environment.
-
-### Discover and update
-
-```bash
-# List the skills in this collection
-npx skills add luffysolution-svg/sanmu-skills --list
-
-# Update installed skills
-npx skills update
-```
+Requires a recent Codex CLI that supports `plugin marketplace`. Start a new session after installation; you can manage plugins under `/plugins`.
 
 ### Manual installation
 
@@ -152,36 +129,37 @@ npx skills update
 git clone https://github.com/luffysolution-svg/sanmu-skills.git
 ```
 
-Copy or link the complete skill directory from `skills/` into your assistant's skill directory, such as `~/.agents/skills/sanmu-doc2md`. It contains runtime scripts, references and installation instructions. Repository examples live under `examples/`, and development tests under `tests/`.
+Copy or link the complete skill directories you need from `skills/` into your assistant's skill directory, for example `~/.agents/skills/sanmu-doc2md`.
+
+## Usage
+
+After installation, describe the task in plain language and the assistant picks the matching skill:
+
+> Turn this scanned textbook into a Markdown knowledge base, organized by chapter, keeping formulas and high-resolution figures, and run the full validation.
+
+> Read this photocatalysis paper closely, explain Fig. 4 and Fig. 5, and separate experimental observations from mechanistic inferences.
+
+> Starting from the MatterGen paper, find its references, citing papers and similar studies separately, and check which ones are already in my Zotero.
+
+Each skill's guide covers its runtime environment, commands and scope.
 
 ## Contributing
 
-Use [GitHub Issues](https://github.com/luffysolution-svg/sanmu-skills/issues) to report problems, share reproducible cases, or suggest improvements. Pull requests are welcome.
+Use [Issues](https://github.com/luffysolution-svg/sanmu-skills/issues) to report problems, submit reproducible cases or suggest improvements. Pull requests are welcome.
 
-Place each skill under `skills/<skill-name>/`, with a matching name in `SKILL.md`. Preserve the practical guidance in existing skills and keep changes focused on the issue being addressed.
-
-Validate `sanmu-doc2md`:
-
-```bash
-python -m pip install -r skills/sanmu-doc2md/requirements.txt
-npm --prefix skills/sanmu-doc2md/scripts install --ignore-scripts --no-audit --no-fund
-python -m unittest discover -s tests/sanmu-doc2md -v
-python skills/sanmu-doc2md/scripts/doctor.py
-```
-
-Validate `sanmu-paper-reader` (Python 3.10+; see its guide for optional SI/PDF/image dependencies):
+- Each skill lives in `skills/<skill-name>/`, and the `name` in `SKILL.md` matches the directory name.
+- When changing an existing skill, keep its practical notes and pitfalls, and change only what is directly related to the issue.
+- Run tests from the repository root:
 
 ```bash
+python tests/sanmu-doc2md/_selftest.py                       # requires doc2md's Python and Node dependencies first
 python -m unittest discover -s tests/sanmu-paper-reader -v
-```
-
-Validate `sanmu-paper-search` (Python 3.10+, standard-library core):
-
-```bash
 python -m unittest discover -s tests/sanmu-paper-search -v
-python skills/sanmu-paper-search/scripts/paper_search.py doctor
+python -m unittest discover -s distribution/tests -v
 ```
+
+Packaging, versioning and per-channel publishing are described in the [distribution guide](distribution/README.en.md).
 
 ## License
 
-This project is distributed under the [MIT License](LICENSE).
+[MIT](LICENSE)

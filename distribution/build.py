@@ -38,7 +38,7 @@ def skill_header(text):
         if not line.strip() or line.lstrip().startswith("#") or line.startswith((" ", "\t")):
             continue
         key, separator, value = line.partition(":")
-        if not separator or not re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", key):
+        if not separator or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", key):
             raise ValueError(f"Invalid frontmatter field: {line}")
         if key in fields:
             raise ValueError(f"Duplicate frontmatter field: {key}")
@@ -129,6 +129,8 @@ def validate(root=ROOT):
         validate_standard_header((directory / "SKILL.md").read_text(encoding="utf-8"), name)
         if not skill.get("displayName") or not skill.get("summary"):
             raise ValueError(f"Missing SkillHub display metadata: {name}")
+        if not skill.get("displayNameEn") or not skill.get("summaryEn") or not release.get("author"):
+            raise ValueError(f"Missing WorkBuddy display metadata: {name}")
         if not (directory / "LICENSE").is_file():
             raise ValueError(f"Standalone skill lacks LICENSE: {name}")
     for path in ("plugin.json", ".claude-plugin/plugin.json"):
@@ -181,14 +183,30 @@ def validate(root=ROOT):
 
 
 def skillhub_document(text, skill, release):
-    _, match = skill_header(text)
-    extra = {
+    return platform_document(text, {
         "slug": skill["name"],
         "displayName": skill["displayName"],
         "version": release["version"],
         "summary": skill["summary"],
         "license": release["license"],
-    }
+    })
+
+
+def workbuddy_document(text, skill, release):
+    # WorkBuddy requires description_zh, description_en, version and author;
+    # uploads without display names were rejected in practice.
+    return platform_document(text, {
+        "display_name": skill["displayName"],
+        "display_name_en": skill["displayNameEn"],
+        "description_zh": skill["summary"],
+        "description_en": skill["summaryEn"],
+        "version": release["version"],
+        "author": release["author"],
+    })
+
+
+def platform_document(text, extra):
+    _, match = skill_header(text)
     header = match.group(1)
     for key, value in extra.items():
         header += f"\n{key}: {json.dumps(value, ensure_ascii=False)}"
@@ -212,6 +230,8 @@ def build(output, root=ROOT):
     output.mkdir(parents=True)
     skillhub = output / "skillhub"
     skillhub.mkdir()
+    workbuddy = output / "workbuddy"
+    workbuddy.mkdir()
     bundle = {path: (root / path).read_bytes() for path in files}
     bundle_path = output / f"{release['name']}-{release['version']}.zip"
     write_zip(bundle_path, bundle)
@@ -230,10 +250,16 @@ def build(output, root=ROOT):
         archive = skillhub / f"{skill['name']}-{release['version']}.zip"
         write_zip(archive, entries)
         archives.append(archive)
+        # Same file set as SkillHub, with SKILL.md at the archive root.
+        entries["SKILL.md"] = workbuddy_document(text, skill, release).encode("utf-8")
+        archive = workbuddy / f"{skill['name']}-{release['version']}.zip"
+        write_zip(archive, entries)
+        archives.append(archive)
     checksums = []
     for path in archives:
         checksums.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(output).as_posix()}")
-    (output / "SHA256SUMS").write_text("\n".join(checksums) + "\n", encoding="utf-8")
+    # LF endings so `sha256sum -c` works everywhere, even when built on Windows.
+    (output / "SHA256SUMS").write_text("\n".join(checksums) + "\n", encoding="utf-8", newline="\n")
     return archives
 
 

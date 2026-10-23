@@ -5,9 +5,10 @@
 **读懂论文、对齐证据，把材料与化学文献积累成可复用的研究知识。**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Tests](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**简体中文** · [English](README.en.md)
+**简体中文** · [English](README.en.md) · [返回合集](https://github.com/luffysolution-svg/sanmu-skills)
 
 [安装](#安装) · [使用场景](#使用场景) · [效果展示](#完整效果展示) · [学科检查](#材料与化学的五类检查) · [验证范围](#验证与限制)
 
@@ -128,7 +129,13 @@ python scripts/benchmark_collector.py add ./benchmarks.csv --json-entry '{"doi":
 
 ```
 
-`inventory` 发现Markdown并记录相对路径、哈希、标题与章节。阅读后按 [证据契约](references/evidence-contract.md) 填写 `evidence.json`。`check` 检查字段、路径边界、哈希与正文引文；不联网，也不自动生成科学结论。输出文件内容不同时拒绝覆盖，修订时使用新文件名。`si_probe.py` 基于文字层定位关键词与题注，扫描件需先 OCR。`extract_si_figures.py` 识别 Figure S / Fig. S 等行首题注，清单中的 `extraction_mode` 标注 `embedded_image` 或 `page_render`。多图、多位图或含矢量内容的页面优先整页渲染；同页图号共享 `Page_XXX.png`，不是已分离的独立图。题注检测可能遗漏，需回看原页确认。`crop_subfigures.py` 支持按坐标将复合多面板大图裁切为聚焦子图，实现阅读过程中的精准图文对齐。`benchmark_collector.py` 保存带单位、工况及来源的性能记录，并导出 Markdown。使用唯一 `record_id`，或 DOI/引用键 + `condition_id` 区分同一论文的多种工况。更新只覆盖 JSON 中显式提供的字段；`""` 或 `null` 用于明确清空。唯一且无记录标识的历史论文行仍可仅凭 DOI/引用键更新；多个候选或已带标识的行须补充标识，报错不会写盘。保留旧 CSV 与自定义列，不自动合并历史记录。
+| 工具 | 做什么 | 注意 |
+| --- | --- | --- |
+| `evidence_tools.py` | `inventory` 记录 Markdown 来源的相对路径、哈希和章节；`check` 检查证据表的字段、路径、哈希和引文 | 不联网，不生成科学结论；证据表按[证据契约](references/evidence-contract.md)由助手读完后填写；已有文件内容不同时拒绝覆盖 |
+| `si_probe.py` | 在有文字层的 SI 里定向搜索参数和题注 | 扫描件要先 OCR |
+| `extract_si_figures.py` | 按 Figure S / Fig. S 题注提取附图 | 清单的 `extraction_mode` 区分 `embedded_image` 和 `page_render`；同页多图共享一张整页图，题注可能漏检，回原页确认 |
+| `crop_subfigures.py` | 按坐标把多面板大图切成单个子图 | 讲到哪个面板就放哪张图 |
+| `benchmark_collector.py` | 记录带单位、工况和出处的性能数据，可导出 Markdown | 用 `record_id` 或“DOI + `condition_id`”区分工况；只更新显式给出的字段，`""` / `null` 表示清空；匹配含糊时报错且不写盘，不会自动合并历史记录 |
 
 ## 可选主题路由与分层读取
 

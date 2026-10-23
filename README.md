@@ -2,150 +2,126 @@
 
 # sanmu-skills
 
-**三木的 Agent Skills 合集**
+**三木的科研 Agent Skills 合集**
 
-把实际使用中沉淀的工作方法，整理成可安装、可复用的技能。
+文档转换 · 文献精读 · 文献检索：把实际科研中沉淀的工作方法，整理成可安装、可复用的技能。
 
+[![Release](https://img.shields.io/github/v/release/luffysolution-svg/sanmu-skills?label=release)](https://github.com/luffysolution-svg/sanmu-skills/releases/latest)
 [![自动化测试](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml)
+[![Agent Skills](https://img.shields.io/badge/Agent%20Skills-standard-orange.svg)](https://agentskills.io)
 [![MIT 许可证](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **简体中文** · [English](README.en.md)
 
-[快速安装](#快速安装) · [市场安装](#市场安装) · [技能目录](#技能目录) · [使用说明](#使用说明) · [参与贡献](#参与贡献)
+[技能一览](#技能一览) · [安装](#安装) · [使用](#使用) · [参与贡献](#参与贡献)
 
 </div>
 
-## 快速安装
+## 技能一览
+
+| 技能 | 一句话 | 适合的请求 |
+| --- | --- | --- |
+| [**sanmu-doc2md**](skills/sanmu-doc2md/README.md) | 把论文、教材、课件转成保留公式、高清图表和页码来源的 Markdown 知识库 | “把这本扫描教材按章转成 Markdown”“论文转 Obsidian 笔记，公式别乱” |
+| [**sanmu-paper-reader**](skills/sanmu-paper-reader/README.md) | 精读论文和 SI，每个结论都能追回原文位置和实验条件 | “精读这篇，解释 Fig. 4”“比较这三篇的产氢性能能不能直接比” |
+| [**sanmu-paper-search**](skills/sanmu-paper-search/README.md) | 从课题、论文或作者出发找文献，如实记录查了哪里、漏了什么 | “帮我找 FLP 光热产氢的论文”“这篇被撤稿了吗”“下载它的 SI 原图” |
+
+三个技能可以单独用，也可以串起来：**检索** → 拿到 PDF / SI → **转换** → **精读**。任何一个没装，其余两个照常工作。
+
+### sanmu-doc2md
+
+- **按文档类型选路**：教材按章拆分，课件按讲次整理，论文独立成篇并与 SI 双向链接。
+- **公式和图表不走样**：全量 KaTeX 预检，图表优先取源文件原图，多面板碎图可回源重裁。
+- **错了能追回去**：保留原页页码，所有修正都写进带原值守卫的 repairs 文件，原始 OCR 不动。
+- **接上 Zotero**：同步元数据、阅读笔记和 PDF 批注，写入经官方 MCP 执行并回读确认。
+
+### sanmu-paper-reader
+
+- **五种场景**：单篇精读、跨文献比较、跨学科迁移、跨主题组织、知识库问答。
+- **证据可追溯**：每个论断记录原文位置、单位和工况，作者结论、你的解读、待验证假设分开写。
+- **材料化学检查项**：合成表征、催化电化学、DFT、光谱机理、性能比较，按论文实际内容挑选。
+- **按需增强**：图文对照、Mermaid 机理图、复现准备 SOP 草案、Benchmark 表、SI 定向检索。
+
+### sanmu-paper-search
+
+- **多源检索**：OpenAlex、Semantic Scholar、Crossref，可选 Google Scholar（Serper）和 Exa 语义补搜。
+- **引文扩展与作者消歧**：参考文献、施引文献、相似论文分开记录；同名作者用稳定 ID 锚定。
+- **全文与 SI**：Europe PMC 免 Key 获取 JATS 全文和补充材料原图包，并核验撤稿与勘误。
+- **如实报告**：成功、零结果、截断、失败分开记录，不把“没查到”说成“不存在”。
+
+## 安装
+
+### 安装渠道一览
+
+| 渠道 | 安装方式 | 包含 |
+| --- | --- | --- |
+| **npx skills**（通用） | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g` | 三个技能，可单选 |
+| **Claude Code** | 插件市场，见下文 | 合集插件 |
+| **Codex** | 插件市场，见下文 | 合集插件 |
+| **腾讯 SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | 单个技能 |
+| **WorkBuddy** | 客户端【专家·技能·连接器 → 技能】中搜索“三木” | 单个技能 |
+| **skills.sh / SkillsMP** | [合集页面](https://skills.sh/luffysolution-svg/sanmu-skills)，使用 npx 命令安装 | 三个技能 |
+| **GitHub Release** | [下载 ZIP](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) | 合集包与各平台适配包 |
+
+选择一种方式即可，同时用插件和 npx 安装会重复加载。安装技能不会自动装 Python 依赖、KaTeX、OCR 凭证或 Zotero，这些按各技能的说明配置。
 
 ### 让 AI 助手安装（推荐）
 
-复制下面的指令，发给你正在使用的 AI 编码助手：
+把下面这段发给你正在用的 AI 编码助手：
 
 ```text
 请帮我安装并配置三木的 sanmu-skills 技能合集：
 https://github.com/luffysolution-svg/sanmu-skills
 
-1. 检查 Git 和 Node.js，通过以下命令安装合集到当前 AI 助手的用户级技能目录：
+1. 检查 Git 和 Node.js，把合集安装到当前助手的用户级技能目录：
    npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
-   选择当前助手对应的安装目标；已有安装时先检查本地修改。
-2. 阅读已安装技能的 README，按各自要求配置依赖。
-3. 对 sanmu-doc2md，进入包含 SKILL.md 的技能目录，优先使用独立 Python 虚拟环境，再执行：
+   已有安装时先检查本地修改。
+2. sanmu-doc2md：进入它的技能目录（包含 SKILL.md），最好用独立的 Python 虚拟环境：
    python -m pip install -r requirements.txt
    npm --prefix scripts install --ignore-scripts --no-audit --no-fund
    python scripts/doctor.py
-   python scripts/build_markdown.py --help
-4. 检查 MINERU_API_TOKEN 配置状态，不显示凭证值；未配置时指导我从 https://mineru.net 获取并在本地设置。
-5. 对 sanmu-paper-reader，证据、主题与基准工具使用 Python 3.10+ 标准库；需要 SI 探针、PDF 附图提取或子图裁切时，在独立虚拟环境执行 python -m pip install -r requirements.txt。从技能目录运行 python scripts/evidence_tools.py --help 和 python scripts/benchmark_collector.py --help；PDF/OCR/Zotero 按实际输入检查。
-6. 对 sanmu-paper-search，使用 Python 3.10+ 从技能目录运行 python scripts/paper_search.py doctor 和 python scripts/paper_search.py --help；核心无第三方依赖，内置 Europe PMC 免 Key 公开访问，支持预印本、关联数据、撤稿核验与 JATS XML / 补充材料原图包获取；学术 API 凭证与可选 SERPER_API_KEY、EXA_API_KEY 仅检查是否配置，Zotero 按需连接；Serper 支持 Google Scholar、网页、专利等公开检索，Exa 按需补充自然语言 publication 检索。
-7. 汇报安装位置、验证结果和仍需配置的项目。
+   检查 MINERU_API_TOKEN 是否已配置（不要显示值）；没有就告诉我去 https://mineru.net 申请。
+3. sanmu-paper-reader：核心工具只需 Python 3.10+；要用 SI 检索、PDF 附图提取或子图裁切时再装 requirements.txt。
+   运行 python scripts/evidence_tools.py --help 确认入口。
+4. sanmu-paper-search：核心无第三方依赖，运行 python scripts/paper_search.py doctor。
+   只检查 API 凭证是否配置（OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY、可选 SERPER_API_KEY / EXA_API_KEY），不显示值。
+5. 告诉我安装位置、检查结果，以及还需要我配置什么。
 ```
 
-完整 AI 安装指令：[文档解析](skills/sanmu-doc2md/README.md#方式一让-ai-助手安装配置推荐) · [文献解读](skills/sanmu-paper-reader/README.md#让ai助手安装推荐) · [文献检索](skills/sanmu-paper-search/README.md#让-ai-助手安装推荐)
+每个技能的完整安装指令：[doc2md](skills/sanmu-doc2md/README.md#安装) · [reader](skills/sanmu-paper-reader/README.md#安装) · [search](skills/sanmu-paper-search/README.md#安装)
 
-### 命令行安装
-
-安装整个合集到用户目录：
+### 命令行
 
 ```bash
+# 整个合集
 npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
-```
 
-安装器会引导你选择目标 AI 助手和安装方式。需要 Git 和满足 [skills 安装器要求](https://github.com/vercel-labs/skills) 的 Node.js。
-
-只安装指定技能：
-
-```bash
+# 只装一个
 npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
+
+# 查看与更新
+npx skills add luffysolution-svg/sanmu-skills --list
+npx skills update
 ```
 
-## 市场安装
+需要 Git 和满足 [skills 安装器](https://github.com/vercel-labs/skills) 要求的 Node.js。
 
-### Claude Code marketplace
-
-在终端添加本仓库的市场并安装合集插件：
+### Claude Code
 
 ```bash
 claude plugin marketplace add luffysolution-svg/sanmu-skills
 claude plugin install sanmu-skills@sanmu-skills
 ```
 
-Claude Code 2.1.275+ 也可在会话中一步安装：
+也可以在会话里一步完成：`/plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills`
 
-```text
-/plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
-```
-
-### Codex marketplace
+### Codex
 
 ```bash
 codex plugin marketplace add luffysolution-svg/sanmu-skills
 codex plugin add sanmu-skills@sanmu-skills
 ```
 
-需要支持 `plugin marketplace` 的新版 Codex CLI；安装后重开会话，也可在 `/plugins` 中管理。Claude 与 Codex 的合集插件均包含三个技能。选择插件或 `npx skills` 中的一种安装方式，避免重复加载。
-
-### 腾讯 SkillHub、SkillsMP 与 skills.sh
-
-- **腾讯 SkillHub**：三个技能已发布：[sanmu-doc2md](https://skillhub.cn/skills/sanmu-doc2md)、[sanmu-paper-reader](https://skillhub.cn/skills/sanmu-paper-reader)、[sanmu-paper-search](https://skillhub.cn/skills/sanmu-paper-search)。也可从 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases) 下载独立适配包。
-- **SkillsMP**：从公开 GitHub 自动索引，实际展示以其同步结果为准；安装使用本页命令。
-- **skills.sh**：[合集页面](https://skills.sh/luffysolution-svg/sanmu-skills) 展示三个技能，使用上方 `npx skills add` 安装。
-
-技能或插件安装不会自动安装 Python、KaTeX、OCR 服务或 Zotero。运行依赖与凭证按各技能指南配置。维护者的打包、版本和发布步骤见 [渠道发布说明](https://github.com/luffysolution-svg/sanmu-skills/blob/main/distribution/README.md)。
-
-## 技能目录
-
-| 技能 | 用途 | 文档 |
-| --- | --- | --- |
-| **sanmu-doc2md** | 将论文、教材和课件整理成保留 LaTeX 公式、高清图表与 Zotero 元数据的 Markdown 知识库。 | [使用指南](skills/sanmu-doc2md/README.md) |
-| **sanmu-paper-reader** | 单篇精读、跨文献对比、跨学科与跨主题解读及知识库问答，优先材料与化学，保留可追溯证据。 | [使用指南](skills/sanmu-paper-reader/README.md) |
-| **sanmu-paper-search** | 从课题、种子或作者检索文献，核对题录、扩展引文、定位全文/SI，并匹配 Zotero 收藏。 | [使用指南](skills/sanmu-paper-search/README.md) |
-
-### sanmu-doc2md
-
-面向公式多、图表多、版面复杂的学术文档，覆盖从识别、校对到知识库装配与校验的完整流程。
-
-- **按文档组织**：教材分章、课件按讲次整理、论文独立成篇。
-- **保留科学内容**：公式全量编译校验，图表回源提取与高清裁切。
-- **连接文献管理**：支持 Zotero 元数据、批注同步与主文/补充材料双链。
-- **便于长期维护**：相对路径、独立图片目录、外置构建状态与受保护的增量更新。
-
-[查看完整说明与案例 →](skills/sanmu-doc2md/README.md)
-
-### sanmu-paper-reader
-
-面向已有论文、SI、Zotero 附件与解析后的 Markdown，支持深入精读与知识积累，重点对齐证据边界与实验条件。
-
-- **按场景分层**：支持单篇精读、跨文献对比、跨学科迁移、跨主题综合与知识库问答五大场景。
-- **图文对照与子图切片**：提供 Obsidian 悬停气泡预览、折叠抽屉 Callout 与单面板精准切片，阅读文字即刻核验谱图。
-- **实验复现 SOP 与配方卡**：提取毫克级投料、溶剂体积、升温退火曲线、反应液配比与已知复现缺口。
-- **机制图与 SI 定位**：按需绘制 Mermaid 机制图，对有文字层的 SI 检索关键词、定位题注并导出候选图像，结合原页核对完整性。
-- **性能基准与学术标签**：核对指标、单位和实验工况后写入基准表，保留同一论文的不同条件记录；按需更新 Zotero 标签。
-
-[查看使用指南与完整效果展示 →](skills/sanmu-paper-reader/README.md)
-
-### sanmu-paper-search
-
-从研究问题、种子论文或作者出发，查询 OpenAlex、Semantic Scholar 与 Crossref，保留来源、去重依据、失败和截断状态；定位全文/SI并匹配已有 Zotero 材料。内置 Europe PMC 公共接口，支持预印本、关联数据、撤稿核验与 JATS 全文 XML / 补充材料原图 ZIP 解包获取（提取 SI PDF 与高清单张原图）；可选配置 Serper 补充 Google Scholar、网页、专利等 13 类公开接口；配置 Exa 可用自然语言补搜 publication，参数与费用记录见 [Exa 指南](skills/sanmu-paper-search/references/exa.md) 及 [Europe PMC 指南](skills/sanmu-paper-search/references/epmc.md)。日常检索保持轻量，扩展任务记录协议，取得材料后衔接转换与精读。
-
-[查看安装、命令与能力边界 →](skills/sanmu-paper-search/README.md)
-
-## 使用说明
-
-安装后，在支持 Agent Skills 的 AI 助手中描述任务即可，例如：
-
-> 把这份扫描教材整理成 Markdown 知识库，按章节组织，保留公式和高清图表，并完成全量校验。
-
-每个技能的运行环境和输入要求以其使用指南为准。`sanmu-doc2md` 需要 Python 和 KaTeX；云端 OCR 另需配置 MinerU 凭证。先按 [安装与依赖](skills/sanmu-doc2md/README.md#安装与依赖) 配置，再运行 `scripts/doctor.py` 检查环境。
-
-### 查看与更新
-
-```bash
-# 查看合集中的技能
-npx skills add luffysolution-svg/sanmu-skills --list
-
-# 更新已安装的技能
-npx skills update
-```
+需要支持 `plugin marketplace` 的新版 Codex CLI。安装后重开会话，可在 `/plugins` 中管理。
 
 ### 手动安装
 
@@ -153,36 +129,37 @@ npx skills update
 git clone https://github.com/luffysolution-svg/sanmu-skills.git
 ```
 
-将 `skills/` 下需要的技能目录完整复制或链接到 AI 助手的技能目录，例如 `~/.agents/skills/sanmu-doc2md`。目录内包含运行脚本、参考文档和安装说明；演示案例位于仓库的 `examples/`，开发测试位于 `tests/`。
+把 `skills/` 下需要的技能目录完整复制或链接到助手的技能目录，例如 `~/.agents/skills/sanmu-doc2md`。
+
+## 使用
+
+装好后直接用自然语言描述任务，助手会自动选用对应技能：
+
+> 把这份扫描教材整理成 Markdown 知识库，按章节组织，保留公式和高清图表，并完成全量校验。
+
+> 精读这篇光催化论文，解释 Fig. 4 和 Fig. 5，区分实验观察和机理推断。
+
+> 围绕 MatterGen 这篇论文分别找参考文献、施引文献和相似研究，看看哪些已经在我的 Zotero 里。
+
+各技能的运行环境、命令和能力边界见各自的使用指南。
 
 ## 参与贡献
 
-欢迎通过 [问题反馈](https://github.com/luffysolution-svg/sanmu-skills/issues) 提交使用问题、可复现案例和改进建议，也可以提交拉取请求。
+欢迎通过 [Issues](https://github.com/luffysolution-svg/sanmu-skills/issues) 反馈问题、提交可复现案例或改进建议，也欢迎 Pull Request。
 
-每个技能放在 `skills/<技能名>/` 下，`SKILL.md` 中的名称与目录名保持一致。修改已有技能时保留实战经验，只调整与问题直接相关的内容。
-
-验证 `sanmu-doc2md`：
-
-```bash
-python -m pip install -r skills/sanmu-doc2md/requirements.txt
-npm --prefix skills/sanmu-doc2md/scripts install --ignore-scripts --no-audit --no-fund
-python -m unittest discover -s tests/sanmu-doc2md -v
-python skills/sanmu-doc2md/scripts/doctor.py
-```
-
-验证 `sanmu-paper-reader`（Python 3.10+；SI/PDF/图像工具的可选依赖见其安装说明）：
+- 每个技能放在 `skills/<技能名>/`，`SKILL.md` 里的 `name` 与目录名一致。
+- 修改已有技能时保留实战经验和陷阱说明，只改与问题直接相关的部分。
+- 测试在仓库根目录运行：
 
 ```bash
+python tests/sanmu-doc2md/_selftest.py                       # 需先装 doc2md 的 Python 与 Node 依赖
 python -m unittest discover -s tests/sanmu-paper-reader -v
-```
-
-验证 `sanmu-paper-search`（Python 3.10+，核心无第三方依赖）：
-
-```bash
 python -m unittest discover -s tests/sanmu-paper-search -v
-python skills/sanmu-paper-search/scripts/paper_search.py doctor
+python -m unittest discover -s distribution/tests -v
 ```
+
+打包、版本与各渠道发布流程见 [渠道发布说明](distribution/README.md)。
 
 ## 许可证
 
-本项目采用 [MIT 许可证](LICENSE)。
+[MIT](LICENSE)

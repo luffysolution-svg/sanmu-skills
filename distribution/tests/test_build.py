@@ -27,15 +27,28 @@ class DistributionTests(unittest.TestCase):
                 self.assertIn(key, fields)
             self.assertNotIn("slug", source_fields)
 
+    def test_workbuddy_adds_required_fields_and_keeps_body(self):
+        release, _ = build.validate()
+        for skill in release["skills"]:
+            original = (build.ROOT / "skills" / skill["name"] / "SKILL.md").read_text(encoding="utf-8")
+            result = build.workbuddy_document(original, skill, release)
+            source_fields, source_match = build.skill_header(original)
+            fields, match = build.skill_header(result)
+            self.assertEqual(result[match.end():], original[source_match.end():])
+            self.assertEqual(fields["description"], source_fields["description"])
+            for key in ("description_zh", "description_en", "version", "author", "display_name", "display_name_en"):
+                self.assertTrue(json.loads(fields[key]))
+
     def test_archives_are_complete_deterministic_and_exclude_untracked(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             first = build.build(root / "first")
             second = build.build(root / "second")
-            self.assertEqual(len(first), 4)
+            self.assertEqual(len(first), 7)
+            self.assertNotIn(b"\r", (root / "first" / "SHA256SUMS").read_bytes())
             for left, right in zip(first, second):
                 self.assertEqual(left.read_bytes(), right.read_bytes())
-                is_skillhub = "skillhub" in left.parts
+                is_skillhub = "skillhub" in left.parts or "workbuddy" in left.parts
                 with zipfile.ZipFile(left) as archive:
                     self.assertIsNone(archive.testzip())
                     names = archive.namelist()

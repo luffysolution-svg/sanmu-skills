@@ -9,17 +9,22 @@ description: 把 PDF、PPTX 和扫描件整理成保留 LaTeX 公式、高清图
 
 下文命令都从本技能目录运行。
 
-## 开始之前
+## 首次使用
 
-先运行环境检查，需要云端 OCR 时再加 `--require-ocr`（它会检查 `MINERU_API_TOKEN`）：
+技能装好后，脚本依赖和 OCR 凭证不会自动就位。第一次用（或命令报缺依赖时）先检查：
 
 ```bash
 python scripts/doctor.py
-pip install -r requirements.txt                               # 缺 Python 依赖时
-npm --prefix scripts install --ignore-scripts --no-audit --no-fund   # 公式校验和预览需要 KaTeX
 ```
 
-然后花一分钟看源文件，这一步决定后面走哪条路：
+全部 `[pass]` 就直接开始，之后的任务不必每次都检查。有 `[fail]` 时，先用一两句话告诉用户缺什么、影响什么，征得同意后再安装；用户多半不熟悉命令行，你来执行，用户只做必须本人完成的事。按 [setup.md](references/setup.md) 处理：
+
+- **缺 Python 或 Node 依赖**：在虚拟环境里装 `requirements.txt`，再装 KaTeX（`npm --prefix scripts install --ignore-scripts --no-audit --no-fund`）。
+- **缺 `MINERU_API_TOKEN`**：只有云端 OCR 需要它，已有 OCR 结果时可以先跳过。需要时带用户去 MinerU 免费申请，再给出一条命令让用户在自己的终端里用隐藏输入保存 Token，这样 Token 不会留在聊天记录里。设置后要重启助手才能读到。
+
+## 开始之前
+
+花一分钟看源文件，这一步决定后面走哪条路：
 
 - **有没有原生文字层**（PyMuPDF `page.get_text()`，PPTX 用 `python-pptx`）。有的话可以拿来校对 OCR；但要分清是真正的原生文字，还是别人以前叠上去的 OCR 层，后者同样会出错。完全没有文字的就是扫描件，交付时说明内容来自 OCR。
 - **有没有内嵌原图**（PPTX 的 `shape.image.blob`，PDF 的 `page.get_images()`）。能独立还原整幅图的原图最清晰；由多个矢量或位图对象拼成的图，单取其中一张会缺东西，要按整幅区域裁切。
@@ -168,6 +173,7 @@ python scripts/preview_server.py ./知识库 --port 8766 --katex-dir scripts/nod
 
 按需读取：
 
+- [setup.md](references/setup.md)：首次配置，包括安装依赖、申请和保存 MinerU Token、常见配置问题
 - [book-workflow.md](references/book-workflow.md)：长篇教材的切片、章节重组和常见问题
 - [research-documents.md](references/research-documents.md)：论文命名、元数据 frontmatter、SI 双链、双栏阅读顺序
 - [math-normalization.md](references/math-normalization.md)：15 条公式规则和前后对照

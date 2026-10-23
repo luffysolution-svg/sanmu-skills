@@ -1,14 +1,25 @@
+<div align="center">
+
 # sanmu-paper-search
 
 **从课题、论文或作者出发，找到可核查、可阅读的文献。**
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![No dependencies](https://img.shields.io/badge/core-stdlib%20only-brightgreen.svg)](#来源与配置)
+[![Tests](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml)
+[![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **简体中文** · [English](README.en.md) · [返回合集](https://github.com/luffysolution-svg/sanmu-skills)
 
-主题检索、作者作品、参考/施引/相似论文、跨来源去重、全文位置和 Zotero 收藏匹配。日常找几篇论文可以直接给候选；开题或扩展检索才记录完整协议。核心 CLI 为 Python 3.10+ 标准库实现，无强制科研服务或模型依赖。
+[安装](#安装) · [使用示例](#使用示例) · [命令速查](#命令速查) · [来源与配置](#来源与配置) · [结果与边界](#结果与边界)
 
-## 让 AI 助手安装（推荐）
+</div>
 
-复制给正在使用的助手：
+主题检索、作者作品、参考文献 / 施引文献 / 相似论文、跨来源去重、全文和 SI 定位、Zotero 收藏匹配。日常找几篇论文直接给候选；开题或系统检索才记录完整协议。核心 CLI 只用 Python 3.10+ 标准库，不依赖任何科研服务或模型。
+
+## 安装
+
+### 让 AI 助手安装（推荐）
 
 ```text
 请帮我安装并配置 sanmu-paper-search：
@@ -16,16 +27,24 @@ https://github.com/luffysolution-svg/sanmu-skills
 
 1. 检查 Git、Node.js 和 Python 3.10+，执行：
    npx skills add luffysolution-svg/sanmu-skills --skill sanmu-paper-search -g
-   选择当前助手的用户级安装位置；已有安装先检查本地修改。
-2. 阅读技能 SKILL.md 和 README，在技能目录运行：
+   已有安装时先检查本地修改。
+2. 在技能目录运行：
    python scripts/paper_search.py doctor
    python scripts/paper_search.py --help
-3. 检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 和可选 SERPER_API_KEY、EXA_API_KEY 是否配置，不显示值。内置 Europe PMC 公共接口免 Key 开放访问，支持预印本、关联数据集、撤稿核验与 JATS XML / 补充材料原图解包获取；Serper 按需补充 Google Scholar、网页、专利等公开检索，Exa 补充自然语言 publication 检索；没有凭证时说明可用范围，确需配置才指向官方注册页。
-4. 如需 Zotero，检查宿主插件与本地 API；不要直接读取数据库或 storage。没有 Zotero 也能使用核心检索。
-5. 在仓库之外的新工作目录做一次小规模公开文献查询，报告逐源状态、安装位置与限制；不改 Zotero 文献。
+3. 检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL，
+   以及可选的 SERPER_API_KEY、EXA_API_KEY 是否已配置，不要显示值。Europe PMC 免 Key。
+   没有凭证时说明可用范围，确实需要时再给出官方注册页。
+4. 需要 Zotero 时检查宿主插件和本地 API；不要直接读数据库或 storage。没有 Zotero 也能检索。
+5. 在仓库之外新建一个工作目录，做一次小规模查询，报告各来源状态、安装位置和限制；不要改动 Zotero。
 ```
 
-手动安装也可复制完整技能目录到 `.agents/skills/sanmu-paper-search`。不需要 `pip install`；PDF 文字层身份核对可选安装 PyMuPDF，其他功能不受影响。
+### 手动安装
+
+```bash
+npx skills add luffysolution-svg/sanmu-skills --skill sanmu-paper-search -g
+```
+
+也可以把整个技能目录复制到 `~/.agents/skills/sanmu-paper-search`。不需要 `pip install`；想用 PDF 文字层核对论文身份时，可选装 PyMuPDF。
 
 ## 使用示例
 
@@ -35,87 +54,97 @@ https://github.com/luffysolution-svg/sanmu-skills
 
 > 查 Claudio Zeni 的其他材料生成研究，先确认作者身份，不要混入同名作者。
 
-> 更新去年整理的材料逆向设计文献，列新增和缺失记录，保留旧的筛选结论。
+> 这篇论文有没有被撤稿或发过勘误？顺便把补充材料的原图下载下来。
 
-## CLI 快速开始
+> 更新去年整理的材料逆向设计文献，列出新增和缺失的记录，保留旧的筛选结论。
 
-从技能目录执行；输出使用新目录，放在个人工作区，不放公开仓库：
+## 命令速查
+
+从技能目录执行。`--out` 指向个人工作区里一个新目录，不要放进公开仓库。Windows 上用实际的绝对路径并加引号。
 
 ```bash
 python scripts/paper_search.py doctor
+
+# 主题、种子论文、作者
 python scripts/paper_search.py search "generative inorganic materials design" --sources openalex,semantic-scholar,crossref --limit 5 --out /path/to/work/topic
 python scripts/paper_search.py lookup 10.1038/s41586-025-08628-5 --out /path/to/work/seed
 python scripts/paper_search.py author "Claudio Zeni" --provider semantic-scholar --out /path/to/work/authors
 python scripts/paper_search.py author "Tian Xie" --provider openalex --from-paper 10.1038/s41586-025-08628-5 --out /path/to/work/author-from-paper
+
+# 引文、开放获取、校验
 python scripts/paper_search.py related 10.1038/s41586-025-08628-5 --relation citations --limit 5 --out /path/to/work/citations
 python scripts/paper_search.py oa /path/to/work/seed --out /path/to/work/oa
 python scripts/paper_search.py check /path/to/work/seed
 ```
 
-可选的 Google 补搜使用独立子命令（先配置 `SERPER_API_KEY`）：
+- 作者候选核对后，用 `author --author-id ID --provider ...` 取作品。
+- `search` 和作者作品支持 `--year-from` / `--year-to`。
+- `--limit 1..20` 是每个来源的候选预算，跨源去重后全部保留，不做跨库重排；由助手阅读后形成短名单。
 
-```bash
-python scripts/paper_search.py serper "single atom carbon nitride photocatalytic hydrogen" --type scholar --year-from 2020 --year-to 2022 --limit 5 --out /path/to/work/scholar
-```
+完整参数和记录格式见 [CLI 指南](references/cli.md)。
 
-其余 12 类公开接口、PowerShell/Bash 安全配置、批量请求与费用边界见 [Serper 指南](references/serper.md)。Serper 的 `--limit` 是每查询跨页合计的本地上限，结果保存在 `results.json` / `response.json`；`papers.json` 为空，核对稳定 ID 后再交给论文流程。
-
-自然语言补搜文献可选 Exa（先配置 `EXA_API_KEY`）：
-
-```bash
-python scripts/paper_search.py exa "papers on frustrated Lewis pairs for photothermal hydrogen evolution" --type auto --limit 5 --year-from 2023 --out /path/to/work/exa
-```
-
-Exa 使用 publication 检索；结构化实体可进入 `papers.json` 候选，完整结果与响应保留在 `results.json` / `response.json`。实体身份需再经学术来源核验，正文摘录另存，费用以 API 返回的 `costDollars` 为参考。配置、域名过滤和输出说明见 [Exa 指南](references/exa.md)。
-
-Europe PMC 检索与 JATS 全文 / 补充材料原图包一键获取（免 Key 公开访问）：
+### Europe PMC：全文、SI 与撤稿核验（免 Key）
 
 ```bash
 python scripts/paper_search.py epmc "photocatalytic hydrogen" --has-suppl --open-access --limit 5 --out /path/to/work/epmc-search
 python scripts/paper_search.py epmc PMC12710600 --fetch all --out /path/to/work/epmc-bundle
 ```
 
-`epmc` 命令支持预印本（`--preprints`）、关联数据（`--has-data`）、撤稿/勘误核验（`commentCorrectionList` 原生提取），并通过 `--fetch all/xml/suppl` 下载 JATS XML 与解压二进制 SI ZIP（提取 SI PDF 与未压缩高清原图）。配置与边界见 [Europe PMC 指南](references/epmc.md)。
+支持预印本（`--preprints`）、关联数据（`--has-data`）、撤稿与勘误核验；`--fetch all/xml/suppl` 下载 JATS 全文 XML 和补充材料压缩包，安全解压后得到 SI 的 PDF 和正文高清原图。注意它的材料期刊收录不全，不适合作为唯一检索源，见 [Europe PMC 指南](references/epmc.md)。
 
-Windows 使用实际绝对路径并加引号。作者候选核对后，用 `author --author-id ID --provider ...` 获取作品。`search` 和作者作品支持 `--year-from` / `--year-to`。原有学术检索的 `--limit 1..20` 为每源候选预算，跨源去重后全部保留；默认不做跨库相关性重排，助手根据实际阅读形成候选短名单。参数与记录格式见 [CLI 指南](references/cli.md)。
+### Serper：Google Scholar、网页、专利（可选，需 `SERPER_API_KEY`）
 
-## 来源与依赖
+```bash
+python scripts/paper_search.py serper "single atom carbon nitride photocatalytic hydrogen" --type scholar --year-from 2020 --year-to 2022 --limit 5 --out /path/to/work/scholar
+```
 
-| 来源 | 主要用途 | 本地配置 |
+共 13 类公开接口，按请求计费。结果保存在 `results.json` / `response.json`，`papers.json` 为空，核对出稳定 ID 后再进入论文流程。配置方法、批量请求和费用见 [Serper 指南](references/serper.md)。
+
+### Exa：用一段话找论文（可选，需 `EXA_API_KEY`）
+
+```bash
+python scripts/paper_search.py exa "papers on frustrated Lewis pairs for photothermal hydrogen evolution" --type auto --limit 5 --year-from 2023 --out /path/to/work/exa
+```
+
+只把结构化的 publication 实体作为待核验候选写进 `papers.json`，完整结果另存；费用以 API 返回的 `costDollars` 为参考。见 [Exa 指南](references/exa.md)。
+
+## 来源与配置
+
+| 来源 | 用途 | 配置 |
 | --- | --- | --- |
-| OpenAlex | 主题、作者、引文和 OA 位置 | `OPENALEX_API_KEY`，无 key 的能力按官方限制降级 |
-| Semantic Scholar | 主题、作者、引文和相似推荐 | `SEMANTIC_SCHOLAR_API_KEY` 或 `S2_API_KEY`；共享匿名池可能限流 |
-| Crossref | 题录/DOI核对、补召回 | 可选 `CROSSREF_EMAIL` |
-| Europe PMC | 预印本、关联数据、撤稿核验、JATS 全文 XML 与补充材料 ZIP 解包 | 无需 Key，公开访问；[指南与边界](references/epmc.md) |
-| Unpaywall | DOI 对应 OA 位置 | `UNPAYWALL_EMAIL`，不用于关键词搜索 |
-| Serper（可选） | Google Scholar、网页、专利及其他公开信息，共 13 类接口 | `SERPER_API_KEY`，按请求计费；[配置与接口](references/serper.md) |
-| Exa（可选） | 自然语言 publication 候选发现 | `EXA_API_KEY`；[配置、参数与费用](references/exa.md) |
-| Zotero | 检查收藏与已有附件 | 宿主 Zotero 工具，或本地标准 JSON 导出 |
+| OpenAlex | 主题、作者、引文、OA 位置 | `OPENALEX_API_KEY`；没有时按官方限制降级 |
+| Semantic Scholar | 主题、作者、引文、相似推荐 | `SEMANTIC_SCHOLAR_API_KEY` 或 `S2_API_KEY`；匿名共享池可能限流 |
+| Crossref | DOI 与题录核对、补充召回 | 可选 `CROSSREF_EMAIL` |
+| Europe PMC | 预印本、关联数据、撤稿核验、JATS 全文与 SI 原图包 | 免 Key |
+| Unpaywall | DOI 对应的 OA 位置 | `UNPAYWALL_EMAIL`，不用于关键词检索 |
+| Serper（可选） | Google Scholar、网页、专利等 13 类接口 | `SERPER_API_KEY`，按请求计费 |
+| Exa（可选） | 自然语言描述找 publication | `EXA_API_KEY` |
+| Zotero | 核对收藏与已有附件 | 宿主 Zotero 工具，或本地标准 JSON 导出 |
 
-按需配置上表中的 API 凭证即可使用核心检索。其他学术工具可作为补充来源，接入时核对其返回格式和访问许可。
+`doctor` 只报告每项凭证是否配置，不显示具体值。
 
 ## 结果与边界
 
-- 每次运行保存查询、逐源状态、规范题录、脱敏原始响应、可读清单和哈希，明确失败、空结果、截断及未执行。
-- 稳定 ID 对齐，保留字段冲突和来源。作者先消歧，种子作者姓名需唯一匹配才取作品；预印本与正式版保留关系，不按标题直接混成一篇。
-- S2 按同 key 跨进程限速，识别秒数/日期形式的 `Retry-After`；出版社省略参考文献时保留受限状态。年份过滤和常用字段见 [CLI 指南](references/cli.md)。
-- `metadata_only` 和 `abstract` 区分 API 返回的文本层级；筛选依据需实际阅读后记录。找到地址不等于下载，下载不等于读过。
-- 直接公开 PDF 可用 `scripts/fetch_pdf.py` 获取，并生成来源、哈希和检查记录；SI 由助手从主文附件区逐项核对，记录已取得和缺失的附件。
-- 有界检索不证明查全；系统检索需逐源预算与筛选记录，见 [检索协议](references/protocol.md)。
-- 不绕过登录/付费访问、不直接操作 Zotero 数据库。私有 PDF、笔记、批注、凭证与测试运行不公开提交。
+- **每次运行都留记录**：查询、各来源状态、规范题录、脱敏原始响应、可读清单和哈希；失败、零结果、截断、未执行分开标明。
+- **身份对齐靠稳定 ID**：字段冲突保留来源；作者先消歧，种子论文里姓名唯一匹配才取作品；预印本和正式版保留关系，不按标题合并成一篇。
+- **限速与重试**：Semantic Scholar 按同一 key 跨进程限速，识别 `Retry-After`；出版社省略参考文献时记为受限状态，不当成零条。
+- **找到 ≠ 下载 ≠ 读过**：`metadata_only` / `abstract` 只表示 API 返回的文本层级，筛选依据要实际阅读后才记录。
+- **全文和 SI**：公开 PDF 用 `scripts/fetch_pdf.py` 下载并记录来源和哈希；其他出版社的 SI 由助手逐项核对，记录拿到了哪些、缺了哪些。
+- **查全有边界**：有限预算的检索不能证明查全；系统检索按[检索协议](references/protocol.md)记录每源预算和筛选过程。
+- **不越界**：不绕过登录或付费墙，不直接操作 Zotero 数据库；私人 PDF、笔记、凭证和运行记录不要公开提交。
 
-全文取得后，可选交给 [sanmu-doc2md](https://github.com/luffysolution-svg/sanmu-skills/tree/main/skills/sanmu-doc2md) 转换，交给 [sanmu-paper-reader](https://github.com/luffysolution-svg/sanmu-skills/tree/main/skills/sanmu-paper-reader) 精读。两者未安装时仍能交付文献清单、来源与材料。
+拿到全文后，可以交给 [sanmu-doc2md](https://github.com/luffysolution-svg/sanmu-skills/tree/main/skills/sanmu-doc2md) 转换、[sanmu-paper-reader](https://github.com/luffysolution-svg/sanmu-skills/tree/main/skills/sanmu-paper-reader) 精读；两者没装时，照样交付文献清单、来源和文件。
 
 ## 验证与设计参考
 
-安装后运行 `python scripts/paper_search.py doctor` 检查环境，再用上面的示例查询少量文献并执行 `check` 校验输出。
-
-开发测试位于[仓库测试目录](https://github.com/luffysolution-svg/sanmu-skills/tree/main/tests/sanmu-paper-search)，覆盖字段归一化、身份合并、错误状态、输出保护和哈希。从仓库根目录执行：
+安装后先运行 `doctor`，再用上面的示例查几篇文献，并用 `check` 校验输出。开发测试覆盖字段归一化、身份合并、错误状态、输出保护和哈希，在仓库根目录运行：
 
 ```bash
 python -m unittest discover -s tests/sanmu-paper-search -v
 ```
 
-设计参考：[K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup)、[research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search)、[OmniScholar](https://github.com/luffysolution-svg/omnischolar)、[paper-search-pro](https://github.com/O0000-code/paper-search-pro)、[easyseek](https://github.com/Rimagination/easyseek)。核心代码独立实现，不复制这些项目源码。按需阅读：[检索策略](references/retrieval.md) · [获取与交接](references/handoff.md)。
+设计参考：[K-Dense paper-lookup](https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/paper-lookup)、[research-skills / lit-search](https://github.com/luwill/research-skills/tree/main/lit-search)、[OmniScholar](https://github.com/luffysolution-svg/omnischolar)、[paper-search-pro](https://github.com/O0000-code/paper-search-pro)、[easyseek](https://github.com/Rimagination/easyseek)。核心代码独立实现，未复制这些项目的源码。延伸阅读：[首次配置与 API key](references/setup.md) · [检索策略](references/retrieval.md) · [获取与交接](references/handoff.md)。
 
-采用 [MIT 许可证](LICENSE)。数据库内容、论文与第三方服务各自的许可继续适用。
+## 许可证
+
+[MIT](LICENSE)。数据库内容、论文和第三方服务各自的许可继续适用。

@@ -2,198 +2,188 @@
 
 # sanmu-doc2md
 
-**Turn papers, textbooks, and slides into a maintainable Markdown knowledge base.**
+**Turn papers, textbooks and slides into a Markdown knowledge base you can maintain over time.**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![KaTeX validation](https://img.shields.io/badge/KaTeX-validation-brightgreen.svg)](https://katex.org/)
 [![Tests](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/luffysolution-svg/sanmu-skills/actions/workflows/tests.yml)
-[![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Agent Skill](https://img.shields.io/badge/Agent%20Skill-Claude%20%7C%20ZCode%20%7C%20Codex-orange.svg)](https://agentskills.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[简体中文](README.md) · **English**
+[简体中文](README.md) · **English** · [Back to collection](https://github.com/luffysolution-svg/sanmu-skills/blob/main/README.en.md)
 
-[Installation](#installation-and-dependencies) · [Document workflows](#three-document-workflows) · [Case studies](#case-studies) · [Commands](#command-reference)
+[Installation](#installation) · [What it solves](#what-it-solves) · [Three routes](#three-routes-for-three-document-types) · [Case studies](#case-studies) · [Commands](#command-reference)
 
 </div>
 
-Convert scanned textbooks, PDF books, technical slides, journal articles, and theses into a Markdown knowledge base with high-resolution images, tables, and renderable LaTeX formulas. Designed for AI assistants that support [Agent Skills](https://agentskills.io).
+Converts scanned textbooks, PDF books, science and engineering slides, Chinese and English papers, and theses into Markdown with high-resolution images, tables and renderable LaTeX formulas, for reading in Obsidian and for retrieval by AI assistants.
 
-The workflow covers full KaTeX compilation, source-based figure recovery, multi-panel figure repairs, QR codes inside tables, OCR correction, assembly of long documents, safe cleanup of generated image assets, and Zotero metadata. Successful compilation does not establish content completeness: figures and scientific symbols still need to be checked against the source and verified in the target client.
+The hard part is not getting output, but getting correct output: formula meaning must not change, figures must be complete, and page numbers must lead back to the source. So the skill takes the most reliable content it can from the source file, goes back to the original page when unsure, and records every correction. A formula that compiles only has valid syntax; figures and scientific symbols still need to be checked against the source, and you should take a final look in the client you actually use.
 
-## Installation and dependencies
+## Installation
 
-### Option 1: Ask your AI assistant to install and configure it (recommended)
+### Ask your AI assistant to install it (recommended)
 
-Copy this prompt into Claude Code, Codex, ZCode, Cursor, or another coding assistant to install the skill, configure dependencies, and validate the environment:
+Send the following to Claude Code, Codex, WorkBuddy, Cursor or another AI coding assistant:
 
 ```text
-Please install and configure the sanmu-doc2md skill from:
+Please install and configure the sanmu-doc2md skill:
 https://github.com/luffysolution-svg/sanmu-skills
 
-1. Check Git, Node.js, and Python, then install the skill for the current AI assistant at user scope:
+1. Check Git, Node.js and Python, then install the skill into the current assistant's user-level skill directory:
    npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
-   Select the target matching the current assistant. If already installed, check for local edits before updating.
-2. Locate the installed sanmu-doc2md directory reported by the installer and confirm that it contains SKILL.md, requirements.txt, and scripts/.
-   Run the following commands from that skill directory, not the collection repository root.
-3. Prefer a dedicated Python virtual environment and install the Python dependencies:
+   If it is already installed, check for local edits first to avoid overwriting them.
+2. Find the installed sanmu-doc2md directory (it contains SKILL.md, requirements.txt and scripts/).
+   Run all following commands in that directory, not in the collection repository root.
+3. Preferably in a dedicated Python virtual environment, install the dependencies:
    python -m pip install -r requirements.txt
-4. Install the Node.js dependencies for formula validation:
    npm --prefix scripts install --ignore-scripts --no-audit --no-fund
-5. Use the configured Python environment for environment and minimal startup checks (no OCR submission):
+4. Check the environment (this does not submit OCR):
    python scripts/doctor.py
    python scripts/build_markdown.py --help
-6. Check whether MINERU_API_TOKEN is configured without displaying its value.
-   If missing, direct me to https://mineru.net and explain how to set it locally.
-   If configured, run python scripts/doctor.py --require-ocr to check configuration status.
-7. Report the installation path, validation results, and any remaining configuration steps.
+5. Check whether MINERU_API_TOKEN is configured, without displaying its value. If not, tell me to apply for one at https://mineru.net;
+   if it is configured, run python scripts/doctor.py --require-ocr.
+6. Tell me the installation path, the check results and anything that still needs to be configured.
 ```
 
-### Option 2: Install from the command line
+### Manual installation
 
 ```bash
-# Install this skill globally
 npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
-
-# Install the entire collection globally
-npx skills add luffysolution-svg/sanmu-skills --skill '*' -g
 ```
 
-Change to the installed `sanmu-doc2md` directory containing `SKILL.md` (or `skills/sanmu-doc2md` from source). All dependencies and commands below run relative to that directory.
+Go to the installed `sanmu-doc2md` directory (or `skills/sanmu-doc2md` when running from source). The commands below are relative to that directory:
 
 ```bash
 python -m pip install -r requirements.txt
 npm --prefix scripts install --ignore-scripts --no-audit --no-fund
 python scripts/doctor.py
-python scripts/build_markdown.py --help
 ```
 
-You can create a Python virtual environment before installing dependencies. `doctor.py` checks the runtime and credential configuration and compiles a basic formula, without installing dependencies or printing secret values. Use `--json` for structured output. `build_markdown.py --help` checks that the assembly entry point starts; it does not test document conversion. For development tests, see the repository’s [contribution guide](https://github.com/luffysolution-svg/sanmu-skills/blob/main/README.en.md#contributing).
+`doctor.py` checks whether Python, Node, KaTeX and credentials are ready, and test-compiles one formula. It does not install anything or display credential values. Add `--json` for structured output.
 
-Cloud OCR requires `MINERU_API_TOKEN`, available from [mineru.net](https://mineru.net). Run `python scripts/doctor.py --require-ocr` to treat a missing token as a failure. Local assembly and validation remain available without a token when their dependencies are installed.
+Cloud OCR needs the environment variable `MINERU_API_TOKEN` (apply at [mineru.net](https://mineru.net)). If you already have OCR results, assembly and validation work without a token.
 
-## Problems it addresses
+## What it solves
 
-Academic document conversion often encounters:
+Common failures when ordinary OCR tools convert science and engineering documents directly:
 
-- **Broken formulas**: misplaced subscripts, superscripts, fractions, and Greek letters.
-- **Incorrect reading order**: slide-style image placement applied to textbooks, or a page's opening sentence promoted to a heading.
-- **Rendering conflicts**: explanatory brackets parsed as links, leaving raw formulas visible in Obsidian.
-- **Damaged heading formulas**: removing math delimiters while leaving raw underscores, such as `CO_2`.
-- **Unused image assets**: older crops accumulate after figure boundaries are adjusted.
-- **Missing resources**: QR codes and complex table content disappear during text extraction.
-- **OCR substitutions**: similar-looking characters, such as `ν` and `v` or `N₀` and `No`, are confused.
-- **Model artifacts**: phrases such as “The Ground Truth image displays...” leak into the document.
+| Problem | Symptom |
+| --- | --- |
+| Broken formulas | Subscripts, superscripts, fractions and Greek letters are scrambled into isolated characters |
+| Wrong layout | Reading order in long textbooks is reversed; text continued at the top of a page becomes a level-2 heading |
+| Brackets parsed as links | `[通常为 $\mathcal{N}(0, I)$ ]` ("typically ...") turns into a blue link in Obsidian, exposing the formula source |
+| Broken chemical formulas in headings | `$\mathrm{CO}_2$` loses its delimiters, leaving `CO_2`, which also triggers italics |
+| Lost resources | End-of-chapter QR codes and complex data tables are swallowed by plain-text conversion |
+| Typos | "轫致辐射" → "韧致辐射" (look-alike characters in "bremsstrahlung"), `ν` → `v`, `N₀` → `No` |
+| Model commentary in the text | Lines from the OCR model such as `The Ground Truth image displays...` appear in the body |
+| Old images pile up | After crop boxes are adjusted, old crops remain and the directory keeps growing |
 
-The skill provides full formula syntax checks and target-client verification. Obsidian uses MathJax; the local KaTeX check is a preflight check. Resolve engine differences against the source and actual client. The rules come from practical work on textbooks and academic literature.
+All of these rules come from processing real textbooks and papers; the details are in the skill's reference documents.
 
-## Three document workflows
+## Three routes for three document types
 
-| Aspect | Textbooks and monographs (`--mode book`) | Slides and lecture notes (`--mode slides`) | Research papers and theses |
+Textbooks, slides and papers have very different layouts, and one shared process would break on some of them, so there are three routes:
+
+| | Textbooks and monographs | Slides and lecture notes | Papers and theses |
 | --- | --- | --- | --- |
-| Organization | Chapter files, navigation, and images | Lectures or topics | One main note, navigation, and images per document |
-| Reading order | Geometric flow; figures remain in context | Images placed prominently with supporting text | Source-checked OCR flow for two-column papers |
-| Headings | Distinguish section numbers from exercises | Preserve each slide's main topic | Academic naming: `{{firstCreator}} - {{year}} - {{title}}.md` |
-| Figures | Source PDF crops at least 3×; multi-panel grouping | Prefer native PPTX images | High-confidence panel merging and supporting information |
-| Metadata | Preserve substantive footnotes | Compare against native slide text | YAML metadata including DOI, authors, abstract, and Zotero URI |
-
-## Included files
-
-```text
-SKILL.md                        Skill definition, workflow, and constraints
-references/
-  mineru-api.md                 API contract, coordinates, and download fallback
-  math-normalization.md        Formula rules and before/after examples
-  book-workflow.md             Splitting and assembling long textbooks
-  research-documents.md        Academic naming, metadata, and two-column workflow
-  zotero-sync.md               Read-only API access and MCP-based synchronization
-  repairs.md                   Source-verified repairs for text, figures, captions, and scan noise
-scripts/
-  doctor.py                    Runtime and credential configuration checks
-  mineru_ocr.py                Split, submit, poll, and download OCR tasks
-  build_markdown.py            Textbook and slide assembly
-  build_research_document.py   Research-document assembly
-  normalize_math.py            Conservative LaTeX normalization
-  extract_formulas.py          Formula extraction
-  validate_output.py           Structure, resource, and artifact checks
-  validate_math.cjs            Full KaTeX compilation
-  preview_server.py            Markdown and KaTeX preview
-```
-
-Case studies and the [reproducible example](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/book-demo/demo.md) live in the repository and are not part of the installed runtime skill.
+| Entry point | `build_markdown.py --mode book` | `build_markdown.py --mode slides` | `build_research_document.py` |
+| Organization | Split by chapter: `00-目录.md`, `01-第一章.md`… | By lecture or class session | One directory per paper: main note + `00-目录.md` |
+| Text and figure layout | Figures and tables are placed in the text according to their position on the page | Images grouped at the top of the page, with the key-point text | Follows the checked OCR reading order; two columns do not run into each other |
+| Headings | Only chapter numbers count; section headings are distinguished from exercise prompts | Each page's topic is its heading | Files named `Author - Year - Title` |
+| Figures | Recropped from the source PDF at 3× or more; multi-panel figures merged | Original PPTX images preferred; small in-figure labels filtered out | High-confidence multi-panel stitching; two-way links to SI figures |
+| Text and metadata | Substantive footnotes kept; running headers and footers removed | OCR typos corrected against the original PPT text | Full YAML: DOI, authors, abstract, Zotero link |
 
 ## Workflow
 
-1. **Inspect the source**: check native text and embedded images, then choose the textbook, slide, or research workflow.
-2. **Split and recognize**: split long PDFs and submit batches to MinerU when new OCR is needed.
-3. **Cross-check text**: compare OCR with reliable native text and review substitutions.
-4. **Recover figures**: extract native images or recrop the source PDF; verify panel and caption boundaries.
-5. **Normalize formulas**: address delimiter conflicts, command boundaries, heading formulas, and chemical notation.
-6. **Assemble the knowledge base**: write navigation, notes, and relative image references; optionally clean owned orphan assets.
-7. **Validate the result**: compile every formula and verify rendering in the target client.
+```text
+1. Preflight   Check for a text layer and embedded original images; decide which route to take
+2. OCR         Split long documents into 96-page chunks and submit them to MinerU in batches
+3. Proofread   Correct look-alike characters against the native text layer / original PPT text
+4. Figures     Prefer original images, otherwise recrop from the PDF at 3×; merge fragments, keep QR codes in tables
+5. Formulas    Chinese into \text, protect inequality signs, disambiguate brackets, keep heading formulas
+6. Assembly    Generate 00-目录.md and the body text; optionally remove old crops that are no longer referenced
+7. Validation  Structure and link checks + full KaTeX preflight + an actual look in Obsidian
+```
 
 ## Case studies
 
-The repository documents the following practical cases:
+The case documents in the repository record the following results. These numbers describe these specific documents and are not a quality guarantee for arbitrary documents.
 
-| Case | Documents | Formulas | Images / figures | Reported results |
-| --- | --- | ---: | ---: | --- |
-| Materials characterization course | 10 chapters, 694 slide pages | 2,118 | 199 | All formulas compiled; 7 native-text corrections; image deduplication |
-| Physical chemistry textbook | 556 scanned pages | 7,523 | 332 | 7,523/7,523 formulas compiled; 28 QR codes retained |
-| Chinese research papers and theses | 5 documents, 611 pages, including a 240-page dissertation | 5,797 | 398 | Bracket conflicts and heading formulas repaired; 89 old image assets safely removed |
-| English research literature | 7 papers, 87 pages | 876 | 114 | Two-column flow, long Windows paths, and YAML metadata |
-| **Total** | **Nearly 2,000 pages** | **16,314** | **1,043** | **All formulas compiled in these reported cases** |
+| Case | Documents | Formulas | Images | Result |
+| :--- | :--- | :---: | :---: | :--- |
+| Materials analysis and testing methods | 10 chapters, 694 pages of PPT slides | 2,118 | 199 | All formulas passed preflight; 7 typos corrected from native text; duplicate images removed |
+| Physical Chemistry (6th edition), Vol. 2 | 556-page fully scanned textbook | 7,523 | 332 | KaTeX 7,523 / 7,523 passed; 28 end-of-chapter QR codes extracted |
+| Chinese papers and theses | 5 documents, 611 pages in total (including a 240-page doctoral dissertation) | 5,797 | 398 | Fixed Obsidian bracket misparsing and heading chemical formulas; safely removed 89 old images |
+| English journal papers | 7 papers, 87 pages in total (Nature, Matter, etc.) | 876 | 114 | Correct two-column reading order; long Windows paths work; complete YAML metadata |
+| **Total** | **Nearly 2,000 pages** | **16,314** | **1,043** | All formulas in these cases compiled |
 
-See [textbook and slide results](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/RESULTS.md) and [research validation](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/RESEARCH-VALIDATION.md). These detailed reports are currently in Chinese.
+See [RESULTS.md](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/RESULTS.md) and [RESEARCH-VALIDATION.md](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/RESEARCH-VALIDATION.md) (both in Chinese). The [reproducible example](https://github.com/luffysolution-svg/sanmu-skills/blob/main/examples/sanmu-doc2md/book-demo/demo.md) is kept in the repository and is not installed with the skill.
 
 ## Command reference
 
-Run these commands from the skill directory. Replace input and output paths with the paths for your task.
-
 ```bash
-# 1. Split a long PDF into 96-page chunks
+# Splitting and OCR
 python scripts/mineru_ocr.py split path/to/document.pdf --out-root ./ocr-work --chunk-size 96
-
-# 2. Submit a batch to MinerU
 python scripts/mineru_ocr.py submit --out-root ./ocr-work --id-file ./ocr-work/ids.tsv
 
-# 3. Assemble a textbook, retain table images, and clean owned orphan crops
-python scripts/build_markdown.py \
-    --raw ./ocr-work/raw \
-    --out ./knowledge-base \
-    --mode book \
-    --manifest ./ocr-work/manifest.json \
-    --chapters ./chapters.json \
-    --pdf path/to/document.pdf \
-    --keep-table-images \
-    --prune-orphans
+# Textbooks
+python scripts/build_markdown.py --raw ./ocr-work/raw --out ./knowledge-base --mode book \
+    --manifest ./ocr-work/manifest.json --chapters ./chapters.json \
+    --pdf path/to/document.pdf --keep-table-images --prune-orphans
 
-# 4. Assemble slides using native PPTX text and source figures
+# Slides
 python scripts/build_markdown.py --raw ./ocr-work/raw --out ./knowledge-base \
     --mode slides --source-dir ./slides --pdf-dir ./slide-pdfs
 
-# 5. Assemble a research document with academic naming and metadata
+# Papers
 python scripts/build_research_document.py --pdf ./source.pdf --raw ./ocr-work/raw/article \
-    --metadata ./metadata.json --out "./research/First Author - Year - Title"
+    --metadata ./metadata.json --out "./research/First Author et al - Year - Title"
 
-# 6. Validate structure and resources
+# Validation
 python scripts/validate_output.py ./knowledge-base --images-dir images
-
-# 7. Extract and compile every formula
 python scripts/extract_formulas.py ./knowledge-base --out formulas.json
 node scripts/validate_math.cjs formulas.json
 
-# 8. Preview with local KaTeX assets
+# Local preview (listens on 127.0.0.1 only)
 python scripts/preview_server.py ./knowledge-base --port 8766 --katex-dir scripts/node_modules/katex/dist
 ```
 
-## Output conventions
+## What the output looks like
 
-- **Clean delivery**: navigation, Markdown, and images; build reports and incremental state stay outside the reading directory in `.<directory-name>.build/`.
-- **Relative paths**: image references use `![](images/...)`, so the knowledge base can be moved between devices.
-- **Scientific fidelity**: LaTeX formulas remain searchable; complex tables and chemical structures can retain source crops for verification.
-- **Bracket handling**: explanatory brackets use full-width `［...］` where required to avoid Markdown parsing conflicts.
-- **Navigation**: `00-目录.md` uses URI-encoded links; check navigation in the target Obsidian vault.
-- **Sources and manual edits**: retain source files, page mappings, and repair evidence. Preserve manual edits rather than bypassing differences with `--overwrite`. Keep substantive `page_footnote` content, including academic notes, sources, and formula explanations.
+- **Clean directory**: only navigation, Markdown body files and `images/`; build state is kept next to it in `.<directory-name>.build/`.
+- **All paths relative**: images use `![](images/...)`, so the whole knowledge base can be moved freely and synced across devices.
+- **Two-track fidelity**: formulas are standard LaTeX; complex tables and ring-shaped chemical structures also keep a crop of the original image.
+- **Working navigation**: `00-目录.md` in the root uses URI-encoded links, so you can jump directly in Obsidian.
+- **Traceable without overwriting**: source files, page mappings and the basis for each repair are kept; content you edited by hand is protected by default, and substantive footnotes are not deleted as page footers.
+
+## What's included
+
+```text
+SKILL.md                        Skill description: route selection, workflow, lessons and pitfalls
+references/
+  book-workflow.md              Splitting long textbooks, regrouping chapters, common problems
+  research-documents.md         Paper naming, metadata, SI two-way links and two-column reading order
+  math-normalization.md         15 formula rules with real before/after examples
+  repairs.md                    Source-based repairs: text, figure blocks, captions and scan noise
+  setup.md                      First-run setup: dependencies and the MinerU token
+  mineru-api.md                 MinerU API, result structure, coordinate system and download fallback
+  zotero-sync.md                Zotero read-only API, MCP writes and read-back
+scripts/
+  doctor.py                     Environment and credential checks
+  mineru_ocr.py                 Split / submit / poll / resume / download
+  build_markdown.py             Textbook and slide assembly
+  build_research_document.py    Paper assembly
+  audit_figures.py              Review of fragmented multi-panel figures; generates repair drafts
+  normalize_math.py             Formula normalization
+  extract_formulas.py           Extract all formulas
+  validate_output.py            Structure, link and leftover checks
+  validate_math.cjs             Full KaTeX preflight
+  preview_server.py             Local offline preview
+  zotero_export.py              Read-only export of Zotero items and attachments
+  zotero_sync.py                Sync Zotero metadata, notes and annotations
+```
+
+Development tests run from the repository root; see [Contributing](https://github.com/luffysolution-svg/sanmu-skills/blob/main/README.en.md#contributing).
 
 ## License
 
