@@ -70,7 +70,7 @@ Codex 的仓库目录为 `.agents/plugins/marketplace.json`，通过本地来源
 | sanmu-paper-reader | `sanmu-paper-reader` |
 | sanmu-paper-search | `sanmu-paper-search` |
 
-上传选构建产物 `skillhub/<技能名>-<版本>.zip`，不要选 `skills/<技能名>/` 源码目录：其中的 `node_modules/`、`__pycache__/` 会让 doc2md 超过平台 200 个文件上限，其余技能会因 `.pyc` 被跳过。平台限制为单包 200 个文件、10 MB；各版本文件数与大小以本次 `build` 输出为准。后续版本在控制台「版本历史」更新，slug 不变。
+上传选构建产物 `skillhub/<技能名>-<版本>.zip`，不要选 `skills/<技能名>/` 源码目录：其中的 `node_modules/`、`__pycache__/` 会让 doc2md 超过平台 200 个文件上限，其余技能会因 `.pyc` 被跳过。平台限制为单包 200 个文件、10 MB；各版本文件数与大小以本次 `build` 输出为准。平台会拒绝没有扩展名的文件，因此 `skillhub/` 包内不含 `LICENSE`；通用合集 ZIP 仍保留，许可证信息写在 `SKILL.md` 的 `license` 字段。后续版本在控制台「版本历史」更新，slug 不变。
 
 使用 API Token 发布时，按[官方教程](https://skillhub.cn/tutorials)完成实名与配置。Windows 发布教程使用 WSL；不要把 Token 写入源码、命令示例或提交记录。
 

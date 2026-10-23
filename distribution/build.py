@@ -20,6 +20,8 @@ BLOCKED_PARTS = {
 }
 DEVELOPMENT_PARTS = {"tests", "examples", "docs"}
 SKILL_ROOT_FILES = {"SKILL.md", "LICENSE", "README.md", "README.en.md", "requirements.txt"}
+# SkillHub rejects uploads containing files without an extension; license stays in the bundle.
+SKILLHUB_EXCLUDED_FILES = {"LICENSE"}
 FRONTMATTER_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
 
 
@@ -216,7 +218,8 @@ def build(output, root=ROOT):
     archives = [bundle_path]
     for skill in release["skills"]:
         prefix = f"skills/{skill['name']}/"
-        entries = {path[len(prefix):]: data for path, data in bundle.items() if path.startswith(prefix)}
+        entries = {path[len(prefix):]: data for path, data in bundle.items()
+                   if path.startswith(prefix) and path[len(prefix):] not in SKILLHUB_EXCLUDED_FILES}
         text = entries["SKILL.md"].decode("utf-8")
         entries["SKILL.md"] = skillhub_document(text, skill, release).encode("utf-8")
         directory = skillhub / skill["name"]

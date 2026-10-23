@@ -35,11 +35,14 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(len(first), 4)
             for left, right in zip(first, second):
                 self.assertEqual(left.read_bytes(), right.read_bytes())
+                is_skillhub = "skillhub" in left.parts
                 with zipfile.ZipFile(left) as archive:
                     self.assertIsNone(archive.testzip())
                     names = archive.namelist()
                     self.assertTrue(any(name.endswith("/SKILL.md") or name == "SKILL.md" for name in names))
                     self.assertFalse(any(build.BLOCKED_PARTS.intersection(Path(name).parts) for name in names))
+                    if is_skillhub:
+                        self.assertFalse(any(Path(name).name == "LICENSE" for name in names))
             with zipfile.ZipFile(first[0]) as archive:
                 self.assertIn("plugin.json", archive.namelist())
                 self.assertIn("skills/sanmu-paper-search/LICENSE", archive.namelist())

@@ -70,7 +70,7 @@ All three skills are published:
 | sanmu-paper-reader | `sanmu-paper-reader` |
 | sanmu-paper-search | `sanmu-paper-search` |
 
-Upload the built artifact `skillhub/<skill-name>-<version>.zip`, not the `skills/<skill-name>/` source directory: its `node_modules/` and `__pycache__/` push doc2md past the 200-file limit and make the other skills skip `.pyc` files. The platform allows 200 files and 10 MB per package; use the current `build` output for each version's file counts and sizes. Update later versions from the console's version history without changing the slug.
+Upload the built artifact `skillhub/<skill-name>-<version>.zip`, not the `skills/<skill-name>/` source directory: its `node_modules/` and `__pycache__/` push doc2md past the 200-file limit and make the other skills skip `.pyc` files. The platform allows 200 files and 10 MB per package; use the current `build` output for each version's file counts and sizes. It rejects files without an extension, so `skillhub/` packages omit `LICENSE`; the collection ZIP still includes it and the license is declared in the `SKILL.md` frontmatter. Update later versions from the console's version history without changing the slug.
 
 To publish with an API token, complete identity verification and configure it using the [official guide](https://skillhub.cn/tutorials). The Windows publication guide uses WSL. Keep tokens out of source files, examples and commits.
 
