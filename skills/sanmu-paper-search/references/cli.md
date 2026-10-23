@@ -22,16 +22,31 @@ python scripts/paper_search.py diff "/path/to/work/runs/seed" "/path/to/work/run
 
 输出使用用户工作目录下的新建目录，例如 `runs/topic-日期/`，保留已有筛选结果。私有 Zotero 快照和运行产物存放在个人工作区。
 
-来源名是 `openalex`、`semantic-scholar`、`crossref`。可移植身份格式包括 DOI、`doi:...`、DOI URL、`openalex:W...`、`s2:...`、`pmid:...`、`arxiv:...`。并非所有来源都支持全部 ID，未支持情况需在逐源状态中保留。作者 ID 属于提供者，不能跨库复用。
+`search --sources` 的来源名是 `openalex`、`semantic-scholar`、`crossref`；Serper 使用独立的 `serper` 子命令，见下节。可移植身份格式包括 DOI、`doi:...`、DOI URL、`openalex:W...`、`s2:...`、`pmid:...`、`arxiv:...`。并非所有来源都支持全部 ID，未支持情况需在逐源状态中保留。作者 ID 属于提供者，不能跨库复用。
 
 `search` 和 `author --author-id` 支持 `--year-from 2024 --year-to 2025`；`related` 不支持年份参数，需在关系结果上另做筛选并保留阶段记录。`--limit` 是每源候选预算（1–20），跨源去重后全部保存，三源最多 60 条；保留源序，不宣称跨库相关性已统一排序。作者单源作品和 `oa` 输入处理同样受该预算约束。已知年份在源端（支持时）和本地过滤，返回的未知年份保留并计数；源端可能不返回缺日期文献，见 `year_filter`。
 
 `author QUERY` 只产生候选；`author --author-id ID` 查询已核对作者的作品，不自动选择同名作者。`author --from-paper ID [NAME]` 先在种子论文作者列表里锚定稳定 ID，再拉取作品；姓名不匹配时该来源记为 `not_found` 并保留全部作者候选，不猜人。`related` 按关系区分接口，不将普通关键词补搜冒充推荐。`oa` 只定位与记录访问状态，不代表已下载。
 
-`summary.md` 是 `papers.json` 的同源精简视图（年份、标题、前三位作者、类型、标识符、证据层级），用于快速浏览；正文判断仍以 `papers.json` 与逐源状态为准。
+原有学术命令的 `summary.md` 是 `papers.json` 的同源精简视图（年份、标题、前三位作者、类型、标识符、证据层级），用于快速浏览；正文判断仍以 `papers.json` 与逐源状态为准。Serper 的摘要展示 `results.json` 中的类型、标题、链接、年份和片段，费用与状态见 `report.md`。
+
+## Serper（可选）
+
+配置 `SERPER_API_KEY` 后，按需选公开接口；不加入 `search --sources`，不自动扩成多接口查询。完整 13 类、环境变量设置、批量与参数边界见 [Serper 指南](serper.md)。
+
+```bash
+python scripts/paper_search.py serper --help
+python scripts/paper_search.py serper "single atom carbon nitride photocatalytic hydrogen" --type scholar --year-from 2020 --year-to 2022 --limit 5 --out "/path/to/work/runs/scholar"
+python scripts/paper_search.py serper "carbon nitride photocatalysis supporting information" --type search --limit 5 --out "/path/to/work/runs/web-search"
+```
+
+`--limit 1..20`（默认 10）是每查询跨页合计的本地保留上限，不保证服务端返回数或费用；页码接口可用 `--page 1..100` 和 `--pages 1..3`，reviews 使用游标；lens/webpage/autocomplete 不翻页。Scholar 年份用 `--year-from/to`，不发送 `num`，不与 `scisbd` 混用。`--params` 接收该接口的 JSON 对象；批量用 `--batch FILE`（1–100 个同接口请求对象的 JSON 数组，单次 POST），不与位置查询、`--url`、`--params`、年份或翻页参数混用。
+
+Serper 保存按接口区分的 `results.json`、完整脱敏响应列表 `response.json`，以及运行记录、报告和哈希；`papers.json` 为空数组。普通网页、商品、评论及 Scholar 摘录不自动转成规范论文，不将 Serper 输出目录直接用于论文 `merge` 或 `oa` 流程；先核对稳定 ID，再用 `lookup` 等获取题录。
 
 ## 配置（仅环境变量，不写入记录）
 
+- `SERPER_API_KEY`：可选 Serper 接口，缺失时不执行该服务；安全设置方法见 [Serper 指南](serper.md)。
 - `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`：Semantic Scholar 配额。
 - `OPENALEX_API_KEY`：OpenAlex 配额与深度翻页；缺失时自动降级为匿名请求。
 - `OPENALEX_EMAIL` / `CROSSREF_EMAIL` / `UNPAYWALL_EMAIL` / `POLITE_EMAIL`：Polite Pool 联系邮箱，按此顺序回退；`POLITE_EMAIL` 可一次覆盖三源。OpenAlex 缺少邮箱时仍匿名，深度翻页可能被限流。

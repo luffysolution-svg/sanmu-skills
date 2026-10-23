@@ -12,7 +12,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit, parse_qsl, urlencode, qu
 SCHEMA = "sanmu-paper-search/v1"
 PROVIDERS = ("openalex", "semantic-scholar", "crossref")
 SECRET_NAMES = ("S2_API_KEY", "SEMANTIC_SCHOLAR_API_KEY", "OPENALEX_API_KEY",
-                "UNPAYWALL_EMAIL", "CROSSREF_EMAIL")
+                "UNPAYWALL_EMAIL", "CROSSREF_EMAIL", "SERPER_API_KEY", "OPENALEX_EMAIL", "POLITE_EMAIL")
 # Canonicalized names are shared by structured fields and parsed URL queries.
 SENSITIVE = {"apikey", "authorization", "token", "accesstoken", "email", "mailto",
              "password", "secret", "xapikey", "key", "signature", "credential",
@@ -21,7 +21,8 @@ SENSITIVE = {"apikey", "authorization", "token", "accesstoken", "email", "mailto
 
 def _sensitive_key(value, query=False):
     normalized = re.sub(r"[^a-z]", "", str(value).casefold())
-    return normalized in SENSITIVE and (normalized != "key" or query)
+    secret_names = {re.sub(r"[^a-z]", "", name.casefold()) for name in SECRET_NAMES}
+    return normalized in secret_names or (normalized in SENSITIVE and (normalized != "key" or query))
 
 
 def now():
@@ -39,7 +40,8 @@ class InputError(ValueError):
 class Redactor:
     def __init__(self, env=None):
         env = os.environ if env is None else env
-        values = {env.get(name, "") for name in SECRET_NAMES} - {""}
+        values = {variant for name in SECRET_NAMES for variant in
+                  (env.get(name, ""), env.get(name, "").strip())} - {""}
         self.values = sorted({variant for value in values for variant in
                               (value, quote(value, safe=""), urlencode({"v": value})[2:])},
                              key=len, reverse=True)
@@ -61,6 +63,15 @@ class Redactor:
             except ValueError:
                 return value
 
+        def redact_field(match):
+            try:
+                key = json.loads(match[1].rsplit(":", 1)[0].strip())
+            except (ValueError, TypeError):
+                return match[0]
+            return match[1] + '"[REDACTED]"' if _sensitive_key(key) else match[0]
+
+        # Raw JSON and malformed error bodies may echo credentials absent from env.
+        text = re.sub(r'("(?:[^"\\]|\\.)*"\s*:\s*)("(?:[^"\\]|\\.)*")', redact_field, text)
         # Regex finds URL boundaries only; names/values are decoded by the query parser.
         text = re.sub(r"(?:https?://|[?&])[^\s\"'<>\\]*", redact_query, text, flags=re.I)
         for value in self.values:
@@ -70,7 +81,7 @@ class Redactor:
     def clean(self, obj):
         if isinstance(obj, dict):
             return {self.text(str(k)): ("[REDACTED]" if
-                    _sensitive_key(k) else self.clean(v))
+                    _sensitive_key(k) and not isinstance(v, bool) else self.clean(v))
                     for k, v in obj.items()}
         if isinstance(obj, (list, tuple)):
             return [self.clean(v) for v in obj]
@@ -382,7 +393,7 @@ def prepare_out(path):
     return path
 
 
-def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None):
+def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None, serper_data=None):
     errors = [s for s in sources.values() if s.get("status") == "error"]
     usable = [s for s in sources.values() if s.get("status") in ("ok", "not_found")]
     status = ("partial" if usable or papers else "failed") if errors else "success"
@@ -395,10 +406,19 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
     run, papers = redactor.clean(run), redactor.clean(papers)
     (out / "raw").mkdir(exist_ok=True)
     artifacts = {"run.json": dumps(run), "papers.json": dumps(papers)}
+    if serper_data is not None:
+        artifacts["results.json"] = dumps(redactor.clean(serper_data["results"]))
+        artifacts["response.json"] = dumps(redactor.clean(serper_data["responses"]))
     for i, response in enumerate(raw, 1):
         artifacts[f"raw/{i:04d}.json"] = dumps(redactor.clean(response))
-    lines = ["# Paper search report", "", f"Status: {status}", f"Command: {command}",
-             f"Papers: {len(papers)}", "", "## Sources", ""]
+    lines = ["# Paper search report", "", f"Status: {status}", f"Command: {command}"]
+    if serper_data is not None:
+        lines.extend([f"Results: {run['result_count']}", f"Returned: {run['returned_count']}",
+                      f"Credits reported: {run['credits_reported']}",
+                      f"Responses with unknown credits: {run['credits_unknown_responses']}"])
+    else:
+        lines.append(f"Papers: {len(papers)}")
+    lines.extend(["", "## Sources", ""])
     for name, source in sources.items():
         lines.append(f"- {name}: {source.get('status')}; fetched={source.get('fetched', 0)}; "
                      f"truncated={source.get('truncated', False)}")
@@ -409,13 +429,17 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
     if extra and "global_dropped_count" in extra:
         lines.extend(["", f"Global cap dropped {extra['global_dropped_count']} deduplicated records; "
                       "source order then provider order; no cross-provider reranking."])
-    lines.extend(["", "## Papers", ""])
-    for p in papers:
-        title = (p.get("title") or "[untitled]").replace("\n", " ")
-        lines.append(f"- {title} ({p.get('year') or 'n.d.'}); {p.get('evidence_level')}; "
-                     f"DOI={', '.join(p['identifiers'].get('doi', [])) or 'missing'}")
-    lines.extend(["", "Metadata/abstract evidence only. OA resolution does not download or verify a PDF.",
-                  "License and OA flags are separate; a URL alone is not evidence of open access."])
+    if serper_data is not None:
+        lines.extend(["", "Untrusted remote data; full text and scholarly identity are not verified.",
+                      "See summary.md for results and results.json / response.json for complete data."])
+    else:
+        lines.extend(["", "## Papers", ""])
+        for p in papers:
+            title = (p.get("title") or "[untitled]").replace("\n", " ")
+            lines.append(f"- {title} ({p.get('year') or 'n.d.'}); {p.get('evidence_level')}; "
+                         f"DOI={', '.join(p['identifiers'].get('doi', [])) or 'missing'}")
+        lines.extend(["", "Metadata/abstract evidence only. OA resolution does not download or verify a PDF.",
+                      "License and OA flags are separate; a URL alone is not evidence of open access."])
     artifacts["report.md"] = "\n".join(lines) + "\n"
     summary = ["| # | Year | Title | Authors | Venue / Type | DOI / Stable ID | Evidence |",
                "| --- | --- | --- | --- | --- | --- | --- |"]
@@ -426,6 +450,24 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
         stable = [f"{k}:{v}" for k, values in p["identifiers"].items() for v in values]
         summary.append(f"| {i} | {p.get('year') or 'n.d.'} | {title} | {authors or 'missing'} | "
                        f"{p.get('type') or 'n.a.'} | {', '.join(stable[:3]) or 'missing'} | {p.get('evidence_level')} |")
+    if serper_data is not None:
+        def cell(value):
+            return " ".join(str(value if value is not None else "").split()).replace("|", "\\|")
+
+        summary = ["| # | Type | Title / Value | URL | Year | Snippet |",
+                   "| --- | --- | --- | --- | --- | --- |"]
+        queries = serper_data["results"]["queries"]
+        for i, item in enumerate(serper_data["results"]["results"], 1):
+            data = item["data"]
+            metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+            title = data.get("title") or data.get("value") or metadata.get("title") or "[untitled]"
+            url = data.get("url") or data.get("link") or data.get("imageUrl") or ""
+            if item["type"] == "webpage":
+                url = url or queries[item["query_index"]]["request"].get("url", "")
+            snippet = data.get("snippet") or data.get("text") or data.get("markdown") or ""
+            snippet = " ".join(str(snippet).split())[:200]
+            summary.append("| " + " | ".join(cell(value) for value in
+                           (i, item["type"], title, url, data.get("year"), snippet)) + " |")
     artifacts["summary.md"] = "\n".join(summary) + "\n"
     for relative, text in artifacts.items():
         target = out / relative
@@ -470,6 +512,15 @@ def check_bundle(path, include_metadata=False):
     for required in ("run.json", "papers.json", "report.md"):
         if required not in seen:
             issues.append("Not in manifest: " + required)
+    if (root / "run.json").is_file():
+        try:
+            run = read_json(root / "run.json")
+            if isinstance(run, dict) and run.get("command") == "serper":
+                for required in ("results.json", "response.json"):
+                    if required not in seen:
+                        issues.append("Not in manifest: " + required)
+        except InputError:
+            issues.append("Invalid run.json")
     actual = {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
     for extra in sorted(actual - seen - {"manifest.json"}):
         issues.append("Unmanifested: " + extra)

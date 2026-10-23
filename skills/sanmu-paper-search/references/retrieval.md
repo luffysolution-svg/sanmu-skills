@@ -2,7 +2,7 @@
 
 ## 主题检索
 
-核心 CLI 支持 OpenAlex、Semantic Scholar 和 Crossref：OpenAlex 用于跨学科主题与机构/作者作品，S2 用于论文相似性及引用图，Crossref 用于 DOI 和出版社题录核对。需要补充领域覆盖时，通过宿主工具查询 PubMed/Europe PMC 或 arXiv，并单独记录来源。
+核心 CLI 支持 OpenAlex、Semantic Scholar 和 Crossref：OpenAlex 用于跨学科主题与机构/作者作品，S2 用于论文相似性及引用图，Crossref 用于 DOI 和出版社题录核对。可选 Serper 的 `scholar` 补 Google Scholar，`search` 找出版社/仓储/SI 线索，`patents` 查专利；具体配置、参数及其余公开接口按需读 [Serper 指南](serper.md)。需要补充领域覆盖时，通过宿主工具查询 PubMed/Europe PMC 或 arXiv，并单独记录来源。
 
 材料问题可以按“对象 × 过程 × 目标/证据”展开。例如“受阻路易斯酸碱对光催化产氢”先查 `frustrated Lewis pairs photocatalytic hydrogen`，再查 `Lewis acid base pairs photothermal water splitting`；不能把 hydrogen evolution 与无牺牲剂整体分解水等同。根据召回论文中的真实术语修订查询，并记录修订原因。
 
@@ -14,7 +14,7 @@ Crossref 的主题补搜使用标题字段 `query.title`，避免 `Lewis` 等词
 
 先查候选并使用稳定作者 ID。核对已知种子是否属于候选，结合 ORCID、机构、合作者及研究时间；机构可能变化，不能只凭当前机构否定。没有足够信息就保留多个候选。
 
-作者作品表应保留完整作者列表、对应来源 ID 和机构，不能只截前五人或把第一作者当通讯作者。团队检索需说明是某作者作品、机构作品还是合作者扩展，不能用共同姓氏认定团队。日常查作者最近作品与后台定时追踪分开；只有用户明确要求定时工作时才另用宿主自动化。
+作者作品表应保留完整作者列表、对应来源 ID 和机构，不能只截前五人或把第一作者当通讯作者。Serper Scholar 的 `publicationInfo` 可能本身截断，需从出版社/题录源补核，未补全时注明缺失，不把摘录当完整作者表或摘要。团队检索需说明是某作者作品、机构作品还是合作者扩展，不能用共同姓氏认定团队。日常查作者最近作品与后台定时追踪分开；只有用户明确要求定时工作时才另用宿主自动化。
 
 ## 种子与引文
 
@@ -31,7 +31,7 @@ DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的�
 
 ## 运行条件
 
-凭证通过环境变量：`OPENALEX_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY`（兼容 `S2_API_KEY`）、`UNPAYWALL_EMAIL`、`CROSSREF_EMAIL`。不同 API 认证、预算和分页规则以当前官方文档为准。无 key 可进行的基本查询与需 key 的能力分别检查；不把限流当成无结果，也不读取不相关凭证。
+凭证通过环境变量：`OPENALEX_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY`（兼容 `S2_API_KEY`）、`UNPAYWALL_EMAIL`、`CROSSREF_EMAIL`，以及可选 `SERPER_API_KEY`。不同 API 认证、预算和分页规则以当前官方文档为准。无 key 可进行的基本查询与需 key 的能力分别检查；不把限流当成无结果，也不读取不相关凭证。
 
 外部后端可选：OmniScholar 用于额外来源/作者接口，ScanSci PDF 用于获取；easyseek/其他检索 CLI 接入前核对输出契约、许可与逐源状态。没有安装这些工具时核心流程仍可工作。复制上游代码需保留相应许可；本技能的核心实现独立编写。
 

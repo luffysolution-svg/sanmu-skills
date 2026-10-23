@@ -1,6 +1,6 @@
 ---
 name: sanmu-paper-search
-description: 从课题、种子论文或作者发现学术文献，查询参考、施引、相似论文和作者作品，合并去重并记录检索范围。用于找相关论文、全文或 SI、更新方向检索，以及整理 Zotero 分类与附件信息。支持同名作者消歧、日常检索和带协议的系统检索准备。
+description: 从课题、种子论文或作者发现学术文献，查询参考、施引、相似论文和作者作品，合并去重并记录检索范围。用于找相关论文、全文或 SI、Google Scholar 补搜、Google 网页与专利检索、更新方向检索，以及整理 Zotero 分类与附件信息。支持同名作者消歧、日常检索和带协议的系统检索准备；按需用 Serper 补充公开信息。
 ---
 
 # 文献发现与获取（sanmu-paper-search）
@@ -15,6 +15,7 @@ description: 从课题、种子论文或作者发现学术文献，查询参考�
 | 由一篇论文扩展相关研究 | 核对种子身份，分别查 references、citations、recommendations | [来源与检索策略](references/retrieval.md) |
 | 查看作者或团队其他研究 | 先列作者候选，核对稳定 ID、机构与已知作品，再查作品；同名/译名难消歧时用 `--from-paper` 从种子论文锚定 ID | [来源与检索策略](references/retrieval.md) |
 | 开题、范围综述、尽量查全或更新检索 | 冻结协议、分页与筛选记录，对已知文献和遗漏逐项检查 | [检索协议](references/protocol.md) |
+| Google Scholar 补搜、Google 网页/专利及相关公开信息 | 按需配置 Serper，选相应接口，核对返回内容与来源 | [Serper 指南](references/serper.md) |
 | 已有题录，找全文/SI、核对 Zotero 收藏 | 先查本地已有材料，定位可访问版本与附件 | [获取与交接](references/handoff.md) |
 | 整理文献库：重建分类、批量归档、规范附件名 | 宿主 Zotero 工具建子集合、迁移条目、改附件显示标题；物理文件名交 Zotero「根据父级元数据重命名」 | [获取与交接](references/handoff.md) |
 
@@ -64,7 +65,7 @@ python scripts/paper_search.py --help
 
 先回答用户要找什么、找到了什么，再给候选表：原文标题、年份、DOI/稳定 ID、入选理由及依据层级、全文/SI/本地状态。只列实际核对过的字段；不按期刊档次代替文章相关性或科学质量。
 
-长期任务保存 `run.json`、`papers.json`、脱敏原始响应、`report.md` 和哈希清单；筛选理由、排除原因与人工决定另行记录，不改原始响应。运行目录放用户工作区，不放技能仓库或公开提交；更新检索用新目录，比较新增、缺失与元数据变化，缺失不自动视为撤稿。
+长期任务保存 `run.json`、`papers.json`、脱敏原始响应、`report.md` 和哈希清单；Serper 另以 `results.json` / `response.json` 保留接口结果，`papers.json` 为空，核对稳定 ID 后再进入论文流程；筛选理由、排除原因与人工决定另行记录，不改原始响应。运行目录放用户工作区，不放技能仓库或公开提交；更新检索用新目录，比较新增、缺失与元数据变化，缺失不自动视为撤稿。
 
 完成前核对：
 

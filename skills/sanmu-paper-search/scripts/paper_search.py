@@ -27,6 +27,7 @@ from pathlib import Path
 from _core import (InputError, PROVIDERS, SCHEMA, Redactor, check_bundle, deduplicate, dumps,
                    load_papers, prepare_out, unique, write_bundle, zotero_records)
 from _providers import Client, Providers, SourceError, parse_id
+from _serper import MODES, execute as execute_serper, page_budget, positive_page
 
 
 class Parser(argparse.ArgumentParser):
@@ -55,6 +56,18 @@ def parser():
     p = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = p.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Show configuration presence as booleans, never credential values")
+    cmd = commands.add_parser("serper", help="Official Serper routes; untrusted typed results, no paper normalization")
+    cmd.add_argument("query", nargs="?")
+    cmd.add_argument("--type", choices=MODES, default="search")
+    cmd.add_argument("--url", help="Target URL for lens/webpage (sent as data to the fixed Serper endpoint)")
+    cmd.add_argument("--limit", type=bounded, default=10, help="Local per-query total cap (1..20); does not set num")
+    cmd.add_argument("--page", type=positive_page)
+    cmd.add_argument("--pages", type=page_budget, default=1, help="Maximum sequential pages (1..3), stopping at local cap")
+    cmd.add_argument("--params", help="Strict JSON object of allowed route parameters; scholar suppresses num")
+    cmd.add_argument("--year-from", type=int, help="Scholar only; sent as as_ylo")
+    cmd.add_argument("--year-to", type=int, help="Scholar only; sent as as_yhi")
+    cmd.add_argument("--batch", help="Explicit JSON file: 1..100 request objects, one POST to the selected endpoint")
+    cmd.add_argument("--out", required=True)
     for name in ("search", "lookup", "related"):
         cmd = commands.add_parser(name)
         cmd.add_argument("query" if name == "search" else "id")
@@ -152,12 +165,16 @@ def execute(args, client):
         return {"schema": SCHEMA, "status": "success", "python_supported": sys.version_info >= (3, 10),
                 "configuration": {"semantic_scholar_api_key": bool(env.get("S2_API_KEY") or env.get("SEMANTIC_SCHOLAR_API_KEY")),
                                   "openalex_api_key": bool(env.get("OPENALEX_API_KEY")),
+                                  "serper_api_key": bool(env.get("SERPER_API_KEY")),
+                                  "openalex_email": bool(env.get("OPENALEX_EMAIL")),
                                   "unpaywall_email": bool(env.get("UNPAYWALL_EMAIL")),
                                   "crossref_email": bool(env.get("CROSSREF_EMAIL")),
                                   "polite_email": bool(env.get("POLITE_EMAIL"))}}, 0
     if args.command == "check":
         result = check_bundle(args.run, args.include_metadata)
         return result, 4 if result["status"] == "failed" else 0
+    if args.command == "serper":
+        return execute_serper(args, client)
     # Input errors are diagnosed before reserving a directory or issuing a request.
     command = args.command
     year_from, year_to = getattr(args, "year_from", None), getattr(args, "year_to", None)

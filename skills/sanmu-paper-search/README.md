@@ -20,7 +20,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 2. 阅读技能 SKILL.md 和 README，在技能目录运行：
    python scripts/paper_search.py doctor
    python scripts/paper_search.py --help
-3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 是否配置，不显示值。没有凭证时说明可用范围，确需配置才指向官方注册页。
+3. 仅检查 OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY（兼容 S2_API_KEY）、UNPAYWALL_EMAIL、CROSSREF_EMAIL 和可选 SERPER_API_KEY 是否配置，不显示值。Serper 按需补充 Google Scholar、网页、专利等公开检索；没有凭证时说明可用范围，确需配置才指向官方注册页。
 4. 如需 Zotero，检查宿主插件与本地 API；不要直接读取数据库或 storage。没有 Zotero 也能使用核心检索。
 5. 在仓库之外的新工作目录做一次小规模公开文献查询，报告逐源状态、安装位置与限制；不改 Zotero 文献。
 ```
@@ -52,7 +52,15 @@ python scripts/paper_search.py oa /path/to/work/seed --out /path/to/work/oa
 python scripts/paper_search.py check /path/to/work/seed
 ```
 
-Windows 使用实际绝对路径并加引号。作者候选核对后，用 `author --author-id ID --provider ...` 获取作品。`search` 和作者作品支持 `--year-from` / `--year-to`。`--limit` 为每源预算，跨源去重后全部保留；默认不做跨库相关性重排，助手根据实际阅读形成候选短名单。参数与记录格式见 [CLI 指南](references/cli.md)。
+可选的 Google 补搜使用独立子命令（先配置 `SERPER_API_KEY`）：
+
+```bash
+python scripts/paper_search.py serper "single atom carbon nitride photocatalytic hydrogen" --type scholar --year-from 2020 --year-to 2022 --limit 5 --out /path/to/work/scholar
+```
+
+其余 12 类公开接口、PowerShell/Bash 安全配置、批量请求与费用边界见 [Serper 指南](references/serper.md)。Serper 的 `--limit` 是每查询跨页合计的本地上限，结果保存在 `results.json` / `response.json`；`papers.json` 为空，核对稳定 ID 后再交给论文流程。
+
+Windows 使用实际绝对路径并加引号。作者候选核对后，用 `author --author-id ID --provider ...` 获取作品。`search` 和作者作品支持 `--year-from` / `--year-to`。原有学术检索的 `--limit` 为每源预算，跨源去重后全部保留；默认不做跨库相关性重排，助手根据实际阅读形成候选短名单。参数与记录格式见 [CLI 指南](references/cli.md)。
 
 ## 来源与依赖
 
@@ -62,6 +70,7 @@ Windows 使用实际绝对路径并加引号。作者候选核对后，用 `auth
 | Semantic Scholar | 主题、作者、引文和相似推荐 | `SEMANTIC_SCHOLAR_API_KEY` 或 `S2_API_KEY`；共享匿名池可能限流 |
 | Crossref | 题录/DOI核对、补召回 | 可选 `CROSSREF_EMAIL` |
 | Unpaywall | DOI 对应 OA 位置 | `UNPAYWALL_EMAIL`，不用于关键词搜索 |
+| Serper（可选） | Google Scholar、网页、专利及其他公开信息，共 13 类接口 | `SERPER_API_KEY`，按请求计费；[配置与接口](references/serper.md) |
 | Zotero | 检查收藏与已有附件 | 宿主 Zotero 工具，或本地标准 JSON 导出 |
 
 按需配置上表中的 API 凭证即可使用核心检索。其他学术工具可作为补充来源，接入时核对其返回格式和访问许可。

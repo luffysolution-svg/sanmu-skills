@@ -13,7 +13,7 @@ Run from the repository root with Python 3.10+ and Git:
 ```bash
 python distribution/build.py check
 python -m unittest discover -s distribution/tests -v
-python distribution/build.py build --out dist/1.3.0
+python distribution/build.py build --out dist/1.4.0
 ```
 
 Stage new runtime files before building. Inputs use tracked paths from the Git index and current working-tree bytes. Stage moves before release validation; a missing tracked runtime file fails validation to prevent silent omissions. Skill packages accept root `SKILL.md`, READMEs, LICENSE, requirements, and the `scripts/`, `references/` and `assets/` trees. Tests, examples, development docs and ROADMAP are excluded. Nested tests, caches, `_selftest.py`, credentials and installed dependencies cause runtime validation to fail. Existing output directories are never overwritten; use a new output path for another build.
@@ -42,9 +42,9 @@ All paths are relative to the repository root. Examples and showcase images supp
 
 Outputs:
 
-- `sanmu-skills-1.3.0.zip`: portable plugin with all three skills, root `plugin.json`, Claude metadata and licenses. It can be submitted to the OpenAI public plugin directory, subject to platform checks and review.
+- `sanmu-skills-1.4.0.zip`: portable plugin with all three skills, root `plugin.json`, Claude metadata and licenses. It can be submitted to the OpenAI public plugin directory, subject to platform checks and review.
 - `skillhub/<skill-name>/`: directories for Tencent CLI publication.
-- `skillhub/<skill-name>-1.3.0.zip`: archives matching those directories, with root `SKILL.md`. Check the live web uploader for its accepted formats.
+- `skillhub/<skill-name>-1.4.0.zip`: archives matching those directories, with root `SKILL.md`. Check the live web uploader for its accepted formats.
 - `SHA256SUMS`: SHA-256 checksums of the four ZIP files.
 
 The builder adds Tencent's `slug`, `displayName`, `version`, `summary` and `license` to generated skill frontmatter. It preserves skill bodies and resources, without adding Tencent-specific top-level fields to the portable sources.
@@ -70,23 +70,23 @@ All three skills are published:
 | sanmu-paper-reader | `sanmu-paper-reader` |
 | sanmu-paper-search | `sanmu-paper-search` |
 
-Upload the built artifact `skillhub/<skill-name>-<version>.zip`, not the `skills/<skill-name>/` source directory: its `node_modules/` and `__pycache__/` push doc2md past the 200-file limit and make the other skills skip `.pyc` files. The platform allows 200 files and 10 MB per package; the current packages contain 31, 23 and 12 files. Update later versions from the console's version history without changing the slug.
+Upload the built artifact `skillhub/<skill-name>-<version>.zip`, not the `skills/<skill-name>/` source directory: its `node_modules/` and `__pycache__/` push doc2md past the 200-file limit and make the other skills skip `.pyc` files. The platform allows 200 files and 10 MB per package; the current packages contain 31, 23 and 14 files. Update later versions from the console's version history without changing the slug.
 
 To publish with an API token, complete identity verification and configure it using the [official guide](https://skillhub.cn/tutorials). The Windows publication guide uses WSL. Keep tokens out of source files, examples and commits.
 
 ```bash
 skillhub auth whoami
-skillhub publish ./dist/1.3.0/skillhub/sanmu-doc2md --dry-run
-skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-reader --dry-run
-skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-search --dry-run
+skillhub publish ./dist/1.4.0/skillhub/sanmu-doc2md --dry-run
+skillhub publish ./dist/1.4.0/skillhub/sanmu-paper-reader --dry-run
+skillhub publish ./dist/1.4.0/skillhub/sanmu-paper-search --dry-run
 ```
 
 After validation, submit each directory:
 
 ```bash
-skillhub publish ./dist/1.3.0/skillhub/sanmu-doc2md --changelog "Initial release"
-skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-reader --changelog "Initial release"
-skillhub publish ./dist/1.3.0/skillhub/sanmu-paper-search --changelog "Initial release"
+skillhub publish ./dist/1.4.0/skillhub/sanmu-doc2md --changelog "Initial release"
+skillhub publish ./dist/1.4.0/skillhub/sanmu-paper-reader --changelog "Initial release"
+skillhub publish ./dist/1.4.0/skillhub/sanmu-paper-search --changelog "Initial release"
 ```
 
 `pending_review` means submitted, not publicly listed.

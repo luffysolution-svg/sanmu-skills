@@ -1,6 +1,6 @@
 {
   "name": "sanmu-skills",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "license": "MIT",
   "repository": "https://github.com/luffysolution-svg/sanmu-skills",
   "packageBudget": {
@@ -21,7 +21,7 @@
     {
       "name": "sanmu-paper-search",
       "displayName": "三木 · 文献检索",
-      "summary": "从课题、论文或作者检索文献，合并题录、扩展引文、定位全文与 SI，并匹配 Zotero 收藏。"
+      "summary": "检索文献、扩展引文和匹配 Zotero；可选 Serper 补充 Google 学术、专利、网页与图像线索及公开页面提取。"
     }
   ]
 }

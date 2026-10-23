@@ -18,7 +18,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 2. Read SKILL.md and README. From the skill directory run:
    python scripts/paper_search.py doctor
    python scripts/paper_search.py --help
-3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL and CROSSREF_EMAIL are configured. Never display values. Explain available capabilities without credentials; point to official registration only when needed.
+3. Check only whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (or S2_API_KEY), UNPAYWALL_EMAIL, CROSSREF_EMAIL and optional SERPER_API_KEY are configured. Never display values. Serper adds Google Scholar, web, patent and other public searches on demand. Explain available capabilities without credentials; point to official registration only when needed.
 4. For Zotero, check the host integration and local API. Do not read its database or storage directly. Core search also works without Zotero.
 5. Run a small public-paper query into a new directory outside the repository. Report per-source status, installation path and limitations. Do not modify Zotero items.
 ```
@@ -50,7 +50,15 @@ python scripts/paper_search.py oa /path/to/work/seed --out /path/to/work/oa
 python scripts/paper_search.py check /path/to/work/seed
 ```
 
-On Windows, quote actual absolute paths. After checking candidates, use `author --author-id ID --provider ...` for publications. Topic search and author publications support `--year-from` / `--year-to`. `--limit` is a per-source budget; all deduplicated candidates are retained in source order, without cross-provider relevance reranking. The assistant reads and screens the shortlist. See the [CLI contract](references/cli.md).
+Optional Google discovery uses a separate command (configure `SERPER_API_KEY` first):
+
+```bash
+python scripts/paper_search.py serper "single atom carbon nitride photocatalytic hydrogen" --type scholar --year-from 2020 --year-to 2022 --limit 5 --out /path/to/work/scholar
+```
+
+See the [Serper guide](references/serper.md) for all 13 public API types, safe PowerShell/Bash configuration, batch requests and credit limits. For Serper, `--limit` caps retained results per query across pages locally. Typed results and complete responses go into `results.json` / `response.json`; `papers.json` stays empty. Verify stable IDs before entering the paper workflow. Scholar snippets are not abstracts, publication details may truncate authors, PDF links do not establish OA, and webpage extraction may omit article content.
+
+On Windows, quote actual absolute paths. After checking candidates, use `author --author-id ID --provider ...` for publications. Topic search and author publications support `--year-from` / `--year-to`. For the core scholarly commands, `--limit` is a per-source budget; all deduplicated candidates are retained in source order, without cross-provider relevance reranking. The assistant reads and screens the shortlist. See the [CLI contract](references/cli.md).
 
 ## Sources
 
@@ -60,6 +68,7 @@ On Windows, quote actual absolute paths. After checking candidates, use `author 
 | Semantic Scholar | Topics, authors, graph relations and recommendations | `SEMANTIC_SCHOLAR_API_KEY` or `S2_API_KEY`; the anonymous pool may throttle |
 | Crossref | DOI/metadata verification and supplementary discovery | Optional `CROSSREF_EMAIL` |
 | Unpaywall | OA locations by DOI, not keyword discovery | `UNPAYWALL_EMAIL` |
+| Serper (optional) | Google Scholar, web, patents and other public information across 13 API types | `SERPER_API_KEY`; requests consume credits; [configuration and routes](references/serper.md) |
 | Zotero | Existing items and attachments | Host tools or a local standard JSON export |
 
 Configure the API credentials above as needed. Other scholarly tools can supplement coverage after checking their response formats and access terms.

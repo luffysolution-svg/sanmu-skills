@@ -36,6 +36,10 @@ class Client:
         self.last = {}
         self.raw = []
 
+    def post_serper(self, mode, payload):
+        from _serper import post
+        return post(self, mode, payload)
+
     def get(self, source, path, params=None):
         params = dict(params or {})
         headers = {"User-Agent": "sanmu-paper-search/1.0 (metadata; Python stdlib)", "Accept": "application/json"}
