@@ -22,6 +22,14 @@ DEVELOPMENT_PARTS = {"tests", "examples", "docs"}
 SKILL_ROOT_FILES = {"SKILL.md", "LICENSE", "README.md", "README.en.md", "requirements.txt"}
 # SkillHub rejects uploads containing files without an extension; license stays in the bundle.
 SKILLHUB_EXCLUDED_FILES = {"LICENSE"}
+ZCODE_SHELL_DIR = "distribution/zcode/sanmu-paper-search"
+ZCODE_SHELL_FILES = (
+    ".zcode-plugin/plugin.json",
+    "assets/panel.html",
+    "commands/help.md",
+    "scripts/mcp-server.mjs",
+    "README.md",
+)
 FRONTMATTER_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
 
 
@@ -116,8 +124,9 @@ def tracked_files(root):
 def validate(root=ROOT):
     release = read_json(root / "distribution/manifest.json")
     version = release["version"]
-    if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version):
-        raise ValueError("Release version must be a semantic version")
+    for value in (version, release.get("workbuddyVersion", version)):
+        if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", value):
+            raise ValueError("Release and WorkBuddy versions must be semantic versions")
     names = [skill["name"] for skill in release["skills"]]
     if len(names) != len(set(names)) or not names:
         raise ValueError("Skill names must be unique and non-empty")
@@ -131,6 +140,13 @@ def validate(root=ROOT):
             raise ValueError(f"Missing SkillHub display metadata: {name}")
         if not skill.get("displayNameEn") or not skill.get("summaryEn") or not release.get("author"):
             raise ValueError(f"Missing WorkBuddy display metadata: {name}")
+        workbuddy_name = skill.get("workbuddyName", name)
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", workbuddy_name) or len(workbuddy_name) > 64:
+            raise ValueError(f"Invalid WorkBuddy skill name: {name}")
+        for field in ("workbuddyDisplayName", "workbuddyDisplayNameEn"):
+            value = skill.get(field, "")
+            if not isinstance(value, str) or not re.fullmatch(r"[\u4e00-\u9fffA-Za-z0-9_-]+", value):
+                raise ValueError(f"Invalid WorkBuddy paid display name {field}: {name}")
         if not (directory / "LICENSE").is_file():
             raise ValueError(f"Standalone skill lacks LICENSE: {name}")
     for path in ("plugin.json", ".claude-plugin/plugin.json"):
@@ -172,6 +188,15 @@ def validate(root=ROOT):
             if f"skills/{name}/{filename}" not in selected:
                 raise ValueError(f"Missing tracked package file: {name}/{filename}")
     validate_runtime_references(root, selected, names)
+    zcode_shell_root = root / ZCODE_SHELL_DIR
+    if zcode_shell_root.is_dir():
+        for rel in ZCODE_SHELL_FILES:
+            shell_file = zcode_shell_root / rel
+            if not shell_file.is_file():
+                raise ValueError(f"Missing ZCode plugin shell file: {ZCODE_SHELL_DIR}/{rel}")
+        zcode_plugin = read_json(zcode_shell_root / ".zcode-plugin/plugin.json")
+        if zcode_plugin.get("name") != "sanmu-paper-search" or zcode_plugin.get("version") != version:
+            raise ValueError("ZCode plugin name/version differs from release manifest")
     budget = release.get("packageBudget", {"maxFiles": 200, "maxBytes": 5 * 1024 * 1024})
     for key in ("maxFiles", "maxBytes"):
         if type(budget.get(key)) is not int or budget[key] <= 0:
@@ -195,12 +220,13 @@ def skillhub_document(text, skill, release):
 def workbuddy_document(text, skill, release):
     # WorkBuddy requires description_zh, description_en, version and author;
     # uploads without display names were rejected in practice.
+    text = re.sub(r"(?m)^name:[^\r\n]*", f"name: {skill.get('workbuddyName', skill['name'])}", text, count=1)
     return platform_document(text, {
-        "display_name": skill["displayName"],
-        "display_name_en": skill["displayNameEn"],
+        "display_name": skill["workbuddyDisplayName"],
+        "display_name_en": skill["workbuddyDisplayNameEn"],
         "description_zh": skill["summary"],
         "description_en": skill["summaryEn"],
-        "version": release["version"],
+        "version": release.get("workbuddyVersion", release["version"]),
         "author": release["author"],
     })
 
@@ -252,9 +278,36 @@ def build(output, root=ROOT):
         archives.append(archive)
         # Same file set as SkillHub, with SKILL.md at the archive root.
         entries["SKILL.md"] = workbuddy_document(text, skill, release).encode("utf-8")
-        archive = workbuddy / f"{skill['name']}-{release['version']}.zip"
+        archive = workbuddy / f"{skill.get('workbuddyName', skill['name'])}-{release.get('workbuddyVersion', release['version'])}.zip"
         write_zip(archive, entries)
         archives.append(archive)
+    zcode_shell_root = root / ZCODE_SHELL_DIR
+    if zcode_shell_root.is_dir():
+        zcode = output / "zcode"
+        zcode.mkdir()
+        zcode_dir = zcode / "sanmu-paper-search"
+        zcode_entries = {}
+        for rel in ZCODE_SHELL_FILES:
+            zcode_entries[rel] = (zcode_shell_root / rel).read_bytes()
+        search_prefix = "skills/sanmu-paper-search/"
+        for path, data in bundle.items():
+            if not path.startswith(search_prefix):
+                continue
+            rel = path[len(search_prefix):]
+            if rel == "LICENSE":
+                zcode_entries["LICENSE"] = data
+            elif rel == "SKILL.md" or rel.startswith("references/"):
+                zcode_entries[f"skills/sanmu-paper-search/{rel}"] = data
+            elif rel.startswith("scripts/"):
+                zcode_entries[rel] = data
+                zcode_entries[f"skills/sanmu-paper-search/{rel}"] = data
+        for rel, data in zcode_entries.items():
+            dest = zcode_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+        zcode_archive = zcode / f"sanmu-paper-search-zcode-plugin-{release['version']}.zip"
+        write_zip(zcode_archive, zcode_entries)
+        archives.append(zcode_archive)
     checksums = []
     for path in archives:
         checksums.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(output).as_posix()}")

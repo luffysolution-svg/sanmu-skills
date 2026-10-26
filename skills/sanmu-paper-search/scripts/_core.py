@@ -254,7 +254,15 @@ def _combine(group):
         if len(alternatives) > 1:
             result["conflicts"].append({"field": field, "values": alternatives})
         if alternatives:
-            result[field] = max(alternatives, key=len) if field in ("authors", "abstract") else alternatives[0]
+            if field == "abstract":
+                result[field] = max(alternatives, key=len)
+            elif field == "authors":
+                result[field] = max(alternatives, key=lambda lst: (len(lst), sum(bool(a.get("identifiers")) + bool(a.get("affiliations")) for a in lst)))
+            elif field in ("citation_count", "reference_count"):
+                nums = [x for x in alternatives if isinstance(x, int)]
+                result[field] = max(nums) if nums else alternatives[0]
+            else:
+                result[field] = alternatives[0]
     result["authors"] = _merge_authors(group, result.get("authors") or [])
     for key, values in result["identifiers"].items():
         if len(values) > 1:

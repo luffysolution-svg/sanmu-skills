@@ -39,16 +39,52 @@ class DistributionTests(unittest.TestCase):
             for key in ("description_zh", "description_en", "version", "author", "display_name", "display_name_en"):
                 self.assertTrue(json.loads(fields[key]))
 
+    def test_workbuddy_paid_names_are_separate_from_skillhub_names(self):
+        release, _ = build.validate()
+        expected = {
+            "sanmu-doc2md": ("三木学术文档转Markdown", "Sanmu-Academic-Docs-to-Markdown"),
+            "sanmu-paper-reader": ("三木文献精读", "Sanmu-Paper-Reader"),
+            "sanmu-paper-search": ("三木文献检索", "Sanmu-Paper-Search"),
+        }
+        for skill in release["skills"]:
+            original = (build.ROOT / "skills" / skill["name"] / "SKILL.md").read_text(encoding="utf-8")
+            fields, _ = build.skill_header(build.workbuddy_document(original, skill, release))
+            self.assertEqual((json.loads(fields["display_name"]), json.loads(fields["display_name_en"])),
+                             expected[skill["name"]])
+            skillhub_fields, _ = build.skill_header(build.skillhub_document(original, skill, release))
+            self.assertEqual(json.loads(skillhub_fields["displayName"]), skill["displayName"])
+            self.assertEqual(fields["name"], skill["name"] + "-paid")
+            self.assertEqual(skillhub_fields["name"], skill["name"])
+            self.assertEqual(json.loads(fields["version"]), release["workbuddyVersion"])
+            self.assertEqual(json.loads(skillhub_fields["version"]), release["version"])
+
+    def test_workbuddy_paid_names_reject_spaces_and_special_characters(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fixture(root)
+            manifest = root / "distribution/manifest.json"
+            release = json.loads(manifest.read_text(encoding="utf-8"))
+            for field in ("workbuddyDisplayName", "workbuddyDisplayNameEn"):
+                original = release["skills"][0][field]
+                for invalid in ("三木 · 文献检索", "Sanmu Paper Search", "Sanmu/Paper", "", None):
+                    with self.subTest(field=field, invalid=invalid):
+                        release["skills"][0][field] = invalid
+                        manifest.write_text(json.dumps(release), encoding="utf-8")
+                        with self.assertRaisesRegex(ValueError, "WorkBuddy paid display name"):
+                            build.validate(root)
+                release["skills"][0][field] = original
+
     def test_archives_are_complete_deterministic_and_exclude_untracked(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             first = build.build(root / "first")
             second = build.build(root / "second")
-            self.assertEqual(len(first), 7)
+            self.assertEqual(len(first), 8)
             self.assertNotIn(b"\r", (root / "first" / "SHA256SUMS").read_bytes())
             for left, right in zip(first, second):
                 self.assertEqual(left.read_bytes(), right.read_bytes())
                 is_skillhub = "skillhub" in left.parts or "workbuddy" in left.parts
+                is_zcode = "zcode" in left.parts
                 with zipfile.ZipFile(left) as archive:
                     self.assertIsNone(archive.testzip())
                     names = archive.namelist()
@@ -56,9 +92,16 @@ class DistributionTests(unittest.TestCase):
                     self.assertFalse(any(build.BLOCKED_PARTS.intersection(Path(name).parts) for name in names))
                     if is_skillhub:
                         self.assertFalse(any(Path(name).name == "LICENSE" for name in names))
+                    if is_zcode:
+                        self.assertIn(".zcode-plugin/plugin.json", names)
+                        self.assertIn("assets/panel.html", names)
+                        self.assertIn("scripts/mcp-server.mjs", names)
+                        self.assertIn("scripts/paper_search.py", names)
+                        self.assertIn("skills/sanmu-paper-search/SKILL.md", names)
             with zipfile.ZipFile(first[0]) as archive:
                 self.assertIn("plugin.json", archive.namelist())
                 self.assertIn("skills/sanmu-paper-search/LICENSE", archive.namelist())
+                self.assertIn("skills/sanmu-paper-search/SKILL.md", archive.namelist())
                 self.assertIn("skills/sanmu-paper-reader/requirements.txt", archive.namelist())
             with self.assertRaises(FileExistsError):
                 build.build(root / "first")

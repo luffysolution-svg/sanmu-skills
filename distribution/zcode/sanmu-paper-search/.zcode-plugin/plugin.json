@@ -1,0 +1,95 @@
+{
+  "name": "sanmu-paper-search",
+  "version": "1.6.3",
+  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、Google Scholar/Patents (Serper) 与 Exa AI 多源检索、学者消歧、引文网络扩展、OA/SI 全文抓包、阅读进度追踪、Zotero 本地查重及一键导出项目知识库。",
+  "author": {
+    "name": "Sanmu (Wu Sen)"
+  },
+  "license": "MIT",
+  "skills": "./skills",
+  "commands": "./commands",
+  "mcpServers": {
+    "sanmu-paper-search": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs"],
+      "cwd": "${ZCODE_PROJECT_DIR}",
+      "timeoutMs": 300000,
+      "env": {
+        "ZCODE_WORKSPACE_ROOT": "${ZCODE_PROJECT_DIR}",
+        "ZCODE_PLUGIN_DATA": "${ZCODE_PLUGIN_DATA}",
+        "SANMU_PLUGIN_ROOT": "${CLAUDE_PLUGIN_ROOT}",
+        "USER_CONFIG_POLITE_EMAIL": "${user_config.politeEmail}",
+        "USER_CONFIG_OPENALEX_API_KEY": "${user_config.openalexApiKey}",
+        "USER_CONFIG_S2_API_KEY": "${user_config.s2ApiKey}",
+        "USER_CONFIG_EXA_API_KEY": "${user_config.exaApiKey}",
+        "USER_CONFIG_SERPER_API_KEY": "${user_config.serperApiKey}",
+        "USER_CONFIG_ZOTERO_URL": "${user_config.zoteroUrl}",
+        "USER_CONFIG_EXPORT_SUBDIR": "${user_config.exportSubdir}"
+      }
+    }
+  },
+  "userConfig": {
+    "politeEmail": {
+      "type": "string",
+      "default": "",
+      "title": "联系邮箱 (Polite Pool 推荐)",
+      "description": "可选但推荐。填入常用邮箱可自动进入 OpenAlex、Crossref、Unpaywall 的礼貌加速池，减少匿名限流并解锁 Unpaywall 免费全文定位。"
+    },
+    "serperApiKey": {
+      "type": "string",
+      "default": "",
+      "title": "Serper API Key (Google Scholar / 专利)",
+      "description": "可选。用于 Google Scholar 谷歌学术、Google Patents 专利与学术网页补搜；也可直接在右侧「三木文献检索」面板内随时设置。"
+    },
+    "exaApiKey": {
+      "type": "string",
+      "default": "",
+      "title": "Exa API Key (AI 语义搜论文)",
+      "description": "可选。用于 Exa 自然语言/中文语义搜论文；也可直接在右侧「三木文献检索」面板内随时设置。"
+    },
+    "s2ApiKey": {
+      "type": "string",
+      "default": "",
+      "title": "Semantic Scholar API Key (可选)",
+      "description": "可选。不填时默认使用免费公共池；填入后可享独立高速限流配额。"
+    },
+    "openalexApiKey": {
+      "type": "string",
+      "default": "",
+      "title": "OpenAlex API Key (可选)",
+      "description": "可选。不填时默认免费直连 OpenAlex。"
+    },
+    "zoteroUrl": {
+      "type": "string",
+      "default": "http://127.0.0.1:23119",
+      "title": "本机 Zotero 服务地址",
+      "description": "可选。用于自动检测本机 Zotero 桌面端是否已收录检索到的论文，默认 http://127.0.0.1:23119。"
+    },
+    "exportSubdir": {
+      "type": "string",
+      "default": "00-收件箱-待整理/文献检索",
+      "title": "知识库默认导出文件夹",
+      "description": "在侧栏点击「导出 Obsidian 文献笔记」或「导出引文包」时，文件默认保存到当前工作区下的该相对路径。"
+    }
+  },
+  "ui": {
+    "surfaces": [
+      {
+        "id": "sanmu-paper-search",
+        "title": {
+          "zh-CN": "三木文献检索",
+          "en-US": "Sanmu Paper Search"
+        },
+        "icon": "library",
+        "server": "sanmu-paper-search",
+        "resourceUri": "ui://sanmu-paper-search/panel.html",
+        "availability": "session"
+      }
+    ]
+  },
+  "description_i18n": {
+    "en": "Search, verify, and explore academic literature in a side panel: OpenAlex, Semantic Scholar, Crossref, Europe PMC, Google Scholar/Patents (Serper) and Exa AI, with author disambiguation, citation chasing, OA/SI fetching, local Zotero matching, and one-click export to your workspace knowledge base.",
+    "zh-CN": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、Google Scholar/Patents (Serper) 与 Exa AI 多源检索、学者消歧、引文网络扩展、OA/SI 全文抓包、阅读进度追踪、Zotero 本地查重及一键导出项目知识库。"
+  }
+}

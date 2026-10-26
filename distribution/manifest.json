@@ -1,6 +1,7 @@
 {
   "name": "sanmu-skills",
-  "version": "1.6.2",
+  "version": "1.6.3",
+  "workbuddyVersion": "1.6.3",
   "license": "MIT",
   "author": "三木 / Sanmu",
   "repository": "https://github.com/luffysolution-svg/sanmu-skills",
@@ -11,21 +12,30 @@
   "skills": [
     {
       "name": "sanmu-doc2md",
+      "workbuddyName": "sanmu-doc2md-paid",
       "displayName": "三木 · 学术文档转 Markdown",
+      "workbuddyDisplayName": "三木学术文档转Markdown",
+      "workbuddyDisplayNameEn": "Sanmu-Academic-Docs-to-Markdown",
       "summary": "将论文、教材与课件整理为保留 LaTeX 公式、高清图表和 Zotero 元数据的 Markdown 知识库。",
       "displayNameEn": "Sanmu · Academic Docs to Markdown",
       "summaryEn": "Turn papers, textbooks and slides into a Markdown knowledge base that keeps LaTeX formulas, high-resolution figures and Zotero metadata."
     },
     {
       "name": "sanmu-paper-reader",
+      "workbuddyName": "sanmu-paper-reader-paid",
       "displayName": "三木 · 文献精读",
+      "workbuddyDisplayName": "三木文献精读",
+      "workbuddyDisplayNameEn": "Sanmu-Paper-Reader",
       "summary": "精读论文与补充材料，核对图表证据、复现参数和性能基准，形成可追溯的研究笔记。",
       "displayNameEn": "Sanmu · Paper Reader",
       "summaryEn": "Read papers and supplementary information closely, check figure evidence, reproduction parameters and benchmarks, and keep traceable research notes."
     },
     {
       "name": "sanmu-paper-search",
+      "workbuddyName": "sanmu-paper-search-paid",
       "displayName": "三木 · 文献检索",
+      "workbuddyDisplayName": "三木文献检索",
+      "workbuddyDisplayNameEn": "Sanmu-Paper-Search",
       "summary": "检索文献、扩展引文和匹配 Zotero；集成 Europe PMC 结构化 JATS 全文与补充材料原图包获取、预印本与撤稿核验，可选 Exa 语义补搜及 Serper 检索。",
       "displayNameEn": "Sanmu · Paper Search",
       "summaryEn": "Find literature, follow citations and match Zotero holdings; fetch Europe PMC full text and SI figures, check retractions, with optional Exa and Serper search."

@@ -153,6 +153,12 @@ def request_epmc(client, url, accept="application/json", binary=False):
         except (URLError, OSError, TimeoutError) as exc:
             audit["error"] = client.redactor.text(str(exc))
             client.raw.append(client.redactor.clean(audit))
+            if getattr(client.rate_limiter, "shared", False) and attempt < 2:
+                delay = min(1.5 * (attempt + 1), max(0.0, 10.0 - waited))
+                if delay > 0:
+                    client.sleep(delay)
+                    waited += delay
+                    continue
             raise SourceError("Network error: " + audit["error"]) from exc
         except SourceError as exc:
             audit["error"] = str(exc)

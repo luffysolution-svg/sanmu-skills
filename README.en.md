@@ -57,6 +57,7 @@ The three skills can be used separately or chained: **search** → get the PDF /
 | **npx skills** (general) | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g` | Three skills, can be selected individually |
 | **Claude Code** | Plugin marketplace, see below | Collection plugin |
 | **Codex** | Plugin marketplace, see below | Collection plugin |
+| **ZCode** | Plugin marketplace or Release plugin bundle, see below | Collection plugin / side-panel search plugin |
 | **Tencent SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | Individual skills |
 | **WorkBuddy** | Search for "三木" in the client under 专家·技能·连接器 → 技能 (Experts · Skills · Connectors → Skills) | Individual skills |
 | **skills.sh / SkillsMP** | [Collection page](https://skills.sh/luffysolution-svg/sanmu-skills); install with the npx command | Three skills |
@@ -122,6 +123,16 @@ codex plugin add sanmu-skills@sanmu-skills
 ```
 
 Requires a recent Codex CLI that supports `plugin marketplace`. Start a new session after installation; you can manage plugins under `/plugins`.
+
+### ZCode
+
+```bash
+# Install the three-skill collection
+zcode plugin marketplace add luffysolution-svg/sanmu-skills
+zcode plugin install sanmu-skills@sanmu-skills
+```
+
+To use the standalone `sanmu-paper-search` ZCode Desktop plugin with its interactive side panel, live physics citation graph and local Zotero integration, download `sanmu-paper-search-zcode-plugin-<version>.zip` from the latest [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest).
 
 ### Manual installation
 

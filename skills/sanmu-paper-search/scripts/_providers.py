@@ -257,6 +257,24 @@ def normalize(source, data):
         if data.get("is_authors_truncated"):
             p["authors_truncated"] = True
         p["oa_status"] = data.get("open_access") or {}
+        primary_loc = data.get("primary_location") or {}
+        src_obj = (primary_loc.get("source") if isinstance(primary_loc, dict) else None) or {}
+        oa_venue = (src_obj.get("display_name") if isinstance(src_obj, dict) else None) or (
+            (data.get("host_venue") or {}).get("display_name") if isinstance(data.get("host_venue"), dict) else None
+        )
+        if oa_venue:
+            p["venue"] = oa_venue
+            p["journal"] = oa_venue
+        if isinstance(data.get("cited_by_count"), int):
+            p["citation_count"] = data["cited_by_count"]
+        if isinstance(data.get("referenced_works_count"), int):
+            p["reference_count"] = data["referenced_works_count"]
+        elif isinstance(data.get("referenced_works"), list):
+            p["reference_count"] = len(data["referenced_works"])
+        if data.get("publication_date"):
+            p["publication_date"] = data["publication_date"]
+        if isinstance(primary_loc, dict) and primary_loc.get("landing_page_url"):
+            p["url"] = primary_loc["landing_page_url"]
         return p
     if source == "semantic-scholar":
         external = data.get("externalIds") or {}
@@ -269,6 +287,10 @@ def normalize(source, data):
         pdf = data.get("openAccessPdf") or {}
         locations = [location(pdf["url"], source, data.get("isOpenAccess"), pdf.get("license"),
                               "openAccessPdf", pdf.get("status"))] if pdf.get("url") else []
+        for arx_id in identifiers.get("arxiv", []):
+            arx_pdf = f"https://arxiv.org/pdf/{arx_id}.pdf"
+            if not any(loc.get("url") == arx_pdf for loc in locations):
+                locations.append(location(arx_pdf, source, True, "arxiv", "arxiv_pdf", "submittedVersion"))
         p = record(source, data.get("paperId"), data.get("title"), data.get("year"), identifiers,
                    authors, data.get("abstract"), ",".join(data.get("publicationTypes") or []) or None, locations)
         p["oa_status"] = {"is_oa": data.get("isOpenAccess")}
@@ -279,9 +301,16 @@ def normalize(source, data):
                 p[field] = data[remote]
         return p
     titles = data.get("title") or []
-    authors = [{"name": a.get("name") or " ".join(filter(None, [a.get("given"), a.get("family")])),
-                "identifiers": ids(orcid=a.get("ORCID")), "affiliations": a.get("affiliation") or []}
-               for a in data.get("author") or []]
+    inst_re = re.compile(r"\b(?:university|institute|school of|department of|college of|laboratory|academy of|faculty of|ministry of|center for|centre for|hospital)\b", re.I)
+    authors = []
+    for a in data.get("author") or []:
+        given_family = " ".join(filter(None, [a.get("given"), a.get("family")])).strip()
+        org_name = (a.get("name") or "").strip()
+        if not given_family and org_name and (inst_re.search(org_name) or len(org_name) > 60):
+            continue
+        final_name = given_family or org_name
+        if final_name:
+            authors.append({"name": final_name, "identifiers": ids(orcid=a.get("ORCID")), "affiliations": a.get("affiliation") or []})
     date = data.get("published") or data.get("issued") or data.get("published-online") or {}
     parts = date.get("date-parts") or [[]]
     year = parts[0][0] if parts and parts[0] else None
@@ -293,6 +322,17 @@ def normalize(source, data):
     p = record(source, data.get("DOI"), plain_text(titles[0] if isinstance(titles, list) and titles else str(titles)),
                year, ids(doi=data.get("DOI")), authors, plain_text(data.get("abstract")), data.get("type"), locations, relations)
     p["licenses"] = data.get("license") or []
+    container = data.get("container-title") or []
+    cr_venue = plain_text(container[0]) if isinstance(container, list) and container else None
+    if cr_venue:
+        p["venue"] = cr_venue
+        p["journal"] = cr_venue
+    if isinstance(data.get("is-referenced-by-count"), int):
+        p["citation_count"] = data["is-referenced-by-count"]
+    if isinstance(data.get("references-count"), int):
+        p["reference_count"] = data["references-count"]
+    if data.get("URL"):
+        p["url"] = data["URL"]
     return p
 
 
@@ -468,6 +508,83 @@ class Providers:
         return papers, {"status": "ok", "fetched": len(papers), "pages": pages, "total": total,
                         "truncated": bool(more), "author_id": author_id}, []
 
+    def _extract_seed_doi(self, identifier):
+        try:
+            kind, value = parse_id(identifier)
+            if kind == "doi":
+                return value
+        except Exception:
+            pass
+        for entry in reversed(self.client.raw):
+            body = entry.get("body")
+            if isinstance(body, dict):
+                ext = body.get("externalIds") or (body.get("citingPaperInfo") or {}).get("externalIds") or {}
+                if isinstance(ext, dict) and ext.get("DOI"):
+                    d = doi(ext.get("DOI"))
+                    if d:
+                        return d
+                d = doi(body.get("doi") or (body.get("ids") or {}).get("doi"))
+                if d:
+                    return d
+        return None
+
+    def _crossref_references_fallback(self, seed_doi, limit):
+        msg = self.client.get("crossref", "/works/" + quote(seed_doi, safe="")).get("message")
+        if not isinstance(msg, dict):
+            return []
+        raw_refs = msg.get("reference")
+        if not isinstance(raw_refs, list) or not raw_refs:
+            return []
+        ref_dois = []
+        for r in raw_refs:
+            if isinstance(r, dict) and r.get("DOI"):
+                d = doi(r.get("DOI"))
+                if d and d not in ref_dois:
+                    ref_dois.append(d)
+                if len(ref_dois) >= limit:
+                    break
+        oa_by_doi = {}
+        if ref_dois:
+            try:
+                oa_data = self.client.get("openalex", "/works", {
+                    "filter": "doi:" + "|".join("https://doi.org/" + d for d in ref_dois[:limit]),
+                    "per-page": min(20, len(ref_dois[:limit]))
+                })
+                for item in oa_data.get("results") or []:
+                    if isinstance(item, dict):
+                        p_norm = normalize("openalex", item)
+                        for d_val in p_norm.get("identifiers", {}).get("doi", []):
+                            oa_by_doi[d_val.lower()] = p_norm
+            except Exception:
+                pass
+        papers = []
+        for idx, r in enumerate(raw_refs):
+            if len(papers) >= limit:
+                break
+            if not isinstance(r, dict):
+                continue
+            r_doi = doi(r.get("DOI"))
+            if r_doi and r_doi.lower() in oa_by_doi:
+                papers.append(oa_by_doi[r_doi.lower()])
+                continue
+            title = plain_text(r.get("article-title") or r.get("volume-title") or r.get("unstructured") or (f"Reference ({r_doi})" if r_doi else ""))
+            if not title and not r_doi:
+                continue
+            yr_match = re.search(r"\b(19|20)\d{2}\b", str(r.get("year") or ""))
+            yr = int(yr_match[0]) if yr_match else None
+            author_name = plain_text(r.get("author"))
+            authors = [{"name": author_name, "identifiers": {}, "affiliations": []}] if author_name else []
+            p = record("crossref", r_doi or r.get("key") or f"ref-{idx+1}", title or r_doi, yr,
+                       ids(doi=r_doi) if r_doi else {}, authors, None, "reference-entry", [])
+            venue = plain_text(r.get("journal-title") or r.get("series-title"))
+            if venue:
+                p["venue"] = venue
+                p["journal"] = venue
+            if r_doi:
+                p["url"] = "https://doi.org/" + r_doi
+            papers.append(p)
+        return papers
+
     def related(self, source, identifier, relation, limit):
         if source == "crossref":
             raise SourceError("Crossref is not a supported related provider")
@@ -480,8 +597,35 @@ class Providers:
                 refs = seed.get("referenced_works" if relation == "references" else "related_works")
                 if not isinstance(refs, list):
                     raise SourceError("OpenAlex response lacks requested relation")
+                target_refs = refs[:limit]
+                if self.client.opener is urlopen and len(target_refs) > 1:
+                    short_ids = [r.rsplit("/", 1)[-1].upper() for r in target_refs if r and r.rsplit("/", 1)[-1]]
+                    if short_ids:
+                        try:
+                            batch_data = self.client.get(source, "/works", {
+                                "filter": "openalex:" + "|".join(short_ids),
+                                "per-page": len(short_ids)
+                            })
+                            batch_entries = batch_data.get("results")
+                            if isinstance(batch_entries, list) and batch_entries:
+                                by_oa = {
+                                    (e.get("id") or "").rsplit("/", 1)[-1].upper(): normalize(source, e)
+                                    for e in batch_entries if isinstance(e, dict)
+                                }
+                                ordered = [by_oa[sid] for sid in short_ids if sid in by_oa]
+                                if ordered:
+                                    return ordered, {
+                                        "status": "ok",
+                                        "fetched": len(ordered),
+                                        "pages": 2,
+                                        "total": len(refs),
+                                        "truncated": len(refs) > limit,
+                                        "relation": relation
+                                    }
+                        except Exception:
+                            pass
                 papers, failures = [], []
-                for ref in refs[:limit]:
+                for ref in target_refs:
                     try:
                         data = self.client.get(source, "/works/" + quote(ref.rsplit("/", 1)[-1], safe=""))
                         papers.append(normalize(source, data))
@@ -508,34 +652,86 @@ class Providers:
                 cursor = following
             return papers, {"status": "ok", "fetched": len(papers), "pages": pages + 1,
                             "total": total, "truncated": bool(more), "relation": relation}
-        paper_id = s2_id(identifier)
-        if relation == "recommendations":
-            # Recommendations has its own public GET API, not Graph /paper paths.
-            canonical = self.client.get(source, "/paper/" + quote(paper_id, safe=""), {"fields": "paperId"}).get("paperId")
-            if not canonical:
-                raise SourceError("Semantic Scholar seed has no paperId")
-            data, normalized = self._page(source, "/recommendations/v1/papers/forpaper/" + quote(canonical, safe=""),
-                                   {"limit": limit, "fields": S2_RECOMMENDATION_FIELDS}, [], 0, rows_key="recommendedPapers")
-            entries = data["recommendedPapers"]
-            return normalized[:limit], {"status": "ok", "fetched": min(len(entries), limit),
-                    "pages": 1, "truncated": len(entries) >= limit, "relation": relation, "total": None}
-        papers, offset, pages, more = [], 0, 0, False
-        while len(papers) < limit and pages < 4:
-            size = min(20 if source == "semantic-scholar" else 10, limit - len(papers))
-            key = "citedPaper" if relation == "references" else "citingPaper"
-            data, normalized = self._page(source, "/paper/" + quote(paper_id, safe="") + "/" + relation,
-                                   {"fields": S2_BASE_FIELDS, "limit": size, "offset": offset}, papers, pages, nested_key=key)
-            entries = data["data"]
-            papers.extend(normalized[:size])
-            papers = papers[:limit]
-            pages += 1
-            following = data.get("next")
-            more = following is not None
-            if not entries or not more or following == offset:
-                break
-            offset = following
-        return papers, {"status": "ok", "fetched": len(papers), "pages": pages, "truncated": more,
-                        "relation": relation, "total": None}
+        try:
+            paper_id = s2_id(identifier)
+            if relation == "recommendations":
+                # Recommendations has its own public GET API, not Graph /paper paths.
+                if re.fullmatch(r"[0-9a-f]{40}", paper_id, re.I):
+                    canonical = paper_id
+                else:
+                    canonical = self.client.get(source, "/paper/" + quote(paper_id, safe=""), {"fields": "paperId"}).get("paperId")
+                if not canonical:
+                    raise SourceError("Semantic Scholar seed has no paperId")
+                data, normalized = self._page(source, "/recommendations/v1/papers/forpaper/" + quote(canonical, safe=""),
+                                       {"limit": limit, "fields": S2_RECOMMENDATION_FIELDS}, [], 0, rows_key="recommendedPapers")
+                entries = data["recommendedPapers"]
+                return normalized[:limit], {"status": "ok", "fetched": min(len(entries), limit),
+                        "pages": 1, "truncated": len(entries) >= limit, "relation": relation, "total": None}
+            papers, offset, pages, more = [], 0, 0, False
+            while len(papers) < limit and pages < 4:
+                size = min(20 if source == "semantic-scholar" else 10, limit - len(papers))
+                key = "citedPaper" if relation == "references" else "citingPaper"
+                data, normalized = self._page(source, "/paper/" + quote(paper_id, safe="") + "/" + relation,
+                                       {"fields": S2_BASE_FIELDS, "limit": size, "offset": offset}, papers, pages, nested_key=key)
+                entries = data["data"]
+                papers.extend(normalized[:size])
+                papers = papers[:limit]
+                pages += 1
+                following = data.get("next")
+                more = following is not None
+                if not entries or not more or following == offset:
+                    break
+                offset = following
+            return papers, {"status": "ok", "fetched": len(papers), "pages": pages, "truncated": more,
+                            "relation": relation, "total": None}
+        except SourceError as exc:
+            if self.client.opener is not urlopen:
+                raise
+            partial = list(getattr(exc, "papers", []) or [])
+            if exc.kind == "publisher_restricted" or exc.status in (429, 502, 503, 504):
+                seed_doi = self._extract_seed_doi(identifier)
+                fallback_papers = []
+                fallback_via = None
+                if relation == "references" and seed_doi:
+                    try:
+                        fallback_papers = self._crossref_references_fallback(seed_doi, limit - len(partial))
+                        if fallback_papers:
+                            fallback_via = "crossref+openalex"
+                    except Exception:
+                        pass
+                if not fallback_papers:
+                    try:
+                        oa_target = ("https://doi.org/" + seed_doi) if seed_doi else identifier
+                        oa_papers, _ = self.related("openalex", oa_target, relation, limit - len(partial))
+                        if oa_papers:
+                            fallback_papers = oa_papers
+                            fallback_via = "openalex"
+                    except Exception:
+                        pass
+                combined = partial + fallback_papers
+                reason_tag = "出版商隐藏S2引文" if exc.kind == "publisher_restricted" else f"S2限流({exc.status or 'rate_limit'})"
+                if combined:
+                    return combined[:limit], {
+                        "status": "ok",
+                        "fetched": len(combined[:limit]),
+                        "pages": 1,
+                        "truncated": len(combined) >= limit,
+                        "relation": relation,
+                        "total": None,
+                        "fallback_used": fallback_via,
+                        "note": f"{reason_tag}，已自动由 {fallback_via} 开放引文补齐"
+                    }
+                if exc.kind == "publisher_restricted":
+                    return [], {
+                        "status": "ok",
+                        "fetched": 0,
+                        "pages": 1,
+                        "truncated": False,
+                        "relation": relation,
+                        "total": None,
+                        "note": "该出版商在 Semantic Scholar 隐藏了参考文献，已由 OpenAlex 提供"
+                    }
+            raise
 
     def unpaywall(self, identifier):
         data = self.client.get("unpaywall", "/" + quote(identifier, safe=""))

@@ -57,6 +57,7 @@
 | **npx skills**（通用） | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g` | 三个技能，可单选 |
 | **Claude Code** | 插件市场，见下文 | 合集插件 |
 | **Codex** | 插件市场，见下文 | 合集插件 |
+| **ZCode** | 插件市场或 Release 插件包，见下文 | 合集插件 / 文献检索侧栏可视化插件 |
 | **腾讯 SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | 单个技能 |
 | **WorkBuddy** | 客户端【专家·技能·连接器 → 技能】中搜索“三木” | 单个技能 |
 | **skills.sh / SkillsMP** | [合集页面](https://skills.sh/luffysolution-svg/sanmu-skills)，使用 npx 命令安装 | 三个技能 |
@@ -122,6 +123,16 @@ codex plugin add sanmu-skills@sanmu-skills
 ```
 
 需要支持 `plugin marketplace` 的新版 Codex CLI。安装后重开会话，可在 `/plugins` 中管理。
+
+### ZCode
+
+```bash
+# 安装三合一技能合集
+zcode plugin marketplace add luffysolution-svg/sanmu-skills
+zcode plugin install sanmu-skills@sanmu-skills
+```
+
+若需在 ZCode 桌面端使用带**右侧常驻可视化面板、Obsidian 物理关系图谱与本机 Zotero 双向联动**的独立插件，可从 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) 下载 `sanmu-paper-search-zcode-plugin-<版本>.zip` 解压后通过本地插件市场安装。
 
 ### 手动安装
 

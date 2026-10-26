@@ -6,7 +6,7 @@
 
 | 渠道 | 发布物 | 方式 |
 | --- | --- | --- |
-| Claude Code / Codex | 仓库本身（`.claude-plugin/`、`.agents/plugins/`） | 推送即生效，用户从仓库市场安装 |
+| Claude Code / Codex / ZCode | 仓库本身（`.claude-plugin/`、`.agents/plugins/`）及 `zcode/` 插件包 | 推送即生效，用户从仓库市场或 Release 安装 |
 | npx skills / skills.sh / SkillsMP | 公开 GitHub 仓库 | 自动索引 |
 | GitHub Release | 合集 ZIP + 各平台适配包 + `SHA256SUMS` | `gh release create` |
 | 腾讯 SkillHub | `skillhub/<技能名>/` 目录 | `skillhub publish` |
@@ -71,14 +71,15 @@ python -m unittest discover -s tests/sanmu-paper-search -v
 | `skillhub/<技能名>/` | 交给 `skillhub publish` 的目录 |
 | `skillhub/<技能名>-<版本>.zip` | 与上面目录内容一致的归档，根部是 `SKILL.md` |
 | `workbuddy/<技能名>-<版本>.zip` | WorkBuddy 技能包，根部是 `SKILL.md` |
-| `SHA256SUMS` | 以上 7 个 ZIP 的 SHA-256，LF 换行 |
+| `zcode/sanmu-paper-search-zcode-plugin-<版本>.zip` | ZCode 桌面端「三木文献检索」侧栏插件包（由 `distribution/zcode/` 外壳与 `skills/sanmu-paper-search/` 自动同源组装） |
+| `SHA256SUMS` | 以上 8 个 ZIP 的 SHA-256，LF 换行 |
 
-**平台专用字段只在构建时追加**，源码 `SKILL.md` 保持标准格式，正文和资源在各渠道完全一致：
+**平台专用元数据只在构建时注入**，源码 `SKILL.md` 保持标准格式，正文和资源在各渠道完全一致：
 
 - SkillHub：`slug`、`displayName`、`version`、`summary`、`license`；
 - WorkBuddy：`display_name`、`display_name_en`、`description_zh`、`description_en`、`version`、`author`。
 
-中英文展示名和简介写在 `manifest.json` 的 `displayName` / `displayNameEn` / `summary` / `summaryEn`，作者写在顶层 `author`。
+SkillHub 展示名写在 `manifest.json` 的 `displayName`；WorkBuddy 使用独立的 `workbuddyName` 标识和 `workbuddyDisplayName` / `workbuddyDisplayNameEn` 展示名。简介共用 `summary` / `summaryEn`，作者写在顶层 `author`。
 
 两个平台都会拒绝没有扩展名的文件，所以 `skillhub/` 和 `workbuddy/` 包里不含 `LICENSE`；许可证信息由 frontmatter 和合集包提供。
 
@@ -99,7 +100,7 @@ Release 页面上的文件是平铺的，没有 `skillhub/`、`workbuddy/` 子�
 
 ```bash
 V=<版本>; D=dist/$V; R=$D/release; mkdir $R
-cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $R/
+cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $D/zcode/*.zip $R/
 for f in $D/workbuddy/*.zip; do cp "$f" "$R/$(basename "$f" .zip)-workbuddy.zip"; done
 (cd $R && sha256sum *.zip > SHA256SUMS)
 gh release create v$V $R/* --title "sanmu-skills v$V" --notes-file <更新说明.md>
@@ -134,6 +135,10 @@ skillhub publish ./dist/<版本>/skillhub/sanmu-paper-search --dry-run
 
 - **不要选“专家”入口**。“专家”是一个 Agent 角色包，要求 `.codebuddy-plugin/plugin.json`、`agents/*.md`、512×512 头像和中英文展示文案，结构完全不同；把技能包传到那里会报“未找到 .codebuddy-plugin/plugin.json”。
 - 技能包的必填字段按[官方技能文档](https://open.workbuddy.cn/docs/skill)：`description`、`description_zh`、`description_en`、`version`、`author`。展示名虽未标必填，但缺失时实际会解析失败，所以也一并写入。
+- 付费资产名称只支持中文、英文字母、数字、`-` 和 `_`，不能含空格或间隔号。构建时校验中英文展示名；当前中文名为“三木学术文档转Markdown”“三木文献精读”“三木文献检索”。后台展示名从包内 `display_name` 解析且只读，改名后需重新上传 ZIP。
+- 本次三个付费技能均从“创建”入口重新建立，WorkBuddy 标识为 `sanmu-doc2md-paid`、`sanmu-paper-reader-paid`、`sanmu-paper-search-paid`，原已发布记录保持下架。实测旧免费记录的“更新版本”页不提供付费选项，而创建时沿用旧标识会提示技能已存在；渠道独立标识避免冲突，源码及 SkillHub 标识保持不变。
+- `workbuddyVersion` 当前为 `1.6.3`，与合集版本 `1.6.3` 保持一致。未设置时沿用合集版本。更新已有记录时，平台要求包内版本严格大于当前最新版本。
+- 三个新技能统一选择“按月付费”，金额为 `3` 元/月。价格在后台设置，ZIP 不携带定价；保存后核对确认页的“按月付费·3元/月”，再提交审核。
 - 解析失败时，先对照官方文档的“技能基础结构”排查；仍无法定位，可发邮件到 openworkbuddy@tencent.com。
 
 ## SkillsMP 与 skills.sh

@@ -61,9 +61,65 @@ def identity_check(path, doi=None, title=None):
         return {"status": "needs_review", "reason": "pdf_text_unreadable"}
 
 
-def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024):
+def _normalize_candidate_pdf_url(url):
+    u = str(url or "").strip()
+    if not u:
+        return u
+    # Convert arXiv abstract URL to PDF URL automatically
+    m_arx = re.match(r"^https?://arxiv\.org/abs/([^\s?#]+)", u, flags=re.I)
+    if m_arx:
+        arx_id = m_arx.group(1).removesuffix(".pdf")
+        return f"https://arxiv.org/pdf/{arx_id}.pdf"
+    if re.match(r"^https?://arxiv\.org/pdf/[^\s?#]+$", u, flags=re.I) and not u.lower().endswith(".pdf"):
+        return u.replace("http://", "https://", 1) + ".pdf"
+    return u
+
+
+def _download_pdf_bytes(url, max_bytes=80 * 1024 * 1024):
+    url = _normalize_candidate_pdf_url(url)
     parts = urlsplit(url)
     if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+        raise ValueError("A public HTTPS URL without embedded credentials is required")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 sanmu-paper-search/1.6",
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
+    }
+    last_exc = None
+    for attempt in range(3):
+        try:
+            request = Request(url, headers=headers)
+            with urlopen(request, timeout=40) as response:
+                if urlsplit(response.url).scheme != "https":
+                    raise ValueError("insecure_redirect: HTTPS is required")
+                data = response.read(max_bytes + 1)
+                final_url = response.url
+                content_type = response.headers.get_content_type()
+            if len(data) > max_bytes:
+                raise ValueError("response_too_large: PDF exceeds the download budget")
+            checks = inspect_pdf(data)
+            return data, url, final_url, content_type, checks
+        except (URLError, socket.timeout, TimeoutError, OSError) as exc:
+            if isinstance(exc, HTTPError):
+                last_exc = exc
+                break
+            last_exc = exc
+            if attempt < 2:
+                import time
+                time.sleep(1.2 * (attempt + 1))
+                continue
+            break
+        except ValueError as exc:
+            last_exc = exc
+            break
+    raise last_exc
+
+
+def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_urls=None):
+    candidates = []
+    for u in [url] + list(fallback_urls or []):
+        if u and u not in candidates:
+            candidates.append(u)
+    if not candidates:
         raise ValueError("A public HTTPS URL without embedded credentials is required")
     out = Path(out)
     if out.exists():
@@ -71,20 +127,25 @@ def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024):
     out.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".pdf-stage-", dir=out.parent))
     try:
-        request = Request(url, headers={"User-Agent": "sanmu-paper-search/1.0", "Accept": "application/pdf"})
-        with urlopen(request, timeout=40) as response:
-            if urlsplit(response.url).scheme != "https":
-                raise ValueError("insecure_redirect: HTTPS is required")
-            data = response.read(max_bytes + 1)
-            final_url = response.url
-            content_type = response.headers.get_content_type()
-        if len(data) > max_bytes:
-            raise ValueError("response_too_large: PDF exceeds the download budget")
-        checks = inspect_pdf(data)
+        data = source_used = final_url = content_type = checks = None
+        last_error = None
+        tried_urls = []
+        for cand in candidates:
+            tried_urls.append(public_url(cand))
+            try:
+                data, source_used, final_url, content_type, checks = _download_pdf_bytes(cand, max_bytes=max_bytes)
+                break
+            except Exception as exc:
+                last_error = exc
+                continue
+        if data is None:
+            if last_error is not None:
+                raise last_error
+            raise ValueError("not_pdf: no candidate URL returned a valid PDF stream")
         pdf = stage / "paper.pdf"
         pdf.write_bytes(data)
         identity = identity_check(pdf, doi, title)
-        record = {"schema_version": "1.0", "retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "file_obtained", "source_url": public_url(url), "final_url": public_url(final_url), "content_type": content_type, "file": "paper.pdf", "sha256": hashlib.sha256(data).hexdigest(), "format_checks": checks, "identity": identity, "requested_identity": {"doi": doi, "title": title}, "license": "not_determined", "read": False}
+        record = {"schema_version": "1.0", "retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "file_obtained", "source_url": public_url(source_used), "final_url": public_url(final_url), "tried_urls": tried_urls, "content_type": content_type, "file": "paper.pdf", "sha256": hashlib.sha256(data).hexdigest(), "format_checks": checks, "identity": identity, "requested_identity": {"doi": doi, "title": title}, "license": "not_determined", "read": False}
         (stage / "acquisition.json").write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if out.exists():
             raise ValueError("Output directory appeared during download; refusing overwrite")
@@ -103,9 +164,10 @@ def main():
     parser.add_argument("--out", required=True, help="New acquisition directory")
     parser.add_argument("--doi")
     parser.add_argument("--title")
+    parser.add_argument("--fallback-url", action="append", default=[], help="Optional fallback OA PDF URLs to try if primary fails")
     args = parser.parse_args()
     try:
-        result = fetch(args.url, args.out, args.doi, args.title)
+        result = fetch(args.url, args.out, args.doi, args.title, fallback_urls=args.fallback_url)
         code = 0
     except HTTPError as exc:
         result, code = {"ok": False, "error": "http_error", "http_status": exc.code}, 2

@@ -6,7 +6,7 @@ Skill sources are maintained only in `skills/`. Every channel's package is gener
 
 | Channel | Artifact | Method |
 | --- | --- | --- |
-| Claude Code / Codex | The repository itself (`.claude-plugin/`, `.agents/plugins/`) | Takes effect on push; users install from the repository marketplace |
+| Claude Code / Codex / ZCode | The repository itself (`.claude-plugin/`, `.agents/plugins/`) and `zcode/` plugin bundle | Takes effect on push; users install from the repository marketplace or Release |
 | npx skills / skills.sh / SkillsMP | Public GitHub repository | Indexed automatically |
 | GitHub Release | Collection ZIP + per-platform packages + `SHA256SUMS` | `gh release create` |
 | Tencent SkillHub | `skillhub/<skill-name>/` directories | `skillhub publish` |
@@ -71,14 +71,15 @@ Under `dist/<version>/`:
 | `skillhub/<skill-name>/` | Directories passed to `skillhub publish` |
 | `skillhub/<skill-name>-<version>.zip` | Archives with the same content as the directories above, with `SKILL.md` at the root |
 | `workbuddy/<skill-name>-<version>.zip` | WorkBuddy skill packages, with `SKILL.md` at the root |
-| `SHA256SUMS` | SHA-256 of the 7 ZIPs above, LF line endings |
+| `zcode/sanmu-paper-search-zcode-plugin-<version>.zip` | ZCode Desktop side-panel plugin package for `sanmu-paper-search` (assembled from `distribution/zcode/` and `skills/sanmu-paper-search/`) |
+| `SHA256SUMS` | SHA-256 of the 8 ZIPs above, LF line endings |
 
-**Platform-specific fields are added only at build time.** The source `SKILL.md` stays in the standard format, and the body and resources are identical across channels:
+**Platform-specific metadata is applied only at build time.** The source `SKILL.md` stays in the standard format, and the body and resources are identical across channels:
 
 - SkillHub: `slug`, `displayName`, `version`, `summary`, `license`;
 - WorkBuddy: `display_name`, `display_name_en`, `description_zh`, `description_en`, `version`, `author`.
 
-Chinese and English display names and summaries are set in `manifest.json` as `displayName` / `displayNameEn` / `summary` / `summaryEn`, and the author in the top-level `author`.
+The SkillHub display name is set in `manifest.json` as `displayName`; WorkBuddy uses a separate `workbuddyName` identifier and `workbuddyDisplayName` / `workbuddyDisplayNameEn` display names. Summaries are shared as `summary` / `summaryEn`, and the author is set in the top-level `author`.
 
 Both platforms reject files without an extension, so the `skillhub/` and `workbuddy/` packages do not include `LICENSE`; license information is provided by the frontmatter and the collection package.
 
@@ -99,7 +100,7 @@ Files on the Release page are flat, without `skillhub/` or `workbuddy/` subdirec
 
 ```bash
 V=<version>; D=dist/$V; R=$D/release; mkdir $R
-cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $R/
+cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $D/zcode/*.zip $R/
 for f in $D/workbuddy/*.zip; do cp "$f" "$R/$(basename "$f" .zip)-workbuddy.zip"; done
 (cd $R && sha256sum *.zip > SHA256SUMS)
 gh release create v$V $R/* --title "sanmu-skills v$V" --notes-file <release-notes.md>
@@ -134,6 +135,10 @@ On the [WorkBuddy open platform](https://open.workbuddy.cn), choose **发布管�
 
 - **Do not use the "专家" (Experts) entry.** An "Expert" is an agent role package that requires `.codebuddy-plugin/plugin.json`, `agents/*.md`, a 512×512 avatar and Chinese and English display text, a completely different structure; uploading a skill package there fails with "未找到 .codebuddy-plugin/plugin.json" (.codebuddy-plugin/plugin.json not found).
 - Required fields for skill packages follow the [official skill documentation](https://open.workbuddy.cn/docs/skill): `description`, `description_zh`, `description_en`, `version`, `author`. Display names are not marked as required, but parsing actually fails without them, so they are written too.
+- Paid asset names accept Chinese characters, English letters, digits, `-` and `_`; spaces and middle dots are not allowed. The build validates both display names. The current Chinese names are “三木学术文档转Markdown”, “三木文献精读” and “三木文献检索”. The console parses `display_name` from the package into a read-only field, so renaming requires uploading a new ZIP.
+- All three paid skills are created as new records using “创建” (Create), with WorkBuddy identifiers `sanmu-doc2md-paid`, `sanmu-paper-reader-paid` and `sanmu-paper-search-paid`. Previously published records stay unlisted. In the tested console, an existing free record's update form has no payment selector, while creating with its old identifier is rejected as a duplicate. Channel-specific identifiers avoid that conflict; source and SkillHub identifiers stay the same.
+- `workbuddyVersion` is currently `1.6.3`, matching the collection version `1.6.3`. If omitted, it defaults to the collection version. When updating an existing record, the platform requires a version greater than its latest one.
+- All three new skills use monthly billing at CNY `3` per month. Pricing is configured in the console, not in the ZIP. After saving, verify “按月付费·3元/月” on the confirmation page before submitting for review.
 - If parsing fails, first check against "技能基础结构" (basic skill structure) in the official documentation; if you still cannot find the cause, email openworkbuddy@tencent.com.
 
 ## SkillsMP and skills.sh
