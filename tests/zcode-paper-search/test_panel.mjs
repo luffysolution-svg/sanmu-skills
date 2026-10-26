@@ -147,27 +147,43 @@ test('Serper/Exa, author seed and EPMC forms send the supported route and canoni
   await click(p, 'btnExecAuthor');
   assert.equal(tools(p).at(-1).params.arguments.fromPaper, '10.1234/example');
   answer(p); await flush();
+  assert.equal(p.document.getElementById('qEpmcFetch'), null);
   set(p, 'qEpmcQuery', '39575807');
-  set(p, 'qEpmcFetch', 'all');
   await click(p, 'btnExecEpmc');
   const args = tools(p).at(-1).params.arguments;
   assert.equal(args.id, 'pmid:39575807');
   assert.equal(args.query, undefined);
-  assert.equal(args.fetchMode, 'all');
+  assert.equal(args.fetchMode, 'none');
   answer(p); await flush();
 });
 
-test('inline drawers render for second and later papers in main, quick and basket lists', () => {
+test('inline drawers render for second and later papers in main and basket lists, and streamlined UI removes redundant export buttons', async () => {
   const p = makePanel();
+  await initialize(p);
   const papers = [paper('first'), paper('second'), paper('third')];
   const sub = { runId: 'sub', papers: [paper('related')] };
   for (const item of papers) p.state.inlineSubRuns.set(item.paper_key, { bundle: sub, label: 'Related' });
   p.updatePanelData({ ...emptyState(), activeRun: { runId: 'main', papers }, basket: papers, recentRuns: [{ runId: 'main' }, { runId: 'sub' }] });
-  for (const id of ['activeRunContent', 'searchTabQuickResults', 'basketListContainer']) {
+  for (const id of ['mainPapersList', 'basketListContainer']) {
     for (const key of ['first', 'second', 'third']) {
       assert.match(p.document.getElementById(id).innerHTML, new RegExp(`data-sub-parent="${key}"`));
     }
   }
+  for (const removedId of ['btnExportMdCards', 'btnExportCitations', 'btnExportRunBundle', 'btnExportGraphSvg', 'qEpmcFetch', 'btnSaveDefaultDir']) {
+    assert.equal(p.document.getElementById(removedId), null);
+  }
+  assert.equal(p.document.querySelector('[data-cite="ris"]'), null);
+  assert.ok(p.document.getElementById('btnBatchSaveBasketToZotero'));
+  p.inspectPaper(papers[0]);
+  assert.equal(p.document.getElementById('drwExportSingleMd'), null);
+  assert.equal(p.document.getElementById('drwEvStage'), null);
+  assert.equal(p.document.getElementById('drwEvBasis'), null);
+  assert.equal(p.document.getElementById('drwEvReason'), null);
+  assert.ok(p.document.getElementById('drwFetchEpmcAll'));
+  await click(p, 'drwFetchEpmcAll');
+  assert.equal(tools(p).at(-1).params.name, 'search_epmc');
+  assert.equal(tools(p).at(-1).params.arguments.fetchMode, 'suppl');
+  answer(p); await flush();
 });
 
 test('source status, candidate affiliations, paper labels and SVG text escape external HTML', () => {

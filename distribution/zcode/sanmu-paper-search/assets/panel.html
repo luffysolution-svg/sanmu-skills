@@ -736,26 +736,23 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.6.5</span>
+        <span class="brand-sub">v1.6.6</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
       </div>
     </div>
 
-    <!-- Global Save / Download Directory & Zotero Target Selector Bar -->
-    <div class="save-dir-bar">
-      <span style="font-weight:600; color:var(--text-secondary);">📁 保存位置:</span>
-      <input type="text" id="globalSaveDirInput" value="00-收件箱-待整理/文献检索" title="支持当前工作区相对路径，或任意本地绝对路径（如 D:\文献下载）" placeholder="工作区相对路径 或 本地绝对路径 (如 D:\文献下载)" />
-      <button class="btn sm" id="btnSaveDefaultDir" title="将此路径设为默认保存位置">💾 设为默认</button>
-      <button class="btn sm" id="btnOpenSaveDir" title="在系统资源管理器中打开此保存文件夹">📂 打开目录</button>
-      <span id="zoteroTargetColWrap" class="hidden" style="display:inline-flex; align-items:center; gap:4px; margin-left:4px;">
+    <!-- Global Zotero Target Selector & Quick Open Download Directory Bar -->
+    <div class="save-dir-bar" style="justify-content:space-between;">
+      <span id="zoteroTargetColWrap" style="display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <span style="font-weight:600; color:var(--text-secondary);">📚 Zotero入库分类:</span>
-        <select id="globalZoteroColSelect" style="width:auto; min-width:115px; padding:3px 6px; font-size:11.5px;">
+        <select id="globalZoteroColSelect" style="width:auto; min-width:125px; padding:3px 6px; font-size:11.5px;">
           <option value="">我的文库 (根目录)</option>
         </select>
         <button class="btn sm danger hidden" id="btnGlobalUndoZotero" title="撤销最近一次导入到 Zotero 的文献条目">↩ 撤销上次导入</button>
       </span>
+      <button class="btn sm" id="btnOpenSaveDir" title="在系统资源管理器中打开 PDF/SI 默认下载目录">📂 打开下载目录</button>
     </div>
 
     <!-- Notification / Loading Banner -->
@@ -771,7 +768,7 @@
     <!-- Collapsible API & Preferences Config Panel (Deduplicated & Inline Status) -->
     <div id="configPanel" class="card hidden">
       <div class="card-header">
-        <h3 class="card-title">⚙ 数据源 API 与本机 Zotero 连接设置（已配系统环境变量无需重复输入）</h3>
+        <h3 class="card-title">⚙ 数据源 API、本机 Zotero 与下载目录设置（已配系统环境变量无需重复输入）</h3>
         <button class="btn sm" id="btnCloseConfig">收起</button>
       </div>
       <div class="form-grid">
@@ -805,8 +802,14 @@
             <input type="text" id="cfgZoteroUrl" value="http://127.0.0.1:23119" />
           </div>
         </div>
+        <div class="form-row">
+          <div class="field">
+            <label>📁 PDF/SI 默认下载目录（支持工作区相对路径或本地绝对路径）</label>
+            <input type="text" id="globalSaveDirInput" value="00-收件箱-待整理/文献检索" title="支持当前工作区相对路径，或任意本地绝对路径（如 D:\文献下载）" placeholder="工作区相对路径 或 本地绝对路径 (如 D:\文献下载)" />
+          </div>
+        </div>
         <div class="form-row" style="justify-content: space-between; padding-top:4px; border-top:1px dashed var(--border-primary);">
-          <span style="font-size:11px; color:var(--text-secondary);">💡 提示：OpenAlex / Crossref / Europe PMC 免 Key 即可直连；文件保存位置已合并至顶部常驻栏。</span>
+          <span style="font-size:11px; color:var(--text-secondary);">💡 提示：OpenAlex / Crossref / Europe PMC 免 Key 即可直连；修改后点击右侧「💾 保存设置」立即生效。</span>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button class="btn primary sm" id="btnSaveConfig">💾 保存设置</button>
             <button class="btn sm" id="btnRunDoctorInCfg" title="检查 Python 与各接口连通配置">🩺 环境自检</button>
@@ -823,7 +826,7 @@
         <button class="tab-btn active" data-tab="search">🔍 检索发现</button>
         <button class="tab-btn" data-tab="results">📄 检索结果 (<span id="tabCountResults">0</span>)</button>
         <button class="tab-btn" data-tab="graph">🕸 关系图谱 (<span id="tabCountGraph">0</span>)</button>
-        <button class="tab-btn" data-tab="basket">⭐ 收藏与导出 (<span id="tabCountBasket">0</span>)</button>
+        <button class="tab-btn" data-tab="basket">⭐ 收藏篮 (<span id="tabCountBasket">0</span>)</button>
         <button class="tab-btn" data-tab="runs">🕒 搜索历史 (<span id="tabCountRuns">0</span>)</button>
       </div>
 
@@ -965,7 +968,7 @@
             </div>
           </div>
 
-          <!-- Mode 4: Europe PMC & Fulltext XML / SI Bundle -->
+          <!-- Mode 4: Europe PMC Search -->
           <div class="mode-form hidden" id="form-epmc">
             <div class="form-grid">
               <div class="form-row">
@@ -982,29 +985,22 @@
                   </select>
                 </div>
               </div>
-              <div class="checkbox-group">
-                <label class="checkbox-label"><input type="checkbox" id="qEpmcSuppl" /> 仅看含补充材料 (SI)</label>
-                <label class="checkbox-label"><input type="checkbox" id="qEpmcOa" /> 仅看开放获取 (OA)</label>
-                <label class="checkbox-label"><input type="checkbox" id="qEpmcFulltext" /> 收录免费全文</label>
-                <label class="checkbox-label"><input type="checkbox" id="qEpmcPreprints" /> 仅看预印本</label>
-              </div>
-              <div class="form-row">
-                <div class="field" style="flex:2;">
-                  <label>同时下载全文与补充材料（自动存入上方「📁 保存位置」）</label>
-                  <select id="qEpmcFetch">
-                    <option value="none">仅检索文献题录（不下载大文件）</option>
-                    <option value="all">📦 一键下载全文 XML + 自动解压 SI 补充材料包</option>
-                    <option value="suppl">📎 仅下载并解压 SI 补充材料包 (PDF/原图)</option>
-                    <option value="xml">📄 仅下载 JATS 全文 XML</option>
-                  </select>
+              <div class="form-row" style="justify-content:space-between;">
+                <div class="checkbox-group">
+                  <label class="checkbox-label"><input type="checkbox" id="qEpmcSuppl" /> 仅看含补充材料 (SI)</label>
+                  <label class="checkbox-label"><input type="checkbox" id="qEpmcOa" /> 仅看开放获取 (OA)</label>
+                  <label class="checkbox-label"><input type="checkbox" id="qEpmcFulltext" /> 收录免费全文</label>
+                  <label class="checkbox-label"><input type="checkbox" id="qEpmcPreprints" /> 仅看预印本</label>
                 </div>
-                <div class="field" style="max-width:110px;">
-                  <label>条数 (1-20)</label>
-                  <input type="number" id="qEpmcLimit" value="10" min="1" max="20" />
-                </div>
-                <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
-                  <label>&nbsp;</label>
-                  <button class="btn primary exec-btn" id="btnExecEpmc">🧬 执行检索/抓包</button>
+                <div style="display:flex; gap:8px; align-items:flex-end;">
+                  <div class="field" style="max-width:110px;">
+                    <label>条数 (1-20)</label>
+                    <input type="number" id="qEpmcLimit" value="10" min="1" max="20" />
+                  </div>
+                  <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
+                    <label>&nbsp;</label>
+                    <button class="btn primary exec-btn" id="btnExecEpmc">🧬 开始检索</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1037,7 +1033,6 @@
               <button class="btn sm graph-layout-btn" data-layout="timeline">📅 年份演进时间轴</button>
               <button class="btn sm" id="btnReheatGraph" title="重新激发物理弹簧仿真，让节点自由舒展流动">🌊 激发流动</button>
               <button class="btn sm" id="btnResetGraphZoom" title="解锁固定节点并平滑居中适配视野">🎯 居中复位</button>
-              <button class="btn sm exec-btn" id="btnExportGraphSvg" title="将当前关系图谱保存为 SVG 矢量图到上方保存位置">💾 导出图谱</button>
             </div>
           </div>
           <div class="checkbox-group" style="margin-bottom:8px; font-size:11.5px; justify-content:space-between;">
@@ -1072,14 +1067,13 @@
         <div id="graphSelectedNodeCard" style="margin-top:8px;"></div>
       </div>
 
-      <!-- TAB 3: BASKET (FAVORITES) & WORKSPACE EXPORT -->
+      <!-- TAB 3: BASKET (FAVORITES) -->
       <div id="tab-basket" class="tab-pane hidden">
         <div class="card">
           <div class="card-header">
-            <h3 class="card-title">⭐ 收藏文献篮与一键导出（导出至上方「📁 保存位置」）</h3>
+            <h3 class="card-title">⭐ 收藏篮</h3>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="btn primary sm exec-btn" id="btnExportMdCards">📝 导出 Obsidian 文献笔记 (.md)</button>
-              <button class="btn sm exec-btn" id="btnExportCitations">📚 导出 BibTeX / RIS / 国标引文文件</button>
+              <button class="btn primary sm exec-btn" id="btnBatchSaveBasketToZotero">📥 批量存入本机 Zotero</button>
               <button class="btn sm" id="btnSendBasketToChat">💬 发送给对话 AI 对比精读</button>
               <button class="btn sm danger" id="btnClearBasket">🗑 清空收藏篮</button>
             </div>
@@ -1093,12 +1087,11 @@
             <div style="display:flex; gap:4px; flex-wrap:wrap;">
               <button class="btn sm cite-tab active" data-cite="gbt7714">GB/T 7714 (国标)</button>
               <button class="btn sm cite-tab" data-cite="bibtex">BibTeX</button>
-              <button class="btn sm cite-tab" data-cite="ris">RIS (导入 Zotero)</button>
               <button class="btn sm cite-tab" data-cite="apa">APA</button>
-              <button class="btn primary sm" id="btnCopyCitation">📋 复制</button>
+              <button class="btn primary sm" id="btnCopyCitation">📋 一键复制</button>
             </div>
           </div>
-          <pre class="pre-viewer" id="citationPreviewBox">收藏篮为空，在检索结果卡片上点击「⭐ 收藏」即可自动生成四格式参考文献。</pre>
+          <pre class="pre-viewer" id="citationPreviewBox">收藏篮为空，在检索结果卡片上点击「⭐ 收藏」即可自动生成参考文献。</pre>
         </div>
       </div>
 
@@ -1156,15 +1149,6 @@
       let pendingToolCount = 0;
       const actionErrors = new WeakSet();
       const RPC_TIMEOUT_MS = 300000;
-
-      const STAGE_OPTIONS = [
-        { value: "discovered", label: "待初筛" },
-        { value: "metadata_checked", label: "题录已核对" },
-        { value: "file_obtained", label: "已获PDF" },
-        { value: "identity_checked", label: "已核全文" },
-        { value: "read", label: "已精读" },
-        { value: "excluded", label: "已排除" }
-      ];
 
       const STAGE_LABELS_MAP = {
         discovered: "待初筛",
@@ -1334,7 +1318,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.6.5" },
+              appInfo: { name: "sanmu-paper-search", version: "1.6.6" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -1575,13 +1559,7 @@
         }
       });
 
-      // Global Save Dir Bar Events
-      onAction(document.getElementById("btnSaveDefaultDir"), "click", async (e) => {
-        const dirVal = getChosenSaveDir();
-        await callTool("save_config", { exportSubdir: dirVal }, "正在保存默认文件夹设置...", e.currentTarget);
-        showBanner(`✅ 已将默认保存位置设为：${dirVal}`, "success");
-      });
-
+      // Quick Open Download Directory Event
       onAction(document.getElementById("btnOpenSaveDir"), "click", async () => {
         const dirVal = getChosenSaveDir();
         await callTool("read_run_file", {
@@ -1745,6 +1723,7 @@
         if (!paper) return;
         const doi = paper.identifiers?.doi?.[0] || "";
         const pmcid = paper.identifiers?.pmcid?.[0] || "";
+        const canFetchEpmcSuppl = Boolean(pmcid || doi || paper.extra_epmc?.has_suppl);
         const seedId = paper.resolvable_seed_id || "";
         const journalStr = safeJournalStr(paper);
         const tldrStr = safeTldrStr(paper);
@@ -1800,11 +1779,6 @@
           )
           .join("");
 
-        const stageOptionsHtml = STAGE_OPTIONS.map(
-          (st) =>
-            `<option value="${st.value}" ${paper.handoff_stage === st.value ? "selected" : ""}>${st.label}</option>`
-        ).join("");
-
         const zColBadge = zMatch?.collections?.length ? ` · 分类: ${zMatch.collections.join(", ")}` : "";
 
         const html = `
@@ -1822,7 +1796,7 @@
           </div>
 
           <div class="section-box">
-            <h4>🔗 直达链接、Zotero 联动、全文下载与导出操作</h4>
+            <h4>🔗 直达链接、Zotero 联动与全文/SI 下载</h4>
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
               ${linksHtml || '<span style="color:var(--text-secondary);">暂无直达外链</span>'}
             </div>
@@ -1838,8 +1812,7 @@
               }
               ${!paper.abstract ? `<button class="btn sm primary exec-btn" id="drwEnrichAbstract">🔎 跨源补全完整摘要与题录</button>` : ""}
               ${seedId ? `<button class="btn sm exec-btn" id="drwResolveOa">🔓 查找免费 OA 全文 (+Unpaywall)</button>` : ""}
-              ${pmcid || doi ? `<button class="btn sm success exec-btn" id="drwFetchEpmcAll">📦 用 EPMC 抓取全文 XML 与 SI 补充材料</button>` : ""}
-              <button class="btn sm exec-btn" id="drwExportSingleMd">📝 导出为 Obsidian 文献笔记 (.md)</button>
+              ${canFetchEpmcSuppl ? `<button class="btn sm success exec-btn" id="drwFetchEpmcAll">📎 下载 SI 补充材料包 (EPMC)</button>` : ""}
               <button class="btn sm primary" id="drwSendPaperChat">💬 发送给对话 AI 精读分析</button>
             </div>
             ${oaLocsHtml ? `<div style="margin-top:8px;"><strong>已发现的全文/来源位置：</strong>${oaLocsHtml}</div>` : ""}
@@ -1881,36 +1854,6 @@
               ${authorsHtml || "未返回作者列表"}
             </div>
           </div>
-
-          <div class="section-box">
-            <h4>🏷 阅读进度与个人筛选笔记</h4>
-            <div class="form-row">
-              <div class="field">
-                <label>当前阅读进度</label>
-                <select id="drwEvStage">${stageOptionsHtml}</select>
-              </div>
-              <div class="field">
-                <label>判别依据</label>
-                <select id="drwEvBasis">
-                  <option value="metadata_only" ${paper.screening_basis === "metadata_only" ? "selected" : ""}>仅看标题/期刊</option>
-                  <option value="abstract" ${paper.screening_basis === "abstract" ? "selected" : ""}>已读摘要</option>
-                  <option value="fulltext" ${paper.screening_basis === "fulltext" ? "selected" : ""}>已核查全文与图表</option>
-                </select>
-              </div>
-            </div>
-            <div class="field" style="margin-top:6px;">
-              <label>筛选理由 / 实验条件备注</label>
-              <textarea id="drwEvReason" rows="2" placeholder="记录与课题的相关性、催化剂体系、表征条件等...">${esc(paper.screening_reason || "")}</textarea>
-            </div>
-            <div style="margin-top:6px;">
-              <button class="btn sm primary" id="drwSaveEvidence">💾 保存进度与笔记</button>
-            </div>
-          </div>
-
-          <details class="sub-fold">
-            <summary>▸ 高级：查看多源合并溯源与原始 JSON 数据</summary>
-            <pre class="pre-viewer" style="margin-top:6px;">${esc(JSON.stringify(paper, null, 2))}</pre>
-          </details>
         `;
 
         openDetailView("论文详情", paper.title || "Untitled Paper", html, (container) => {
@@ -2082,17 +2025,24 @@
           });
           onAction(container.querySelector("#drwFetchEpmcAll"), "click", async (e) => {
             const saveDir = getChosenSaveDir();
+            const epmcId = pmcid || doi || paper.identifiers?.pmid?.[0] || "";
             closeDetailView();
             switchTab("results");
             const res = await callTool(
               "search_epmc",
-              { id: pmcid || doi, fetchMode: "all", limit: 5, saveDir },
-              `正在从 Europe PMC 拉取全文 XML 与 SI 包并保存至 ${saveDir} ...`,
+              {
+                id: epmcId || undefined,
+                query: epmcId ? undefined : paper.title,
+                fetchMode: "suppl",
+                limit: 5,
+                saveDir
+              },
+              `正在从 Europe PMC 下载并解压 SI 补充材料包至 ${saveDir} ...`,
               e.currentTarget
             );
             if (res?.exportedSaveDir) {
               showBanner(
-                `✅ EPMC 全文与 SI 补充材料已保存至：${res.exportedSaveDir}`,
+                `✅ EPMC SI 补充材料包已保存至：${res.exportedSaveDir}`,
                 "success",
                 res.exportedSaveDir,
                 "📂 打开文件夹"
@@ -2108,40 +2058,9 @@
             showBanner(paper.in_basket ? "已从收藏篮移出" : "⭐ 已加入收藏篮！", "success");
             inspectPaper(findUpdatedPaper(paper.paper_key, paper));
           });
-          onAction(container.querySelector("#drwExportSingleMd"), "click", async (e) => {
-            const saveDir = getChosenSaveDir();
-            const res = await callTool(
-              "export_to_workspace",
-              { exportType: "markdown_cards", papers: [paper], targetSubdir: saveDir },
-              "正在导出 Obsidian 文献笔记...",
-              e.currentTarget
-            );
-            if (res?.exportResult?.destRoot) {
-              showBanner(
-                `✅ 已导出文献笔记到：${res.exportResult.destRoot}`,
-                "success",
-                res.exportResult.writtenFiles?.[0] || res.exportResult.destRoot,
-                "📄 打开笔记"
-              );
-            }
-          });
           onAction(container.querySelector("#drwSendPaperChat"), "click", async () => {
-            const prompt = `请帮我深入分析这篇候选文献（根据需要可结合 sanmu-paper-reader 或核对全文/SI）：\n- 标题：${paper.title}\n- 年份：${paper.year}\n- 标识符：${JSON.stringify(paper.identifiers)}\n- 阅读进度：${paper.handoff_stage_label || paper.handoff_stage}\n- 本地PDF路径：${paper.local_pdf_path || "未下载"}\n- 摘要：${paper.abstract || "无"}`;
+            const prompt = `请帮我深入分析这篇候选文献（根据需要可结合 sanmu-paper-reader 或核对全文/SI）：\n- 标题：${paper.title}\n- 年份：${paper.year}\n- 标识符：${JSON.stringify(paper.identifiers)}\n- 本地PDF路径：${paper.local_pdf_path || "未下载"}\n- 摘要：${paper.abstract || "无"}`;
             await sendToChat(prompt, paper);
-          });
-          onAction(container.querySelector("#drwSaveEvidence"), "click", async () => {
-            const stage = container.querySelector("#drwEvStage").value;
-            const basis = container.querySelector("#drwEvBasis").value;
-            const reason = container.querySelector("#drwEvReason").value;
-            await callTool("manage_basket", {
-              action: "update_evidence",
-              paperKey: paper.paper_key,
-              stage,
-              basis,
-              reason
-            });
-            showBanner("已保存阅读进度与筛选备注！", "success");
-            inspectPaper(findUpdatedPaper(paper.paper_key, paper));
           });
         });
       }
@@ -2171,9 +2090,9 @@
 
         const html = `
           <div class="section-box">
-            <h4>条目操作与全文获取（保存至上方「📁 保存位置」）</h4>
+            <h4>条目操作与全文获取</h4>
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
-              ${candPaper ? `<button class="btn sm ${inBasket ? "success" : "primary"}" id="rawToggleBasket">${inBasket ? "⭐ 已在收藏篮 (点击移出)" : "⭐ 收藏到文献篮 (可导出BibTeX/笔记)"}</button>` : ""}
+              ${candPaper ? `<button class="btn sm ${inBasket ? "success" : "primary"}" id="rawToggleBasket">${inBasket ? "⭐ 已在收藏篮 (点击移出)" : "⭐ 加入收藏篮"}</button>` : ""}
               ${pdfUrl ? `<button class="btn sm success exec-btn" id="rawDownloadPdf">⬇ 下载PDF到保存位置</button>` : ""}
               ${dois.map((d) => `<button class="btn sm primary raw-lookup-doi exec-btn" data-doi="${esc(d)}">🔎 补全标准题录 (${esc(d)})</button>`).join("")}
               ${url ? `<button class="btn sm" id="rawOpenUrl">🌐 在浏览器中打开原网页</button>` : ""}
@@ -2195,10 +2114,6 @@
             <div style="font-size:12.5px; line-height:1.65; white-space:pre-wrap; background:var(--bg-primary); padding:10px; border-radius:6px; border:1px solid var(--border-primary); max-height:360px; overflow-y:auto;">${esc(item.markdown || item.text || item.snippet)}</div>
           </div>` : ""}
           ${figuresHtml}
-          <details class="sub-fold">
-            <summary>▸ 查看原始返回数据 (JSON)</summary>
-            <pre class="pre-viewer" style="margin-top:6px;">${esc(JSON.stringify(item, null, 2))}</pre>
-          </details>
         `;
         openDetailView(
           item.serper_type === "patents" ? "专利详情" : "检索条目详情",
@@ -2384,24 +2299,20 @@
           zBadge.textContent = zOnline ? "✓ 在线" : "离线";
         }
 
-        // Populate Zotero target collection selector in top bar when Zotero is online
+        // Populate Zotero target collection selector in top bar
         const zColWrap = document.getElementById("zoteroTargetColWrap");
         const zColSelect = document.getElementById("globalZoteroColSelect");
         const globalUndoBtn = document.getElementById("btnGlobalUndoZotero");
         const cols = data?.settings?.zoteroCollections || [];
         if (zColWrap && zColSelect) {
-          if (zOnline) {
-            const prevVal = zColSelect.value;
-            zColSelect.innerHTML =
-              `<option value="">我的文库 (根目录)</option>` +
-              cols.map((c) => `<option value="${esc(c.key)}">${esc(c.fullName || c.name)}</option>`).join("");
-            if (prevVal && cols.some((c) => c.key === prevVal)) {
-              zColSelect.value = prevVal;
-            }
-            zColWrap.classList.remove("hidden");
-          } else {
-            zColWrap.classList.add("hidden");
+          const prevVal = zColSelect.value;
+          zColSelect.innerHTML =
+            `<option value="">我的文库 (根目录)</option>` +
+            (zOnline ? cols.map((c) => `<option value="${esc(c.key)}">${esc(c.fullName || c.name)}</option>`).join("") : "");
+          if (zOnline && prevVal && cols.some((c) => c.key === prevVal)) {
+            zColSelect.value = prevVal;
           }
+          zColWrap.classList.remove("hidden");
         }
         if (globalUndoBtn) {
           if (zOnline && data?.lastZoteroImport?.itemKey) {
@@ -2422,16 +2333,15 @@
         const tldrStr = safeTldrStr(p);
         const providers = [...new Set((p.provenance || []).map((pr) => pr.provider))].join(" + ");
         const isExcluded = p.handoff_stage === "excluded";
-        const stageCls =
-          isExcluded
-            ? "err"
-            : p.handoff_stage === "read" || p.handoff_stage === "identity_checked"
-              ? "ok"
-              : p.handoff_stage === "file_obtained"
-                ? "info"
-                : p.handoff_stage === "metadata_checked"
-                  ? "purple"
-                  : "";
+        const autoStatusBadgeHtml = isExcluded
+          ? `<span class="pill static err" style="flex-shrink:0;">🚫 已排除</span>`
+          : p.in_basket
+            ? `<span class="pill static ok" style="flex-shrink:0;">⭐ 已收藏</span>`
+            : p.zotero_match?.matched
+              ? `<span class="pill static ok" style="flex-shrink:0;">📚 Zotero已收录</span>`
+              : p.local_pdf_path
+                ? `<span class="pill static ok" style="flex-shrink:0;">✅ 已存PDF</span>`
+                : "";
 
         const arxId = p.identifiers?.arxiv?.[0];
         const fallbackCands =
@@ -2523,7 +2433,7 @@
                 <input type="checkbox" class="paper-select-chk" data-paper-key="${esc(p.paper_key)}" ${isChecked ? "checked" : ""} onclick="event.stopPropagation();" style="margin-top:3px; cursor:pointer; flex-shrink:0;" title="勾选此文献进行批量操作" />
                 <h4 class="paper-title" style="margin:0;">${p.index ? `${esc(p.index)}. ` : ""}${esc(p.title || "Untitled")}</h4>
               </div>
-              <span class="pill static ${stageCls}" style="flex-shrink:0;">${esc(p.handoff_stage_label || STAGE_LABELS_MAP[p.handoff_stage] || "待初筛")}</span>
+              ${autoStatusBadgeHtml}
             </div>
             <div class="paper-meta" style="margin-top:4px;">
               ${diffBadgeHtml}
@@ -3254,7 +3164,6 @@
                 ${papers.length > 0 ? `<button class="btn sm" id="btnToggleAllAbstracts">${state.expandAllAbstracts ? "▴ 折叠全部摘要" : "📖 展开全部摘要"}</button>` : ""}
                 <button class="btn sm" id="btnJumpToGraphFromRun">🕸 查看关系图谱</button>
                 <button class="btn sm primary" id="btnSendRunToChat">💬 让对话 AI 筛选</button>
-                <button class="btn sm exec-btn" id="btnExportRunBundle" title="将本批次全部文件保存到上方指定位置">📦 保存整包</button>
               </div>
             </div>
             ${srcBadges ? `<div class="status-strip" style="margin-top:6px;">${srcBadges}</div>` : ""}
@@ -3279,23 +3188,6 @@
           onAction(btn, "click", async () => {
             await inspectRunFile(btn.dataset.run, btn.dataset.path);
           });
-        });
-        onAction(headerEl.querySelector("#btnExportRunBundle"), "click", async (e) => {
-          const saveDir = getChosenSaveDir();
-          const res = await callTool(
-            "export_to_workspace",
-            { exportType: "run_bundle", runId: bundle.runId, targetSubdir: saveDir },
-            `正在将当前批次导出到 ${saveDir} ...`,
-            e.currentTarget
-          );
-          if (res?.exportResult?.destRoot) {
-            showBanner(
-              `✅ 已导出到目录: ${res.exportResult.destRoot}`,
-              "success",
-              res.exportResult.writtenFiles?.[0] || res.exportResult.destRoot,
-              "📂 打开文件夹"
-            );
-          }
         });
         onAction(headerEl.querySelector("#btnSendRunToChat"), "click", async () => {
           const prompt = `我已经完成了文献检索（${human.title || bundle.runId}，共 ${totalCount} 条结果，保存在 \`${bundle.runDir}\`）。请读取该批次的结果文件，帮我按课题相关性做筛选并给出精读建议。`;
@@ -4496,78 +4388,12 @@
       document.getElementById("btnGraphZoomIn")?.addEventListener("click", () => zoomGraphByFactor(1.2));
       document.getElementById("btnGraphZoomOut")?.addEventListener("click", () => zoomGraphByFactor(0.84));
 
-      onAction(document.getElementById("btnExportGraphSvg"), "click", async (e) => {
-        const svgEl = document.getElementById("graphSvg");
-        if (!svgEl || !graphSim.nodes.length) {
-          return showBanner("当前图谱暂无节点可导出", "warn");
-        }
-        const saveDir = getChosenSaveDir();
-
-        // Compute centered bounding box from actual node coordinates
-        let minX = Infinity;
-        let maxX = -Infinity;
-        let minY = Infinity;
-        let maxY = -Infinity;
-        for (const n of graphSim.nodes) {
-          minX = Math.min(minX, n.x - n.r - 58);
-          maxX = Math.max(maxX, n.x + n.r + 58);
-          minY = Math.min(minY, n.y - n.r - 28);
-          maxY = Math.max(maxY, n.y + n.r + 36);
-        }
-        if (state.graphLayout === "timeline") {
-          minX = Math.min(minX, 40);
-          maxX = Math.max(maxX, GRAPH_W - 40);
-          maxY = Math.max(maxY, GRAPH_H);
-        }
-        const vbX = Math.floor(Math.min(0, minX));
-        const vbY = Math.floor(Math.min(0, minY));
-        const vbW = Math.max(GRAPH_W, Math.ceil(maxX - vbX));
-        const vbH = Math.max(GRAPH_H, Math.ceil(maxY - vbY));
-
-        const clone = svgEl.cloneNode(true);
-        const vpClone = clone.querySelector("#graphViewport");
-        if (vpClone) {
-          vpClone.setAttribute("transform", "translate(0,0) scale(1)");
-        }
-        clone.querySelectorAll(".graph-edge-line").forEach((line) => {
-          const stroke = line.getAttribute("stroke") || "rgba(110,119,129,0.58)";
-          const sw = line.getAttribute("stroke-width") || "1.3";
-          const op = line.style.opacity || "0.65";
-          line.setAttribute("style", `fill:none;stroke:${stroke};stroke-width:${sw};opacity:${op};`);
-        });
-        clone.querySelectorAll(".graph-node-g").forEach((g) => {
-          g.setAttribute("style", `opacity:1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;`);
-        });
-
-        const cleanInner = clone.innerHTML
-          .replace(/var\(--text-primary\)/g, "#1f2328")
-          .replace(/var\(--text-secondary\)/g, "#57606a")
-          .replace(/var\(--text-tertiary\)/g, "#6e7781")
-          .replace(/var\(--border-primary\)/g, "#d0d7de");
-        const embeddedStyle = `<style>
-          .graph-edge-line { fill: none; stroke-linecap: round; }
-          .graph-node-g text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-          .node-label { fill: #1f2328; font-size: 10.5px; font-weight: 500; }
-        </style>`;
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" width="${vbW * 2}" height="${vbH * 2}" style="background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;">\n${embeddedStyle}\n${cleanInner}\n</svg>\n`;
-        const res = await callTool(
-          "export_to_workspace",
-          { exportType: "graph_svg", svgContent: xml, targetSubdir: saveDir },
-          `正在将关系图谱矢量图 (.svg) 保存至 ${saveDir} ...`,
-          e.currentTarget
-        );
-        const savedFile = res?.exportResult?.writtenFiles?.[0];
-        if (savedFile) {
-          showBanner(`✅ 关系图谱 SVG 已保存至：${savedFile}`, "success", savedFile, "🖼 打开图谱文件");
-        }
-      });
-
       function renderBasket(data) {
         const basket = data?.basket || [];
         document.getElementById("tabCountBasket").textContent = String(basket.length);
         const container = document.getElementById("basketListContainer");
         if (basket.length === 0) {
-          container.innerHTML = `<p style="color:var(--text-secondary); margin:0;">收藏篮为空。在检索结果卡片上点击「⭐ 收藏」即可跨检索收集文献，支持一键导出 Obsidian 笔记与参考文献。</p>`;
+          container.innerHTML = `<p style="color:var(--text-secondary); margin:0;">收藏篮为空。在检索结果卡片上点击「⭐ 收藏」即可跨检索收集文献，支持一键批量存入本机 Zotero、复制参考文献或发给对话 AI 对比精读。</p>`;
         } else {
           container.innerHTML = `<div class="paper-list" id="basketPapersList">${basket.map((p) => renderPaperCardHtml(p)).join("")}</div>`;
           bindPaperListEvents(container.querySelector("#basketPapersList"), basket);
@@ -4937,9 +4763,7 @@
         if (!raw) return showBanner("请输入检索词或 PMCID / DOI / PMID", "error");
         const directId = normalizeDirectId(raw);
         const isDirectId = /^(?:PMC\d+|(?:pmid|pmcid):\S+|10\.\d{4,9}\/\S+)$/i.test(directId);
-        const fetchMode = document.getElementById("qEpmcFetch").value;
-        const saveDir = getChosenSaveDir();
-        const res = await callTool(
+        await callTool(
           "search_epmc",
           {
             query: isDirectId ? undefined : raw,
@@ -4949,24 +4773,13 @@
             openAccess: document.getElementById("qEpmcOa").checked,
             preprints: document.getElementById("qEpmcPreprints").checked,
             hasFulltext: document.getElementById("qEpmcFulltext").checked,
-            fetchMode,
-            saveDir,
+            fetchMode: "none",
             limit: readLimitInput("qEpmcLimit")
           },
-          fetchMode !== "none"
-            ? `正在从 Europe PMC 下载全文/SI补充材料包并保存至 ${saveDir} ...`
-            : `正在检索 Europe PMC「${raw}」...`,
+          `正在检索 Europe PMC「${raw}」...`,
           btnExecEpmc
         );
         switchTab("results");
-        if (res?.exportedSaveDir) {
-          showBanner(
-            `✅ 全文 XML / SI 补充材料已自动保存至：${res.exportedSaveDir}`,
-            "success",
-            res.exportedSaveDir,
-            "📂 打开文件夹"
-          );
-        }
       });
       bindEnterKey(document.getElementById("qEpmcQuery"), btnExecEpmc);
 
@@ -4985,40 +4798,24 @@
         showBanner(`✅ 已复制 ${state.citeFormat.toUpperCase()} 格式参考文献！`, "success");
       });
 
-      onAction(document.getElementById("btnExportMdCards"), "click", async (e) => {
-        const saveDir = getChosenSaveDir();
-        const res = await callTool(
-          "export_to_workspace",
-          { exportType: "markdown_cards", targetSubdir: saveDir },
-          `正在导出 Obsidian 文献笔记到 ${saveDir} ...`,
-          e.currentTarget
-        );
-        if (res?.exportResult?.destRoot) {
-          showBanner(
-            `✅ 已导出 ${res.exportResult.writtenFiles.length} 篇文献笔记到 ${res.exportResult.destRoot}`,
-            "success",
-            res.exportResult.destRoot,
-            "📂 打开文件夹"
+      onAction(document.getElementById("btnBatchSaveBasketToZotero"), "click", async (e) => {
+        const basket = state.panelData?.basket || [];
+        if (!basket.length) return showBanner("收藏篮为空，请先在检索结果中点击「⭐ 收藏」添加文献", "warn");
+        const colKey = getChosenZoteroCol();
+        let savedCnt = 0;
+        let existCnt = 0;
+        for (let i = 0; i < basket.length; i++) {
+          const p = basket[i];
+          const res = await callTool(
+            "manage_basket",
+            { action: "save_to_zotero", paper: p, collectionKey: colKey },
+            `正在批量存入本机 Zotero (${i + 1}/${basket.length})：《${(p.title || "").slice(0, 24)}...》`,
+            e.currentTarget
           );
+          if (res?.zoteroSaveResult?.alreadyExists) existCnt++;
+          else if (res?.zoteroSaveResult?.itemKey) savedCnt++;
         }
-      });
-
-      onAction(document.getElementById("btnExportCitations"), "click", async (e) => {
-        const saveDir = getChosenSaveDir();
-        const res = await callTool(
-          "export_to_workspace",
-          { exportType: "citations_bundle", targetSubdir: saveDir },
-          `正在导出 BibTeX / RIS / 国标引文包到 ${saveDir} ...`,
-          e.currentTarget
-        );
-        if (res?.exportResult?.destRoot) {
-          showBanner(
-            `✅ 已导出引文文件到 ${res.exportResult.destRoot}`,
-            "success",
-            res.exportResult.destRoot,
-            "📂 打开文件夹"
-          );
-        }
+        showBanner(`✅ 收藏篮批量存入 Zotero 完成：新建 ${savedCnt} 篇${existCnt ? `，已存在跳过 ${existCnt} 篇` : ""}。`, "success");
       });
 
       onAction(document.getElementById("btnSendBasketToChat"), "click", async () => {

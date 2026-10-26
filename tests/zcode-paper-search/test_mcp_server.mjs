@@ -177,49 +177,30 @@ test("MCP offline regressions", async (t) => {
     assert.equal(readdirSync(join(data, "runs")).some((name) => name.startsWith(".enrich")), false);
   });
 
-  await t.test("same-name exports preserve both papers and existing notes; citations use unique keys", async () => {
-    reset(); const dest = join(workspace, "export-collision"); mkdirSync(dest, { recursive: true });
-    writeFileSync(join(dest, "2025-Same title.md"), "user note");
-    const result = await call("export_to_workspace", { exportType: "markdown_cards", targetSubdir: dest, papers: [paper("one"), paper("two")] });
-    assert.equal(result.isError, undefined);
-    assert.equal(new Set(result.structuredContent.exportResult.writtenFiles).size, 2);
-    assert.equal(readFileSync(join(dest, "2025-Same title.md"), "utf8"), "user note");
-    const bundle = await call("export_to_workspace", { exportType: "citations_bundle", targetSubdir: dest, papers: [paper("one"), paper("two")] });
-    const bib = readFileSync(bundle.structuredContent.exportResult.writtenFiles[0], "utf8");
-    const keys = [...bib.matchAll(/@article\{([^,]+)/g)].map((m) => m[1]);
+  await t.test("export_to_workspace is removed and citations preview provides three formats with unique BibTeX keys", async () => {
+    reset();
+    const notFound = await handleRequest({ jsonrpc: "2.0", id: id++, method: "tools/call", params: { name: "export_to_workspace", arguments: { exportType: "markdown_cards" } } });
+    assert.equal(notFound.error.code, -32601);
+    await call("manage_basket", { action: "add", papers: [paper("one"), paper("two")] });
+    const state = (await call("open_panel")).structuredContent;
+    const cites = state.citationsPreview;
+    assert.ok(cites.gbt7714);
+    assert.ok(cites.bibtex);
+    assert.ok(cites.apa);
+    assert.equal(cites.ris, undefined);
+    const keys = [...cites.bibtex.matchAll(/@article\{([^,]+)/g)].map((m) => m[1]);
     assert.equal(new Set(keys).size, 2);
   });
 
-  await t.test("run bundles recursively copy Unicode SI filenames without native directory-copy crashes", async () => {
+  await t.test("EPMC suppl copying preserves SI bytes and does not copy fulltext.xml into user saveDir", async () => {
     reset();
-    const dir = makeRun("recursive-export");
-    const nested = join(dir, "supplementary", "原图 with spaces");
-    mkdirSync(nested, { recursive: true });
-    const image = Buffer.alloc(128 * 1024, 0x7e);
-    writeFileSync(join(nested, "figure.webp"), image);
-    writeFileSync(join(nested, "support.pdf"), "%PDF-1.7\nfixture\n%%EOF");
-    const client = startMcpServer(serverPath, { env, cwd: workspace });
-    try {
-      const result = await client.call("export_to_workspace", { exportType: "run_bundle", runId: "recursive-export", targetSubdir: "recursive-output" });
-      assert.equal(result.isError, undefined);
-      const exported = result.structuredContent.exportResult.writtenFiles[0];
-      assert.deepEqual(readFileSync(join(exported, "supplementary", "原图 with spaces", "figure.webp")), image);
-      assert.equal((await client.request("ping")).result.constructor, Object);
-    } finally { await client.close(); }
-  });
-
-  await t.test("EPMC copying preserves original run bytes and hash verification", async () => {
-    reset();
-    const result = await call("search_epmc", { query: "fixture", fetchMode: "all", saveDir: join(workspace, "epmc-export") });
+    const result = await call("search_epmc", { query: "fixture", fetchMode: "suppl", saveDir: join(workspace, "epmc-export") });
     assert.equal(result.isError, undefined);
     const active = result.structuredContent.activeRun;
     assert.ok(active.run.exported_save_dir);
     assert.deepEqual(readFileSync(join(active.run.exported_save_dir, "supplementary", "figure.webp")), Buffer.from("RIFF-fixture"));
+    assert.equal(existsSync(join(active.run.exported_save_dir, "fulltext.xml")), false);
     assert.equal(JSON.parse(readFileSync(join(active.runDir, "run.json"), "utf8")).exported_save_dir, undefined);
-    const check = await call("manage_runs", { operation: "check", runId: active.runId });
-    assert.equal(check.isError, undefined);
-    writeFileSync(join(active.runDir, "fulltext.xml"), "changed");
-    expectError(await call("manage_runs", { operation: "check", runId: active.runId }));
   });
 
   await t.test("PDF saves avoid existing files and do not downgrade completed reading", async () => {
@@ -234,13 +215,13 @@ test("MCP offline regressions", async (t) => {
     assert.doesNotMatch(result.content[0].text, /核验成功/);
   });
 
-  await t.test("Serper reviews params reach the Python route without adding query", async () => {
+  await t.test("Serper webpage and scholar params reach the Python route and unsupported types are rejected", async () => {
     reset();
     expectError(await call("search_serper", { type: "reviews", query: "place" }));
-    const result = await call("search_serper", { type: "reviews", params: { placeId: "fixture-place", sortBy: "newest" } });
+    const result = await call("search_serper", { type: "scholar", query: "photocatalysis", params: { hl: "en", sortBy: "newest" } });
     assert.equal(result.isError, undefined);
     const args = result.structuredContent.activeRun.run.query.args;
-    assert.deepEqual(JSON.parse(args[args.indexOf("--params") + 1]), { placeId: "fixture-place", sortBy: "newest" });
+    assert.deepEqual(JSON.parse(args[args.indexOf("--params") + 1]), { hl: "en", sortBy: "newest" });
   });
 
   await t.test("ordinary HTTP services cannot masquerade as Zotero", async () => {

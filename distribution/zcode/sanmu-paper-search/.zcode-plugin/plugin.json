@@ -1,7 +1,7 @@
 {
   "name": "sanmu-paper-search",
-  "version": "1.6.5",
-  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、Google Scholar/Patents (Serper) 与 Exa AI 多源检索、学者消歧、引文网络扩展、OA/SI 全文抓包、阅读进度追踪、Zotero 本地查重及一键导出项目知识库。",
+  "version": "1.6.6",
+  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、Google Scholar/Patents (Serper) 与 Exa AI 多源检索、学者消歧、引文网络扩展、OA PDF 与 SI 补充材料包按需下载，以及本机 Zotero 查重、一键入库与一键撤销。",
   "author": {
     "name": "Sanmu (Wu Sen)"
   },
@@ -69,8 +69,8 @@
     "exportSubdir": {
       "type": "string",
       "default": "00-收件箱-待整理/文献检索",
-      "title": "知识库默认导出文件夹",
-      "description": "在侧栏点击「导出 Obsidian 文献笔记」或「导出引文包」时，文件默认保存到当前工作区下的该相对路径。"
+      "title": "PDF/SI 默认下载目录",
+      "description": "在侧栏下载免费 OA PDF 或 Europe PMC 补充材料 (SI) 包时，文件默认保存到当前工作区下的该相对路径（或本地绝对路径）。"
     }
   },
   "ui": {
@@ -89,7 +89,7 @@
     ]
   },
   "description_i18n": {
-    "en": "Search, verify, and explore academic literature in a side panel: OpenAlex, Semantic Scholar, Crossref, Europe PMC, Google Scholar/Patents (Serper) and Exa AI, with author disambiguation, citation chasing, OA/SI fetching, local Zotero matching, and one-click export to your workspace knowledge base.",
-    "zh-CN": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、Google Scholar/Patents (Serper) 与 Exa AI 多源检索、学者消歧、引文网络扩展、OA/SI 全文抓包、阅读进度追踪、Zotero 本地查重及一键导出项目知识库。"
+    "en": "Search, verify, and explore academic literature in a side panel: OpenAlex, Semantic Scholar, Crossref, Europe PMC, Google Scholar/Patents (Serper) and Exa AI, with author disambiguation, citation chasing, on-demand OA PDF / SI bundle download, and local Zotero integration.",
+    "zh-CN": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、Google Scholar/Patents (Serper) 与 Exa AI 多源检索、学者消歧、引文网络扩展、OA PDF 与 SI 补充材料包按需下载，以及本机 Zotero 查重、一键入库与一键撤销。"
   }
 }

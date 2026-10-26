@@ -238,26 +238,6 @@ function uniqueDestination(dir, filename, shortIdHint = "") {
   return candidate;
 }
 
-function copyRunDirectory(sourceDir, destinationDir) {
-  const root = realpathSync(sourceDir);
-  const copyDirectory = (source, destination) => {
-    if (!isWithin(root, realpathSync(source))) throw new Error("批次中存在越界文件链接，已停止导出。");
-    assertReadablePath(source);
-    mkdirSync(destination);
-    for (const entry of readdirSync(source, { withFileTypes: true })) {
-      const from = join(source, entry.name);
-      const to = join(destination, entry.name);
-      if (entry.isSymbolicLink()) throw new Error("批次中存在文件链接，已停止导出。");
-      if (entry.isDirectory()) copyDirectory(from, to);
-      else if (entry.isFile()) {
-        assertReadablePath(from);
-        copyFileSync(from, to, fsConstants.COPYFILE_EXCL);
-      } else throw new Error("批次中存在不支持的文件类型，已停止导出。");
-    }
-  };
-  copyDirectory(sourceDir, destinationDir);
-}
-
 function redactSecrets(value) {
   const cfg = readJsonSafe(CONFIG_PATH, {}) || {};
   const secrets = new Set();
@@ -1696,7 +1676,6 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
         const isDeliverable =
           !SYSTEM_JSON_NAMES.has(entry.name) &&
           (ext === ".pdf" ||
-            ext === ".xml" ||
             ext === ".zip" ||
             ext === ".docx" ||
             ext === ".xlsx" ||
@@ -1859,12 +1838,10 @@ function formatBibtexKey(paper, idx = 1) {
 
 function generateCitations(papers) {
   const bibtexBlocks = [];
-  const risBlocks = [];
   const gbtLines = [];
   const apaLines = [];
   const usedKeys = new Set();
   const bibValue = (value) => String(value).replace(/[\r\n]+/g, " ").replace(/[{}]/g, (char) => `\\${char}`);
-  const risValue = (value) => String(value).replace(/[\r\n]+/g, " ").trim();
 
   (papers || []).forEach((p, idx) => {
     const baseKey = formatBibtexKey(p, idx + 1);
@@ -1894,22 +1871,6 @@ function generateCitations(papers) {
         .join("\n")
     );
 
-    risBlocks.push(
-      [
-        "TY  - JOUR",
-        `TI  - ${risValue(title)}`,
-        ...authors.map((a) => `AU  - ${risValue(a)}`),
-        year ? `PY  - ${risValue(year)}` : null,
-        journal ? `JO  - ${risValue(journal)}` : null,
-        doi ? `DO  - ${risValue(doi)}` : null,
-        url ? `UR  - ${risValue(url)}` : null,
-        p.abstract ? `AB  - ${risValue(p.abstract)}` : null,
-        "ER  - "
-      ]
-        .filter(Boolean)
-        .join("\n")
-    );
-
     const gbtAuthors =
       authors.length > 3 ? `${authors.slice(0, 3).join(", ")}, 等` : authors.join(", ") || "佚名";
     gbtLines.push(
@@ -1925,70 +1886,9 @@ function generateCitations(papers) {
 
   return {
     bibtex: bibtexBlocks.join("\n\n"),
-    ris: risBlocks.join("\n\n"),
     gbt7714: gbtLines.join("\n"),
     apa: apaLines.join("\n\n")
   };
-}
-
-function generateMarkdownCard(paper) {
-  const doi = paper.identifiers?.doi?.[0] || "";
-  const authors = (paper.authors || []).map((a) => a.name).filter(Boolean);
-  const providers = (paper.provenance || []).map((pr) => pr.provider).filter(Boolean);
-  const linksMd = (paper.clickable_links || [])
-    .map((l) => `- [${l.label}](${l.url})`)
-    .join("\n");
-  const stageCode = paper.handoff_stage || "discovered";
-  const stageLabel = STAGE_LABELS[stageCode] || stageCode;
-
-  return [
-    "---",
-    `title: ${JSON.stringify(paper.title || "Untitled")}`,
-    `year: ${paper.year || "null"}`,
-    `journal: ${JSON.stringify(paper.journal || paper.venue || "")}`,
-    `doi: ${JSON.stringify(doi)}`,
-    `authors: ${JSON.stringify(authors)}`,
-    `citation_count: ${paper.citation_count ?? "null"}`,
-    `evidence_stage: ${JSON.stringify(stageCode)}`,
-    `sources: ${JSON.stringify([...new Set(providers)])}`,
-    `created_at: ${JSON.stringify(new Date().toISOString().slice(0, 10))}`,
-    `tags: ["文献候选", "sanmu-paper-search"]`,
-    "---",
-    "",
-    `# ${paper.title || "Untitled"}`,
-    "",
-    "## 1. 核心题录与可点击外链",
-    "",
-    `- **年份**：${paper.year ?? "未知"}`,
-    `- **期刊/来源**：${paper.journal || paper.venue || "未标注"}`,
-    `- **作者**：${authors.join(", ") || "未知"}`,
-    `- **DOI**：${doi ? `[${doi}](https://doi.org/${doi})` : "无"}`,
-    `- **被引次数**：${paper.citation_count ?? "未统计"}（参考文献数：${paper.reference_count ?? "未统计"}）`,
-    `- **阅读进度**：${stageLabel}（\`${stageCode}\`）`,
-    `- **Zotero 本地状态**：${paper.zotero_match?.matched ? `已收录 (Key: \`${paper.zotero_match.itemKey || "local"}\`)` : "未检出本地条目"}`,
-    "",
-    "### 直达链接",
-    linksMd || "- 暂无外链",
-    "",
-    "## 2. 一句话要点 (TLDR) 与摘要",
-    "",
-    paper.tldr ? `> **智能要点 (TLDR)**：${paper.tldr}\n` : "",
-    paper.abstract || "*当前来源未返回摘要文本。*",
-    "",
-    "## 3. 筛选备注与本地全文",
-    "",
-    `- **筛选/阅读备注**：${paper.screening_reason || "待填写与课题相关性"}`,
-    `- **本地全文路径**：${paper.local_pdf_path ? `\`${paper.local_pdf_path}\`` : "尚未下载 PDF"}`,
-    "",
-    "## 4. 精读与实验条件核对记录（配合 `sanmu-paper-reader`）",
-    "",
-    "- **研究体系 / 关键材料组成**：",
-    "- **关键反应/测试条件与性能指标**：",
-    "- **核心表征证据与补充材料 (SI) 核查**：",
-    ""
-  ]
-    .filter((line) => line !== null)
-    .join("\n");
 }
 
 function summarizeRunForModel(bundle) {
@@ -2951,7 +2851,7 @@ const TOOLS = [
   {
     name: "search_epmc",
     description:
-      "调用 Europe PMC 公开接口检索论文、预印本、撤稿/勘误记录，或一键下载 JATS 全文 XML 与补充材料（SI PDF 及高清原图压缩包）到指定保存目录。无需 API Key。",
+      "调用 Europe PMC 公开接口检索论文、预印本、撤稿/勘误记录，或按需下载补充材料（SI PDF 及高清原图压缩包）到指定保存目录。无需 API Key。",
     visibility: ["model", "app"],
     inputSchema: {
       $schema: "http://json-schema.org/draft-07/schema#",
@@ -2972,11 +2872,11 @@ const TOOLS = [
           type: "string",
           enum: ["none", "all", "xml", "suppl"],
           default: "none",
-          description: "是否同时拉取 JATS 全文 XML 与补充材料包 (all/xml/suppl)"
+          description: "是否按需拉取补充材料包 (none/suppl/all/xml，默认 none)"
         },
         saveDir: {
           type: "string",
-          description: "可选。当下载全文 XML 或 SI 补充材料包时，同步保存到的目标文件夹路径（支持工作区相对路径或本地绝对路径）"
+          description: "可选。当下载 SI 补充材料包时，同步保存到的目标文件夹路径（支持工作区相对路径或本地绝对路径）"
         }
       }
     },
@@ -3008,24 +2908,35 @@ const TOOLS = [
       const pyRes = await runPython(PAPER_SEARCH_PY, args, 240000);
       requirePythonBundle(pyRes, outDir, "Europe PMC query failed");
 
-      // If XML or supplementary files were downloaded, copy them to user's chosen saveDir!
+      // Only copy extracted SI supplementary files (never copy fulltext.xml into user's save directory)
       let exportedSaveDir = null;
       if (fetchMode !== "none") {
-        const hasXml = existsSync(join(outDir, "fulltext.xml"));
-        const hasSuppl = existsSync(join(outDir, "supplementary"));
-        if (hasXml || hasSuppl) {
+        const supplSrcDir = join(outDir, "supplementary");
+        const hasSuppl = existsSync(supplSrcDir) && statSync(supplSrcDir).isDirectory();
+        if (hasSuppl) {
           const baseSaveDir = resolveTargetSaveDir(input.saveDir);
           const papers = readJsonSafe(join(outDir, "papers.json"), []);
           const firstPaper = papers[0] || {};
           const folderName = `${makeSafeFileStem(firstPaper.year, firstPaper.title, input.id || input.query || runId)}_EPMC`;
           exportedSaveDir = uniqueDestination(baseSaveDir, folderName);
           mkdirSync(exportedSaveDir, { recursive: true });
-          if (hasXml) {
-            copyFileSync(join(outDir, "fulltext.xml"), join(exportedSaveDir, "fulltext.xml"));
-          }
-          if (hasSuppl) {
-            copyRunDirectory(join(outDir, "supplementary"), join(exportedSaveDir, "supplementary"));
-          }
+          const rootReal = realpathSync(supplSrcDir);
+          const copySupplTree = (src, dst) => {
+            if (!isWithin(rootReal, realpathSync(src))) throw new Error("补充材料中存在越界文件链接，已停止保存。");
+            assertReadablePath(src);
+            mkdirSync(dst, { recursive: true });
+            for (const entry of readdirSync(src, { withFileTypes: true })) {
+              const from = join(src, entry.name);
+              const to = join(dst, entry.name);
+              if (entry.isSymbolicLink()) throw new Error("补充材料中存在文件链接，已停止保存。");
+              if (entry.isDirectory()) copySupplTree(from, to);
+              else if (entry.isFile()) {
+                assertReadablePath(from);
+                copyFileSync(from, to, fsConstants.COPYFILE_EXCL);
+              } else throw new Error("补充材料中存在不支持的文件类型，已停止保存。");
+            }
+          };
+          copySupplTree(supplSrcDir, join(exportedSaveDir, "supplementary"));
           const exportState = loadState();
           exportState.runExports = { ...(exportState.runExports || {}), [runId]: exportedSaveDir };
           saveState(exportState);
@@ -3040,7 +2951,7 @@ const TOOLS = [
       return {
         text:
           summarizeRunForModel(panelState.activeRun) +
-          (exportedSaveDir ? `\n\n✅ 全文 XML / SI 补充材料已自动保存至目录：\`${exportedSaveDir}\`` : ""),
+          (exportedSaveDir ? `\n\n✅ SI 补充材料包已自动保存至目录：\`${exportedSaveDir}\`` : ""),
         structured: { ...panelState, exportedSaveDir }
       };
     }
@@ -3752,105 +3663,6 @@ const TOOLS = [
         structured: panelState
       };
     }
-  },
-  {
-    name: "export_to_workspace",
-    description:
-      "一键将单篇论文、文献收藏篮、关系图谱矢量图或完整检索批次（含已下载的 PDF、EPMC 全文 XML 与 SI 补充材料包）导出到指定的目标文件夹（支持工作区相对路径或本地任意绝对路径）。",
-    visibility: ["model", "app"],
-    inputSchema: {
-      $schema: "http://json-schema.org/draft-07/schema#",
-      type: "object",
-      properties: {
-        exportType: {
-          type: "string",
-          enum: ["markdown_cards", "citations_bundle", "run_bundle", "graph_svg"],
-          default: "markdown_cards"
-        },
-        targetSubdir: {
-          type: "string",
-          description: "可选。目标保存文件夹路径（支持工作区相对路径或本地绝对路径，默认使用配置的 00-收件箱-待整理/文献检索）"
-        },
-        papers: {
-          type: "array",
-          items: { type: "object" },
-          description: "可选。指定要导出的论文数组；未传时默认导出文献收藏篮中的全部论文"
-        },
-        runId: {
-          type: "string",
-          description: "当 exportType=run_bundle 时，指定要完整导出的运行批次 ID"
-        },
-        svgContent: {
-          type: "string",
-          description: "当 exportType=graph_svg 时，要保存的 SVG 矢量图内容"
-        }
-      },
-      required: ["exportType"]
-    },
-    execute: async (input) => {
-      const destRoot = resolveTargetSaveDir(input.targetSubdir);
-      const state = loadState();
-      const writtenFiles = [];
-
-      if (input.exportType === "graph_svg") {
-        if (!input.svgContent) throw new Error("未提供图谱 SVG 内容");
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-        const svgPath = uniqueDestination(destRoot, `literature-graph-${stamp}.svg`);
-        writeFileSync(svgPath, String(input.svgContent), { encoding: "utf8", flag: "wx" });
-        writtenFiles.push(svgPath);
-      } else if (input.exportType === "run_bundle") {
-        const targetRunId = input.runId || state.lastRunId || "";
-        const srcRunDir = resolveRunDir(targetRunId);
-        const dstRunDir = uniqueDestination(destRoot, targetRunId);
-        if (isWithin(srcRunDir, destRoot) || isWithin(srcRunDir, dstRunDir)) throw new Error("导出目录不能位于源批次内部。");
-        mkdirSync(dirname(dstRunDir), { recursive: true });
-        copyRunDirectory(srcRunDir, dstRunDir);
-        writtenFiles.push(dstRunDir);
-      } else {
-        const targetPapers =
-          Array.isArray(input.papers) && input.papers.length
-            ? enrichPapersList(input.papers, state)
-            : enrichPapersList(state.basket || [], state);
-        if (targetPapers.length === 0) {
-          throw new Error("没有可导出的论文，请先在检索结果中点击导出或将论文加入收藏篮。");
-        }
-        if (input.exportType === "markdown_cards") {
-          for (const p of targetPapers) {
-            const doiHint = p.identifiers?.doi?.[0] || p.paper_key || "paper";
-            const stem = makeSafeFileStem(p.year, p.title, "paper", doiHint);
-            const fullPath = uniqueDestination(destRoot, `${stem}.md`, doiHint);
-            writeFileSync(fullPath, generateMarkdownCard(p), { encoding: "utf8", flag: "wx" });
-            writtenFiles.push(fullPath);
-          }
-        } else if (input.exportType === "citations_bundle") {
-          const cites = generateCitations(targetPapers);
-          const stamp = new Date().toISOString().slice(0, 10);
-          const bibPath = uniqueDestination(destRoot, `references-${stamp}.bib`);
-          const risPath = uniqueDestination(destRoot, `references-${stamp}.ris`);
-          const mdPath = uniqueDestination(destRoot, `citations-${stamp}.md`);
-          writeFileSync(bibPath, cites.bibtex + "\n", { encoding: "utf8", flag: "wx" });
-          writeFileSync(risPath, cites.ris + "\n", { encoding: "utf8", flag: "wx" });
-          writeFileSync(
-            mdPath,
-            `# 导出参考文献清单 (${stamp})\n\n## GB/T 7714\n\n${cites.gbt7714}\n\n## APA\n\n${cites.apa}\n`,
-            { encoding: "utf8", flag: "wx" }
-          );
-          writtenFiles.push(bibPath, risPath, mdPath);
-        }
-      }
-
-      const panelState = await getFullPanelState();
-      return {
-        text: `已成功导出到目录 \`${destRoot}\`：\n${writtenFiles.map((f) => `- [${basename(f)}](${f})`).join("\n")}`,
-        structured: {
-          ...panelState,
-          exportResult: {
-            destRoot,
-            writtenFiles
-          }
-        }
-      };
-    }
   }
 ];
 
@@ -3956,7 +3768,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.6.5"
+          version: "1.6.6"
         }
       }
     };

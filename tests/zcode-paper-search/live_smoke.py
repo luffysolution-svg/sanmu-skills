@@ -125,15 +125,8 @@ def run(plugin_root, output, extended=False):
         papers = active.get("papers") or []
         if papers:
             check("basket-add", "manage_basket", {"action": "add", "paper": papers[0]})
-            check("export-notes", "export_to_workspace", {
-                "exportType": "markdown_cards", "targetSubdir": str(output / "exports"),
-            })
-            check("export-citations", "export_to_workspace", {
-                "exportType": "citations_bundle", "targetSubdir": str(output / "exports"),
-            })
         runs = [r["run_id"] for r in summary if r.get("run_id")]
         if runs:
-            check("run-check", "manage_runs", {"operation": "check", "runId": runs[0]})
             check("run-load", "manage_runs", {"operation": "load", "runId": runs[0]})
         if len(set(runs)) >= 2:
             unique = list(dict.fromkeys(runs))
