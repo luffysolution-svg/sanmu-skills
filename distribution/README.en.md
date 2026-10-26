@@ -25,7 +25,7 @@ Skill sources are maintained only in `skills/`. Every channel's package is gener
 
 ## Versioning and packaging
 
-The version number is recorded in `manifest.json`; also update the root `plugin.json` and `.claude-plugin/plugin.json`. All three must match (`check` verifies this). Skill names stay the same; the Tencent `slug` defaults to the skill name, so confirm it is not taken before the first publication.
+The version number is recorded in `manifest.json`; also update the root `plugin.json`, `.claude-plugin/plugin.json`, the ZCode shell `.zcode-plugin/plugin.json`, and the server and panel version markers. These versions must match (`check` verifies this). All ZCode shell files must exist and be tracked by Git; missing files fail the build. Skill names stay the same; the Tencent `slug` defaults to the skill name, so confirm it is not taken before the first publication.
 
 Run from the repository root; only Python 3.10+ and Git are needed:
 
@@ -57,6 +57,7 @@ Runtime sources are in `skills/<skill-name>/`; development assets are collected 
 python tests/sanmu-doc2md/_selftest.py
 python -m unittest discover -s tests/sanmu-paper-reader -v
 python -m unittest discover -s tests/sanmu-paper-search -v
+node --test tests/zcode-paper-search/test_mcp_server.mjs tests/zcode-paper-search/test_panel.mjs
 ```
 
 Examples and showcase images are only for browsing the repository and development validation; in an installed skill, all runtime links should point to resources inside the package.
@@ -137,7 +138,7 @@ On the [WorkBuddy open platform](https://open.workbuddy.cn), choose **发布管�
 - Required fields for skill packages follow the [official skill documentation](https://open.workbuddy.cn/docs/skill): `description`, `description_zh`, `description_en`, `version`, `author`. Display names are not marked as required, but parsing actually fails without them, so they are written too.
 - Paid asset names accept Chinese characters, English letters, digits, `-` and `_`; spaces and middle dots are not allowed. The build validates both display names. The current Chinese names are “三木学术文档转Markdown”, “三木文献精读” and “三木文献检索”. The console parses `display_name` from the package into a read-only field, so renaming requires uploading a new ZIP.
 - All three paid skills are created as new records using “创建” (Create), with WorkBuddy identifiers `sanmu-doc2md-paid`, `sanmu-paper-reader-paid` and `sanmu-paper-search-paid`. Previously published records stay unlisted. In the tested console, an existing free record's update form has no payment selector, while creating with its old identifier is rejected as a duplicate. Channel-specific identifiers avoid that conflict; source and SkillHub identifiers stay the same.
-- `workbuddyVersion` is currently `1.6.3`, matching the collection version `1.6.3`. If omitted, it defaults to the collection version. When updating an existing record, the platform requires a version greater than its latest one.
+- `workbuddyVersion` is currently `1.6.4`, matching the collection version `1.6.4`. If omitted, it defaults to the collection version. When updating an existing record, the platform requires a version greater than its latest one.
 - All three new skills use monthly billing at CNY `3` per month. Pricing is configured in the console, not in the ZIP. After saving, verify “按月付费·3元/月” on the confirmation page before submitting for review.
 - If parsing fails, first check against "技能基础结构" (basic skill structure) in the official documentation; if you still cannot find the cause, email openworkbuddy@tencent.com.
 

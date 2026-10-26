@@ -189,14 +189,21 @@ def validate(root=ROOT):
                 raise ValueError(f"Missing tracked package file: {name}/{filename}")
     validate_runtime_references(root, selected, names)
     zcode_shell_root = root / ZCODE_SHELL_DIR
-    if zcode_shell_root.is_dir():
-        for rel in ZCODE_SHELL_FILES:
-            shell_file = zcode_shell_root / rel
-            if not shell_file.is_file():
-                raise ValueError(f"Missing ZCode plugin shell file: {ZCODE_SHELL_DIR}/{rel}")
-        zcode_plugin = read_json(zcode_shell_root / ".zcode-plugin/plugin.json")
-        if zcode_plugin.get("name") != "sanmu-paper-search" or zcode_plugin.get("version") != version:
-            raise ValueError("ZCode plugin name/version differs from release manifest")
+    for rel in ZCODE_SHELL_FILES:
+        shell_file = zcode_shell_root / rel
+        if shell_file.is_symlink() or not shell_file.is_file():
+            raise ValueError(f"Missing or invalid ZCode plugin shell file: {ZCODE_SHELL_DIR}/{rel}")
+        if f"{ZCODE_SHELL_DIR}/{rel}" not in files:
+            raise ValueError(f"ZCode plugin shell file must be tracked in Git: {rel}")
+    zcode_plugin = read_json(zcode_shell_root / ".zcode-plugin/plugin.json")
+    if zcode_plugin.get("name") != "sanmu-paper-search" or zcode_plugin.get("version") != version:
+        raise ValueError("ZCode plugin name/version differs from release manifest")
+    server_text = (zcode_shell_root / "scripts/mcp-server.mjs").read_text(encoding="utf-8")
+    panel_text = (zcode_shell_root / "assets/panel.html").read_text(encoding="utf-8")
+    server_versions = re.findall(r'\bversion:\s*"(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)"', server_text)
+    panel_versions = re.findall(r'(?:\bversion:\s*"|class="brand-sub">v)(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)', panel_text)
+    if not server_versions or not panel_versions or any(value != version for value in server_versions + panel_versions):
+        raise ValueError("ZCode server/panel version differs from release manifest")
     budget = release.get("packageBudget", {"maxFiles": 200, "maxBytes": 5 * 1024 * 1024})
     for key in ("maxFiles", "maxBytes"):
         if type(budget.get(key)) is not int or budget[key] <= 0:

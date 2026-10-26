@@ -62,9 +62,10 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(deduplicate([distinct[0], paper("Same", {})])), 1)
         self.assertEqual(len(deduplicate([distinct[0], paper("Same", {}, "preprint")])), 2)
         bridge = paper("Bridge", ids(doi="10.1234/two", openalex="W1"))
-        conflict = deduplicate([a, bridge])[0]
-        self.assertEqual(set(conflict["identifiers"]["doi"]), {"10.1234/a", "10.1234/two"})
-        self.assertTrue(any(v["field"] == "identifiers.doi" for v in conflict["conflicts"]))
+        conflicts = deduplicate([a, bridge])
+        self.assertEqual(len(conflicts), 2)
+        self.assertTrue(all(len(p["identifiers"]["doi"]) == 1 for p in conflicts))
+        self.assertTrue(all(p["relations"][0]["type"] == "identity_conflict" for p in conflicts))
 
     def test_pagination_source_errors_redaction_and_bundle_integrity(self):
         env = {"SEMANTIC_SCHOLAR_API_KEY": "FAKE_PRIVATE_KEY", "OPENALEX_API_KEY": "FAKE_OTHER_KEY"}
@@ -265,6 +266,96 @@ class CoreTests(unittest.TestCase):
             self.assertFalse((root / "invalid").exists())
             with self.assertRaises(SourceError):
                 Providers(client).lookup("semantic-scholar", "10.1234/different")
+
+    def test_identifier_validation_normalization_and_preflight(self):
+        from _providers import parse_id
+        self.assertEqual(parse_id("pmcid:123"), ("pmcid", "PMC123"))
+        self.assertEqual(parse_id("pmcid:pmc123"), ("pmcid", "PMC123"))
+        self.assertEqual(parse_id("w123"), ("openalex", "W123"))
+        self.assertEqual(parse_id("38639018"), ("pmid", "38639018"))
+        self.assertEqual(parse_id("arxiv:hep-th/9901001v2"), ("arxiv", "hep-th/9901001v2"))
+        a = normalize("semantic-scholar", {"paperId": "abc", "externalIds": {"PubMedCentral": "123"}})
+        b = record("europepmc", "PMC123", "Title", None, ids(pmcid="PMC123"), [])
+        self.assertEqual(len(deduplicate([a, b])), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            for index, value in enumerate(("pmid:abc", "openalex:A123", "openalex:W1/path", "corpusid:abc", "arxiv:wrong", "pmcid:../x")):
+                out = Path(tmp) / str(index)
+                code, _ = self.invoke(["lookup", value, "--out", str(out)],
+                                      Client({}, lambda *a, **kw: self.fail("Unexpected network")))
+                self.assertEqual(code, 2, value)
+                self.assertFalse(out.exists())
+
+    def test_nonfinite_get_json_is_source_failure_with_valid_bundle(self):
+        for body in (b'{"results":[],"meta":{"count":NaN}}', b'{"results":[],"meta":{"count":1e999}}'):
+            with tempfile.TemporaryDirectory() as tmp:
+                response = Response({})
+                response.payload = body
+                out = Path(tmp) / "run"
+                code, run = self.invoke(["search", "x", "--sources", "openalex", "--out", str(out)],
+                                        Client({}, lambda *a, **kw: response))
+                self.assertEqual(code, 3, run)
+                self.assertEqual(run["source_status"]["openalex"]["status"], "error")
+                self.assertEqual(check_bundle(out)["status"], "success")
+                self.assertEqual(json.loads((out / "raw/0001.json").read_text(encoding="utf-8"))["body"]["unparsed_body"], body.decode())
+
+    def test_unpaywall_fallback_email_and_trimmed_credentials(self):
+        calls = []
+        def opener(request, timeout):
+            calls.append(request)
+            params = parse_qs(urlsplit(request.full_url).query)
+            if "unpaywall" in request.full_url:
+                self.assertEqual(params["email"], ["contact@example.invalid"])
+                return Response({"doi": "10.1234/1", "is_oa": False, "oa_locations": []})
+            self.assertEqual(request.get_header("X-api-key"), "test-key")
+            return Response(s2(1))
+        with tempfile.TemporaryDirectory() as tmp:
+            code, run = self.invoke(["oa", "10.1234/1", "--sources", "semantic-scholar", "--unpaywall", "required", "--out", str(Path(tmp) / "run")],
+                Client({"POLITE_EMAIL": " contact@example.invalid ", "S2_API_KEY": " test-key "}, opener, lambda _: None))
+            self.assertEqual(code, 0, run)
+            self.assertEqual(run["source_status"]["unpaywall:10.1234/1"]["status"], "ok")
+            self.assertEqual(len(calls), 2)
+
+    def test_openalex_partial_batch_recovers_missing_targets(self):
+        calls = []
+        def work(number):
+            return {"id": "https://openalex.org/W" + str(number), "title": str(number)}
+        def opener(request, timeout):
+            calls.append(request.full_url)
+            parsed = urlsplit(request.full_url)
+            if parsed.path == "/works/W1":
+                return Response(dict(work(1), referenced_works=["https://openalex.org/W2", "https://openalex.org/W3"]))
+            if parsed.path == "/works":
+                return Response({"results": [work(2)]})
+            if parsed.path == "/works/W3":
+                return Response(work(3))
+            self.fail("Unexpected request " + request.full_url)
+        found, status = Providers(Client({}, opener, lambda _: None)).related("openalex", "W1", "references", 10)
+        self.assertEqual([p["identifiers"]["openalex"][0] for p in found], ["W2", "W3"])
+        self.assertEqual(status["status"], "ok")
+        self.assertEqual(status["pages"], 3)
+        self.assertEqual(len(calls), 3)
+
+    def test_related_fallback_retains_original_failure_and_never_uses_unrelated_audit(self):
+        from unittest.mock import patch
+        client = Client({}, sleep=lambda _: None)
+        client.raw = [{"body": {"externalIds": {"DOI": "10.1234/unrelated"}}}]
+        adapter = Providers(client)
+        with patch.object(adapter, "lookup", side_effect=SourceError("not found")):
+            self.assertIsNone(adapter._extract_seed_doi("s2:abc"))
+        restricted = SourceError("publisher elided references", 200, "publisher_restricted")
+        with patch.object(adapter, "_page", side_effect=restricted), \
+                patch.object(adapter, "_crossref_references_fallback", return_value=[]), \
+                patch.object(client, "get", side_effect=SourceError("OpenAlex unavailable")):
+            with self.assertRaises(SourceError):
+                adapter.related("semantic-scholar", "10.1234/seed", "references", 10)
+        fallback = record("crossref", "10.1234/ref", "Reference", 2025, ids(doi="10.1234/ref"), [])
+        with patch.object(adapter, "_page", side_effect=restricted), \
+                patch.object(adapter, "_crossref_references_fallback", return_value=[fallback]):
+            found, status = adapter.related("semantic-scholar", "10.1234/seed", "references", 10)
+            self.assertEqual(found[0]["identifiers"]["doi"], ["10.1234/ref"])
+            self.assertEqual(status["status"], "error")
+            self.assertEqual(status["reason"], "publisher_restricted")
+            self.assertEqual(status["fallback_used"], "crossref+openalex")
 
     def test_author_from_paper_resolves_seed_ids_and_writes_summary(self):
         seed = s2(1, authors=[{"authorId": "42", "name": "Tian Xie", "externalIds": {"ORCID": "0000-0002-0987-4666"}},

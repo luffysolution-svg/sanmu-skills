@@ -689,7 +689,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.6.3</span>
+        <span class="brand-sub">v1.6.4</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -1122,10 +1122,16 @@
       let initPromise = null;
       let bannerOpenPath = null;
       let bannerUndoZotero = null;
+      let hostOrigin = null;
+      let disposed = false;
+      let toolQueue = Promise.resolve();
+      let pendingToolCount = 0;
+      const actionErrors = new WeakSet();
+      const RPC_TIMEOUT_MS = 300000;
 
       const STAGE_OPTIONS = [
         { value: "discovered", label: "待初筛" },
-        { value: "metadata_checked", label: "已读摘要" },
+        { value: "metadata_checked", label: "题录已核对" },
         { value: "file_obtained", label: "已获PDF" },
         { value: "identity_checked", label: "已核全文" },
         { value: "read", label: "已精读" }
@@ -1173,17 +1179,50 @@
         return "";
       }
 
-      function sendRpcRequest(method, params = {}) {
+      function sendRpcRequest(method, params = {}, timeoutMs = RPC_TIMEOUT_MS) {
+        if (disposed) return Promise.reject(new Error("面板已关闭"));
         const id = rpcId++;
         const payload = { jsonrpc: "2.0", id, method, params };
         return new Promise((resolve, reject) => {
-          pendingRpc.set(id, { resolve, reject });
-          window.parent.postMessage(payload, "*");
+          const timer = setTimeout(() => {
+            pendingRpc.delete(id);
+            reject(new Error(`请求超时 (${method})，请稍后刷新面板核对执行结果。`));
+          }, timeoutMs);
+          pendingRpc.set(id, { resolve, reject, timer });
+          try {
+            window.parent.postMessage(payload, hostOrigin || "*");
+          } catch (err) {
+            clearTimeout(timer);
+            pendingRpc.delete(id);
+            reject(err);
+          }
         });
       }
 
       function sendRpcNotification(method, params = {}) {
-        window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+        if (!disposed) window.parent.postMessage({ jsonrpc: "2.0", method, params }, hostOrigin || "*");
+      }
+
+      function isPanelState(data) {
+        return data && typeof data === "object" &&
+          ["activeRun", "configStatus", "recentRuns", "basket"].some((key) => Object.hasOwn(data, key));
+      }
+
+      function reportActionError(err) {
+        if (disposed || (err && typeof err === "object" && actionErrors.has(err))) return;
+        if (err && typeof err === "object") actionErrors.add(err);
+        showBanner(err?.message || String(err), "error");
+      }
+
+      // EventTarget does not consume rejected promises returned by async listeners.
+      function onAction(target, type, handler) {
+        target?.addEventListener(type, (event) => {
+          try {
+            Promise.resolve(handler(event)).catch(reportActionError);
+          } catch (err) {
+            reportActionError(err);
+          }
+        });
       }
 
       function applyHostContext(ctx) {
@@ -1198,20 +1237,27 @@
       }
 
       window.addEventListener("message", (event) => {
+        if (disposed || event.source !== window.parent || (hostOrigin && event.origin !== hostOrigin)) return;
         const data = event.data;
         if (!data || data.jsonrpc !== "2.0") return;
-        if (data.id !== undefined && pendingRpc.has(data.id)) {
-          const { resolve, reject } = pendingRpc.get(data.id);
+        if (data.id !== undefined && pendingRpc.has(data.id) &&
+            (Object.hasOwn(data, "result") || Object.hasOwn(data, "error"))) {
+          const { resolve, reject, timer } = pendingRpc.get(data.id);
           pendingRpc.delete(data.id);
+          clearTimeout(timer);
+          // Opaque iframe origins require '*'; ordinary hosts can be pinned after the handshake.
+          if (event.origin && event.origin !== "null") hostOrigin = event.origin;
           if (data.error) reject(new Error(data.error.message || "RPC Error"));
           else resolve(data.result);
           return;
         }
         if (data.method === "ui/notifications/host-context-changed") {
-          applyHostContext(data.params);
+          applyHostContext(data.params?.hostContext || data.params);
         } else if (data.method === "ui/notifications/tool-result") {
           const sc = data.params?.structuredContent;
-          if (sc && (sc.activeRun || sc.configStatus || sc.recentRuns)) {
+          if (data.params?.isError || sc?.error) {
+            reportActionError(new Error(sc?.error?.message || data.params?.content?.[0]?.text || "操作未成功"));
+          } else if (isPanelState(sc)) {
             updatePanelData(sc);
           }
         }
@@ -1222,19 +1268,17 @@
         if (initPromise) return initPromise;
         initPromise = (async () => {
           try {
-            const res = await Promise.race([
-              sendRpcRequest("ui/initialize", {
-                appCapabilities: {},
-                appInfo: { name: "sanmu-paper-search", version: "1.6.3" },
-                protocolVersion: "2026-01-26"
-              }),
-              new Promise((_, rej) => setTimeout(() => rej(new Error("init timeout")), 3000))
-            ]);
+            const res = await sendRpcRequest("ui/initialize", {
+              appCapabilities: {},
+              appInfo: { name: "sanmu-paper-search", version: "1.6.4" },
+              protocolVersion: "2026-01-26"
+            }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
             sendRpcNotification("ui/notifications/initialized", {});
             hostInitialized = true;
-          } catch {
-            hostInitialized = true;
+          } catch (err) {
+            initPromise = null;
+            throw err;
           }
         })();
         return initPromise;
@@ -1242,7 +1286,7 @@
 
       function setBusyState(isBusy, labelText = "") {
         state.busy = isBusy;
-        document.querySelectorAll(".exec-btn").forEach((btn) => {
+        document.querySelectorAll(".exec-btn, .running-target").forEach((btn) => {
           btn.disabled = isBusy;
           if (isBusy) {
             if (!btn.dataset.origLabel) btn.dataset.origLabel = btn.innerHTML;
@@ -1259,42 +1303,61 @@
         }
       }
 
-      async function callTool(name, args = {}, userFacingMsg = "", triggerBtn = null) {
-        if (state.busy && name !== "open_panel") return;
-        await ensureInitialized();
+      function callTool(name, args = {}, userFacingMsg = "", triggerBtn = null) {
+        // Reserve the queue before initialization: rapid clicks cannot overlap or disappear.
+        pendingToolCount += 1;
         if (triggerBtn) triggerBtn.classList.add("running-target");
-        if (name !== "open_panel") {
-          setBusyState(true, userFacingMsg || "正在请求数据，请稍候...");
-        }
+        setBusyState(true, userFacingMsg || (name === "open_panel" ? "正在加载面板..." : "正在请求数据，请稍候..."));
+        const result = toolQueue.then(async () => {
+          try {
+            await ensureInitialized();
+            const toolArgs = { ...args };
+            if (name === "resolve_oa_and_pdf" && toolArgs.action === "download_pdf") {
+              toolArgs.pdfUrl = safeWebUrl(toolArgs.pdfUrl, true);
+              if (!toolArgs.pdfUrl) throw new Error("下载需要有效的 HTTPS PDF 链接。");
+              toolArgs.fallbackUrls = (Array.isArray(toolArgs.fallbackUrls) ? toolArgs.fallbackUrls : [])
+                .map((url) => safeWebUrl(url, true)).filter(Boolean);
+            }
+            const res = await sendRpcRequest("tools/call", { name, arguments: toolArgs });
+            const sc = res?.structuredContent;
+            if (res?.isError || sc?.error) {
+              throw new Error(sc?.error?.message || (typeof sc?.error === "string" ? sc.error : null) || res?.content?.[0]?.text || "操作未成功");
+            }
+            if (isPanelState(sc)) updatePanelData(sc);
+            if (pendingToolCount === 1) hideBanner();
+            return sc;
+          } catch (err) {
+            reportActionError(err);
+            throw err;
+          } finally {
+            pendingToolCount -= 1;
+            if (!disposed) setBusyState(pendingToolCount > 0);
+          }
+        });
+        toolQueue = result.catch(() => {});
+        return result;
+      }
+
+      function safeWebUrl(raw, httpsOnly = false) {
         try {
-          const res = await sendRpcRequest("tools/call", { name, arguments: args });
-          const sc = res?.structuredContent;
-          if (res?.isError || sc?.error) {
-            const msg = sc?.error?.message || res?.content?.[0]?.text || "操作未成功";
-            setBusyState(false);
-            showBanner(msg, "error");
-            throw new Error(msg);
-          }
-          setBusyState(false);
-          hideBanner();
-          if (sc && (sc.activeRun || sc.configStatus || sc.recentRuns)) {
-            updatePanelData(sc);
-          }
-          return sc;
-        } catch (err) {
-          setBusyState(false);
-          showBanner(err.message || String(err), "error");
-          throw err;
+          const url = new URL(String(raw || "").trim());
+          if (!(httpsOnly ? url.protocol === "https:" : ["https:", "http:"].includes(url.protocol))) return "";
+          if (url.username || url.password) return "";
+          return url.href;
+        } catch {
+          return "";
         }
       }
 
-      async function openExternalUrl(url) {
-        if (!url) return;
+      async function openExternalUrl(raw) {
+        const url = safeWebUrl(raw);
+        if (!url) return showBanner("此链接无效，仅支持 HTTP / HTTPS 网页链接。", "error");
         await ensureInitialized();
         try {
-          await sendRpcRequest("ui/open-link", { url });
+          const res = await sendRpcRequest("ui/open-link", { url }, 10000);
+          if (res?.isError) throw new Error("无法打开链接");
         } catch {
-          window.open(url, "_blank", "noopener,noreferrer");
+          if (!disposed) window.open(url, "_blank", "noopener,noreferrer");
         }
       }
 
@@ -1307,33 +1370,43 @@
         });
       }
 
-      async function sendToChat(promptText, contextData = null) {
-        await ensureInitialized();
+      async function copyTextToClipboard(text) {
+        if (!navigator.clipboard?.writeText) throw new Error("当前环境不支持剪贴板，请手动选择并复制文本。");
         try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          throw new Error("复制失败，请检查剪贴板权限或手动选择文本复制。");
+        }
+      }
+
+      async function sendToChat(promptText, contextData = null) {
+        try {
+          await ensureInitialized();
           if (contextData) {
             await sendRpcRequest("ui/update-model-context", {
               content: [{ type: "text", text: JSON.stringify(contextData, null, 2) }]
-            }).catch(() => {});
+            }, 10000).catch(() => {});
           }
-          await sendRpcRequest("ui/message", {
+          const res = await sendRpcRequest("ui/message", {
             role: "user",
             content: [{ type: "text", text: promptText }]
-          });
+          }, 10000);
+          if (res?.isError) throw new Error("宿主未接收消息");
           showBanner("已发送到当前 ZCode 对话框！", "success");
         } catch {
-          navigator.clipboard?.writeText(promptText);
+          await copyTextToClipboard(promptText);
           showBanner("已将分析指令复制到剪贴板，可直接粘贴到对话框。", "success");
         }
       }
 
-      const ro = new ResizeObserver(() => {
+      const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
         if (hostInitialized) {
           sendRpcNotification("ui/notifications/size-changed", {
             height: Math.ceil(document.documentElement.scrollHeight)
           });
         }
-      });
-      ro.observe(document.body);
+      }) : null;
+      ro?.observe(document.body);
 
       // =========================================================================
       // 2. UI Helpers, Banner & View Navigation
@@ -1375,8 +1448,25 @@
         bannerUndoZotero = null;
       }
 
+      function canUndoZoteroImport(paper) {
+        const match = paper?.zotero_match;
+        return Boolean(match?.matched && match.itemKey && (match.createdByPlugin === true ||
+          state.panelData?.lastZoteroImport?.itemKey === match.itemKey));
+      }
+
       async function executeUndoZoteroImport(itemKey, paperKey = null, triggerBtn = null) {
         if (!itemKey) return;
+        const papers = [
+          ...(state.panelData?.activeRun?.papers || []),
+          ...(state.panelData?.activeRun?.results || []).map((r) => r.candidate_paper),
+          ...(state.panelData?.basket || []),
+          ...(state.panelData?.graphData?.nodes || []).map((n) => n.paper),
+          ...[...state.inlineSubRuns.values()].flatMap((entry) => entry.bundle?.papers || [])
+        ];
+        if (state.panelData?.lastZoteroImport?.itemKey !== itemKey &&
+            !papers.some((p) => p?.zotero_match?.itemKey === itemKey && canUndoZoteroImport(p))) {
+          throw new Error("仅可撤销由本插件创建的 Zotero 导入记录。");
+        }
         const res = await callTool(
           "manage_basket",
           {
@@ -1395,15 +1485,15 @@
 
       document.getElementById("btnDismissBanner").addEventListener("click", hideBanner);
       document.getElementById("btnBannerOpenAction").addEventListener("click", () => {
-        if (bannerOpenPath) openLocalPathInSystem(bannerOpenPath, "local");
+        if (bannerOpenPath) openLocalPathInSystem(bannerOpenPath, "local").catch(reportActionError);
       });
-      document.getElementById("btnBannerUndoZotero").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnBannerUndoZotero"), "click", async (e) => {
         if (bannerUndoZotero?.itemKey) {
           const info = { ...bannerUndoZotero };
           await executeUndoZoteroImport(info.itemKey, info.paperKey, e.currentTarget);
         }
       });
-      document.getElementById("btnGlobalUndoZotero")?.addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnGlobalUndoZotero"), "click", async (e) => {
         const lastImp = state.panelData?.lastZoteroImport;
         if (lastImp?.itemKey) {
           await executeUndoZoteroImport(lastImp.itemKey, lastImp.paperKey, e.currentTarget);
@@ -1411,13 +1501,13 @@
       });
 
       // Global Save Dir Bar Events
-      document.getElementById("btnSaveDefaultDir").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnSaveDefaultDir"), "click", async (e) => {
         const dirVal = getChosenSaveDir();
         await callTool("save_config", { exportSubdir: dirVal }, "正在保存默认文件夹设置...", e.currentTarget);
         showBanner(`✅ 已将默认保存位置设为：${dirVal}`, "success");
       });
 
-      document.getElementById("btnOpenSaveDir").addEventListener("click", async () => {
+      onAction(document.getElementById("btnOpenSaveDir"), "click", async () => {
         const dirVal = getChosenSaveDir();
         await callTool("read_run_file", {
           runId: "__custom_dir__",
@@ -1434,12 +1524,14 @@
         document.getElementById("mainViewContainer").classList.add("hidden");
         document.getElementById("detailViewContainer").classList.remove("hidden");
         window.scrollTo({ top: 0, behavior: "smooth" });
+        stopGraphPhysics();
         if (typeof afterMount === "function") afterMount(bodyEl);
       }
 
       function closeDetailView() {
         document.getElementById("detailViewContainer").classList.add("hidden");
         document.getElementById("mainViewContainer").classList.remove("hidden");
+        if (state.activeTab === "graph") startGraphPhysics(0.2);
       }
 
       document.getElementById("btnBackToList").addEventListener("click", closeDetailView);
@@ -1458,6 +1550,8 @@
         document.querySelectorAll(".tab-pane").forEach((pane) => {
           pane.classList.toggle("hidden", pane.id !== `tab-${tabId}`);
         });
+        if (tabId === "graph") startGraphPhysics(0.45);
+        else stopGraphPhysics();
       }
 
       function switchSearchMode(mode) {
@@ -1474,7 +1568,7 @@
       function bindEnterKey(inputEl, buttonEl) {
         if (!inputEl || !buttonEl) return;
         inputEl.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+          if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
             e.preventDefault();
             buttonEl.click();
           }
@@ -1482,19 +1576,42 @@
       }
 
       function isDirectPaperIdentifier(raw) {
-        const s = String(raw || "").trim();
-        if (!s) return false;
-        if (/^(doi:|10\.\d{4,9}\/\S+)$/i.test(s)) return true;
-        if (/^(arxiv:|pmid:|pmcid:|openalex:W|s2:)\S+$/i.test(s)) return true;
-        if (/^PMC\d{5,10}$/i.test(s)) return true;
-        if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(s)) return true;
-        return false;
+        const s = normalizeDirectId(raw);
+        return /^(?:10\.\d{4,9}\/\S+|(?:arxiv|pmid|pmcid|s2|semantic-scholar|corpusid):\S+|openalex:W\d+|PMC\d+)$/i.test(s);
       }
 
       function normalizeDirectId(raw) {
-        const s = String(raw || "").trim();
+        let s = String(raw || "").trim().replace(/^doi:\s*/i, "");
+        s = s.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "");
+        const arxivUrl = s.match(/^https?:\/\/(?:www\.)?arxiv\.org\/(?:abs|pdf)\/([^?#]+)(?:[?#].*)?$/i);
+        if (arxivUrl) s = `arxiv:${arxivUrl[1].replace(/\.pdf$/i, "")}`;
+        const pmidUrl = s.match(/^https?:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)\/?(?:[?#].*)?$/i);
+        if (pmidUrl) s = `pmid:${pmidUrl[1]}`;
+        const pmcidUrl = s.match(/^https?:\/\/(?:pmc|www)\.ncbi\.nlm\.nih\.gov\/(?:pmc\/)?articles\/(PMC\d+)\/?(?:[?#].*)?$/i);
+        if (pmcidUrl) s = pmcidUrl[1].toUpperCase();
+        s = s.replace(/^https?:\/\/openalex\.org\/(W\d+)\/?$/i, "openalex:$1");
+        if (/^W\d+$/i.test(s)) return `openalex:${s.toUpperCase()}`;
         if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(s)) return `arxiv:${s}`;
+        if (/^\d{6,10}$/.test(s)) return `pmid:${s}`;
         return s;
+      }
+
+      function readIntegerInput(id, label, fallback, min, max) {
+        const value = document.getElementById(id).value.trim();
+        if (!value) return fallback;
+        const number = Number(value);
+        if (!Number.isInteger(number) || number < min || number > max) {
+          throw new Error(`${label}必须是 ${min} 至 ${max} 的整数。`);
+        }
+        return number;
+      }
+
+      function readYearInput(id) {
+        return readIntegerInput(id, "年份", undefined, 1000, 9999);
+      }
+
+      function readLimitInput(id) {
+        return readIntegerInput(id, "返回条数", 10, 1, 20);
       }
 
       async function triggerAuthorWorksLookup(authorObj, fallbackSeedId, preferredProvider = null, inlineTargetKey = null, triggerBtn = null) {
@@ -1563,7 +1680,7 @@
         const linksHtml = (paper.clickable_links || [])
           .map(
             (l) =>
-              `<button class="btn sm ext-link-btn" data-url="${esc(l.url)}">🔗 ${esc(l.label)}</button>` +
+              `<button class="btn sm ext-link-btn" data-url="${esc(safeWebUrl(l.url))}">🔗 ${esc(l.label)}</button>` +
               (l.isDirectPdf || l.kind === "pdf"
                 ? ` <button class="btn sm success dl-pdf-btn exec-btn" data-url="${esc(l.url)}" data-fallbacks="${fallbackPdfJson}" data-doi="${esc(doi)}" data-title="${esc(paper.title)}" data-year="${esc(paper.year || "")}" data-key="${esc(paper.paper_key)}">⬇ 下载PDF到保存位置</button>`
                 : "")
@@ -1639,7 +1756,7 @@
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success" id="drwOpenZoteroItem">📖 在 Zotero 桌面端定位打开 (${esc(zMatch.itemKey)})</button>
-                     <button class="btn sm danger exec-btn" id="drwUndoZoteroItem" title="从本机 Zotero 撤销移除该条目">↩ 撤销Zotero导入</button>`
+                     ${canUndoZoteroImport(paper) ? '<button class="btn sm danger exec-btn" id="drwUndoZoteroItem" title="撤销由本插件创建的导入条目">↩ 撤销Zotero导入</button>' : ""}`
                   : zOnline
                     ? `<button class="btn sm primary exec-btn" id="drwSaveToZotero">📥 一键存入本机 Zotero${paper.local_pdf_path ? " (含本地PDF)" : ""}</button>`
                     : ""
@@ -1723,10 +1840,10 @@
 
         openDetailView("论文详情", paper.title || "Untitled Paper", html, (container) => {
           container.querySelectorAll(".ext-link-btn").forEach((btn) => {
-            btn.addEventListener("click", () => openExternalUrl(btn.dataset.url));
+            onAction(btn, "click", async () => openExternalUrl(btn.dataset.url));
           });
           container.querySelectorAll(".dl-pdf-btn").forEach((btn) => {
-            btn.addEventListener("click", async () => {
+            onAction(btn, "click", async () => {
               const saveDir = getChosenSaveDir();
               let fallbackUrls = [];
               try {
@@ -1757,7 +1874,7 @@
               }
             });
           });
-          container.querySelector("#drwOpenZoteroItem")?.addEventListener("click", async () => {
+          onAction(container.querySelector("#drwOpenZoteroItem"), "click", async () => {
             if (!zMatch?.itemKey) return;
             await callTool("manage_basket", {
               action: "open_in_zotero",
@@ -1765,12 +1882,12 @@
             });
             showBanner(`📖 已唤起本机 Zotero 并定位到条目 ${zMatch.itemKey}`, "success");
           });
-          container.querySelector("#drwUndoZoteroItem")?.addEventListener("click", async (e) => {
+          onAction(container.querySelector("#drwUndoZoteroItem"), "click", async (e) => {
             if (!zMatch?.itemKey) return;
             await executeUndoZoteroImport(zMatch.itemKey, paper.paper_key, e.currentTarget);
             closeDetailView();
           });
-          container.querySelector("#drwSaveToZotero")?.addEventListener("click", async (e) => {
+          onAction(container.querySelector("#drwSaveToZotero"), "click", async (e) => {
             const colKey = getChosenZoteroCol();
             const res = await callTool(
               "manage_basket",
@@ -1793,7 +1910,7 @@
             }
           });
           container.querySelectorAll("#drwEnrichAbstract, #drwEnrichAbstract2").forEach((btn) => {
-            btn.addEventListener("click", async () => {
+            onAction(btn, "click", async () => {
               const res = await callTool(
                 "manage_basket",
                 { action: "enrich_abstract", paper },
@@ -1808,8 +1925,8 @@
               closeDetailView();
             });
           });
-          container.querySelector("#drwOpenLocalPdf")?.addEventListener("click", async () => {
-            if (paper.local_pdf_path) openLocalPathInSystem(paper.local_pdf_path, "local");
+          onAction(container.querySelector("#drwOpenLocalPdf"), "click", async () => {
+            if (paper.local_pdf_path) await openLocalPathInSystem(paper.local_pdf_path, "local");
           });
           const renderDetailSubBundle = (subBundle, labelTitle) => {
             const mountEl = container.querySelector("#drwInlineRelatedMount");
@@ -1827,7 +1944,7 @@
                     <button class="btn sm primary" id="drwSubPromoteMain">↗ 设为独立主结果页</button>
                   </div>
                 </div>
-                ${subPapers.length > 0 ? `<div class="paper-list" id="drwSubPapersList">${subPapers.map(renderPaperCardHtml).join("")}</div>` : `<div style="font-size:12px; color:var(--text-secondary);">未检索到对应关联文献条目。</div>`}
+                ${subPapers.length > 0 ? `<div class="paper-list" id="drwSubPapersList">${subPapers.map((p) => renderPaperCardHtml(p)).join("")}</div>` : `<div style="font-size:12px; color:var(--text-secondary);">未检索到对应关联文献条目。</div>`}
               </div>
             `;
             const subListEl = mountEl.querySelector("#drwSubPapersList");
@@ -1838,14 +1955,14 @@
               switchTab("graph");
               renderRelationshipGraph(state.panelData);
             });
-            mountEl.querySelector("#drwSubPromoteMain")?.addEventListener("click", async () => {
+            onAction(mountEl.querySelector("#drwSubPromoteMain"), "click", async () => {
               closeDetailView();
               switchTab("results");
               await callTool("manage_runs", { operation: "load", runId: subBundle.runId }, "正在切换为主结果视图...");
             });
           };
           container.querySelectorAll(".anchor-author-btn").forEach((btn) => {
-            btn.addEventListener("click", async () => {
+            onAction(btn, "click", async () => {
               const authorObj = (paper.authors || [])[Number(btn.dataset.idx)];
               if (authorObj) {
                 const sub = await triggerAuthorWorksLookup(authorObj, seedId, btn.dataset.prov, paper.paper_key, btn);
@@ -1854,7 +1971,7 @@
             });
           });
           container.querySelectorAll(".drw-rel-btn").forEach((btn) => {
-            btn.addEventListener("click", async () => {
+            onAction(btn, "click", async () => {
               if (!seedId) return;
               const rel = btn.dataset.rel;
               const relNames = { references: "⬅ 参考文献", citations: "➡ 施引文献", recommendations: "✨ 相似推荐论文" };
@@ -1874,7 +1991,7 @@
               }
             });
           });
-          container.querySelector("#drwResolveOa")?.addEventListener("click", async (e) => {
+          onAction(container.querySelector("#drwResolveOa"), "click", async (e) => {
             if (!seedId) return;
             closeDetailView();
             switchTab("results");
@@ -1885,7 +2002,7 @@
               e.currentTarget
             );
           });
-          container.querySelector("#drwFetchEpmcAll")?.addEventListener("click", async (e) => {
+          onAction(container.querySelector("#drwFetchEpmcAll"), "click", async (e) => {
             const saveDir = getChosenSaveDir();
             closeDetailView();
             switchTab("results");
@@ -1904,7 +2021,7 @@
               );
             }
           });
-          container.querySelector("#drwToggleBasket")?.addEventListener("click", async () => {
+          onAction(container.querySelector("#drwToggleBasket"), "click", async () => {
             await callTool("manage_basket", {
               action: paper.in_basket ? "remove" : "add",
               paper,
@@ -1913,7 +2030,7 @@
             showBanner(paper.in_basket ? "已从收藏篮移出" : "⭐ 已加入收藏篮！", "success");
             closeDetailView();
           });
-          container.querySelector("#drwExportSingleMd")?.addEventListener("click", async (e) => {
+          onAction(container.querySelector("#drwExportSingleMd"), "click", async (e) => {
             const saveDir = getChosenSaveDir();
             const res = await callTool(
               "export_to_workspace",
@@ -1930,11 +2047,11 @@
               );
             }
           });
-          container.querySelector("#drwSendPaperChat")?.addEventListener("click", async () => {
+          onAction(container.querySelector("#drwSendPaperChat"), "click", async () => {
             const prompt = `请帮我深入分析这篇候选文献（根据需要可结合 sanmu-paper-reader 或核对全文/SI）：\n- 标题：${paper.title}\n- 年份：${paper.year}\n- 标识符：${JSON.stringify(paper.identifiers)}\n- 阅读进度：${paper.handoff_stage_label || paper.handoff_stage}\n- 本地PDF路径：${paper.local_pdf_path || "未下载"}\n- 摘要：${paper.abstract || "无"}`;
             await sendToChat(prompt, paper);
           });
-          container.querySelector("#drwSaveEvidence")?.addEventListener("click", async () => {
+          onAction(container.querySelector("#drwSaveEvidence"), "click", async () => {
             const stage = container.querySelector("#drwEvStage").value;
             const basis = container.querySelector("#drwEvBasis").value;
             const reason = container.querySelector("#drwEvReason").value;
@@ -2009,11 +2126,11 @@
           title,
           html,
           (container) => {
-            container.querySelector("#rawOpenUrl")?.addEventListener("click", () => openExternalUrl(url));
+            onAction(container.querySelector("#rawOpenUrl"), "click", async () => openExternalUrl(url));
             container.querySelectorAll(".fig-open-btn").forEach((btn) => {
-              btn.addEventListener("click", () => openExternalUrl(btn.dataset.url));
+              onAction(btn, "click", async () => openExternalUrl(btn.dataset.url));
             });
-            container.querySelector("#rawToggleBasket")?.addEventListener("click", async () => {
+            onAction(container.querySelector("#rawToggleBasket"), "click", async () => {
               if (!candPaper) return;
               await callTool("manage_basket", {
                 action: inBasket ? "remove" : "add",
@@ -2023,7 +2140,7 @@
               showBanner(inBasket ? "已从收藏篮移出" : "⭐ 已加入收藏篮！", "success");
               closeDetailView();
             });
-            container.querySelector("#rawDownloadPdf")?.addEventListener("click", async (e) => {
+            onAction(container.querySelector("#rawDownloadPdf"), "click", async (e) => {
               const saveDir = getChosenSaveDir();
               const res = await callTool(
                 "resolve_oa_and_pdf",
@@ -2049,7 +2166,7 @@
               }
             });
             container.querySelectorAll(".raw-lookup-doi").forEach((btn) => {
-              btn.addEventListener("click", async () => {
+              onAction(btn, "click", async () => {
                 closeDetailView();
                 switchTab("results");
                 await callTool(
@@ -2060,7 +2177,7 @@
                 );
               });
             });
-            container.querySelector("#rawSendChat")?.addEventListener("click", async () => {
+            onAction(container.querySelector("#rawSendChat"), "click", async () => {
               const prompt = `请帮我分析这条检索结果：\n- 标题：${title}\n- 来源/专利号：${item.publicationInfo || item.publicationNumber || "未知"}\n- 链接：${url}\n- 摘录：${item.snippet || item.text || "无"}`;
               await sendToChat(prompt, item);
             });
@@ -2089,11 +2206,11 @@
           </div>
         `;
         openDetailView("文件预览", relPath, html, (container) => {
-          container.querySelector("#btnOpenInSys")?.addEventListener("click", async () => {
+          onAction(container.querySelector("#btnOpenInSys"), "click", async () => {
             await callTool("read_run_file", { runId, relativePath: relPath, openInSystem: true });
           });
-          container.querySelector("#btnCopyFileText")?.addEventListener("click", () => {
-            navigator.clipboard?.writeText(res.content || "");
+          onAction(container.querySelector("#btnCopyFileText"), "click", async () => {
+            await copyTextToClipboard(res.content || "");
             showBanner("文件内容已复制到剪贴板！", "success");
           });
         });
@@ -2266,7 +2383,7 @@
           )
           .join(" ");
 
-        const isAbsExpanded = state.expandAllAbstracts || state.expandedAbstracts.has(p.paper_key);
+        const isAbsExpanded = state.expandedAbstracts.has(p.paper_key);
         const hasLongAbstract = Boolean(p.abstract && p.abstract.length > 160);
 
         const subEntry = !isInsideSubDrawer ? state.inlineSubRuns.get(p.paper_key) : null;
@@ -2296,7 +2413,7 @@
                           (c, idx) => `
                           <div class="paper-card" style="padding:7px 10px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
-                              <strong>${idx + 1}. 👤 ${esc(c.name)} <span style="font-weight:normal; font-size:11px; color:var(--text-secondary);">(${esc(c.provider)}:${esc(c.author_id)}) · ${(c.affiliations || []).join("; ") || "机构未注明"}</span></strong>
+                              <strong>${idx + 1}. 👤 ${esc(c.name)} <span style="font-weight:normal; font-size:11px; color:var(--text-secondary);">(${esc(c.provider)}:${esc(c.author_id)}) · ${esc((c.affiliations || []).join("; ") || "机构未注明")}</span></strong>
                               <button class="btn sm primary sub-cand-works-btn exec-btn" data-prov="${esc(c.provider)}" data-id="${esc(c.author_id)}" data-name="${esc(c.name)}" data-parent-key="${esc(p.paper_key)}">📚 拉取代表作</button>
                             </div>
                           </div>`
@@ -2311,7 +2428,7 @@
         return `
           <div class="paper-card" data-paper-key="${esc(p.paper_key)}">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-              <h4 class="paper-title">${p.index ? `${p.index}. ` : ""}${esc(p.title || "Untitled")}</h4>
+              <h4 class="paper-title">${p.index ? `${esc(p.index)}. ` : ""}${esc(p.title || "Untitled")}</h4>
               <span class="pill static ${stageCls}" style="flex-shrink:0;">${esc(p.handoff_stage_label || "待初筛")}</span>
             </div>
             <div class="paper-meta">
@@ -2345,7 +2462,7 @@
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success zotero-open-btn" data-zkey="${esc(zMatch.itemKey)}" title="在 Zotero 桌面端直接定位此文献">📖 Zotero定位</button>
-                     <button class="btn sm danger zotero-undo-btn exec-btn" data-zkey="${esc(zMatch.itemKey)}" data-paper-key="${esc(p.paper_key)}" title="撤销导入并从本机 Zotero 中移除此条目">↩ 撤销导入</button>`
+                     ${canUndoZoteroImport(p) ? `<button class="btn sm danger zotero-undo-btn exec-btn" data-zkey="${esc(zMatch.itemKey)}" data-paper-key="${esc(p.paper_key)}" title="撤销由本插件创建的导入条目">↩ 撤销导入</button>` : ""}`
                   : zOnline
                     ? `<button class="btn sm zotero-save-btn exec-btn" data-paper-key="${esc(p.paper_key)}" title="一键存入本机 Zotero 当前所选分类">📥 存入Zotero</button>`
                     : ""
@@ -2376,7 +2493,7 @@
         const zOnline = Boolean(state.panelData?.configStatus?.zotero_local?.online);
         const isPatent = item.serper_type === "patents" || Boolean(item.publicationNumber);
         const pKey = candPaper?.paper_key || `raw-${i}`;
-        const isAbsExpanded = state.expandAllAbstracts || state.expandedAbstracts.has(pKey);
+        const isAbsExpanded = state.expandedAbstracts.has(pKey);
 
         return `
           <div class="paper-card raw-item-card" data-idx="${i}">
@@ -2406,16 +2523,16 @@
                   : ""
             }
             <div class="action-bar" onclick="event.stopPropagation();">
-              <button class="btn sm raw-basket-btn ${inBasket ? "success" : "primary"}" data-idx="${i}">${inBasket ? "⭐ 已收藏" : "⭐ 收藏"}</button>
+              ${candPaper ? `<button class="btn sm raw-basket-btn ${inBasket ? "success" : "primary"}" data-idx="${i}">${inBasket ? "⭐ 已收藏" : "⭐ 收藏"}</button>` : ""}
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success zotero-open-btn" data-zkey="${esc(zMatch.itemKey)}">📖 Zotero定位</button>
-                     <button class="btn sm danger zotero-undo-btn exec-btn" data-zkey="${esc(zMatch.itemKey)}" data-paper-key="${esc(pKey)}" title="从本机 Zotero 撤销移除此条目">↩ 撤销导入</button>`
+                     ${canUndoZoteroImport(candPaper) ? `<button class="btn sm danger zotero-undo-btn exec-btn" data-zkey="${esc(zMatch.itemKey)}" data-paper-key="${esc(pKey)}" title="撤销由本插件创建的导入条目">↩ 撤销导入</button>` : ""}`
                   : zOnline && candPaper
                     ? `<button class="btn sm raw-zotero-save-btn exec-btn" data-idx="${i}">📥 存入Zotero</button>`
                     : ""
               }
-              ${!isPatent && !fullAbstract ? `<button class="btn sm raw-enrich-abs-btn exec-btn" data-idx="${i}" title="跨源检索补全完整摘要、DOI 与标准题录">🔎 补全完整摘要</button>` : ""}
+              ${candPaper && !isPatent && !fullAbstract ? `<button class="btn sm raw-enrich-abs-btn exec-btn" data-idx="${i}" title="跨源检索补全完整摘要、DOI 与标准题录">🔎 补全完整摘要</button>` : ""}
               ${localPdf ? `<button class="btn sm success card-open-local-pdf-btn" data-path="${esc(localPdf)}">🖥 打开PDF</button>` : pdfUrl ? `<button class="btn sm success raw-dl-pdf-btn exec-btn" data-idx="${i}">⬇ 下载PDF</button>` : ""}
               ${dois.map((d) => `<button class="btn sm raw-to-lookup-btn exec-btn" data-doi="${esc(d)}">🔎 精确核验</button>`).join("")}
               ${url ? `<button class="btn sm raw-url-btn" data-url="${esc(url)}">🌐 打开网页</button>` : ""}
@@ -2448,7 +2565,7 @@
             if (!k) return;
             if (state.expandedAbstracts.has(k)) state.expandedAbstracts.delete(k);
             else state.expandedAbstracts.add(k);
-            const box = container.querySelector(`#abs-box-${CSS.escape(k)}`);
+            const box = link.parentElement?.querySelector(".snippet-box");
             if (box) {
               const nowExp = state.expandedAbstracts.has(k);
               box.classList.toggle("expanded", nowExp);
@@ -2457,7 +2574,7 @@
           });
         });
         container.querySelectorAll(".enrich-abs-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const p = paperMap.get(btn.dataset.paperKey);
             if (!p) return;
             state.expandedAbstracts.add(p.paper_key);
@@ -2475,7 +2592,7 @@
           });
         });
         container.querySelectorAll(".zotero-open-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             if (!btn.dataset.zkey) return;
             await callTool("manage_basket", {
               action: "open_in_zotero",
@@ -2485,13 +2602,13 @@
           });
         });
         container.querySelectorAll(".zotero-undo-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             if (!btn.dataset.zkey) return;
             await executeUndoZoteroImport(btn.dataset.zkey, btn.dataset.paperKey || null, btn);
           });
         });
         container.querySelectorAll(".zotero-save-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const p = paperMap.get(btn.dataset.paperKey);
             if (!p) return;
             const colKey = getChosenZoteroCol();
@@ -2516,7 +2633,7 @@
           });
         });
         container.querySelectorAll(".author-chip").forEach((chip) => {
-          chip.addEventListener("click", async (e) => {
+          onAction(chip, "click", async (e) => {
             e.stopPropagation();
             const p = paperMap.get(chip.dataset.paperKey);
             const authorObj = p?.authors?.[Number(chip.dataset.authorIdx)];
@@ -2526,7 +2643,7 @@
           });
         });
         container.querySelectorAll(".rel-quick-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const seedId = btn.dataset.id;
             const parentKey = btn.dataset.paperKey;
             const rel = btn.dataset.rel || "references";
@@ -2573,7 +2690,7 @@
           });
         });
         container.querySelectorAll(".sub-promote-main-btn").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
+          onAction(btn, "click", async (e) => {
             e.stopPropagation();
             const rId = btn.dataset.runId;
             if (!rId) return;
@@ -2582,7 +2699,7 @@
           });
         });
         container.querySelectorAll(".sub-cand-works-btn").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
+          onAction(btn, "click", async (e) => {
             e.stopPropagation();
             const parentKey = btn.dataset.parentKey;
             const res = await callTool(
@@ -2608,7 +2725,7 @@
           });
         });
         container.querySelectorAll(".basket-toggle-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const p = paperMap.get(btn.dataset.paperKey);
             if (!p) return;
             await callTool("manage_basket", {
@@ -2619,7 +2736,7 @@
           });
         });
         container.querySelectorAll(".card-dl-pdf-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const saveDir = getChosenSaveDir();
             let fallbackUrls = [];
             try {
@@ -2651,10 +2768,10 @@
           });
         });
         container.querySelectorAll(".card-open-local-pdf-btn").forEach((btn) => {
-          btn.addEventListener("click", () => openLocalPathInSystem(btn.dataset.path, "local"));
+          onAction(btn, "click", async () => openLocalPathInSystem(btn.dataset.path, "local"));
         });
         container.querySelectorAll(".open-doi-btn").forEach((btn) => {
-          btn.addEventListener("click", () => openExternalUrl(btn.dataset.url));
+          onAction(btn, "click", async () => openExternalUrl(btn.dataset.url));
         });
       }
 
@@ -2676,7 +2793,7 @@
           });
         });
         container.querySelectorAll(".raw-enrich-abs-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const item = rawResults[Number(btn.dataset.idx)];
             const cand = item?.candidate_paper;
             if (!cand) return;
@@ -2695,7 +2812,7 @@
           });
         });
         container.querySelectorAll(".zotero-open-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             if (!btn.dataset.zkey) return;
             await callTool("manage_basket", {
               action: "open_in_zotero",
@@ -2704,13 +2821,13 @@
           });
         });
         container.querySelectorAll(".zotero-undo-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             if (!btn.dataset.zkey) return;
             await executeUndoZoteroImport(btn.dataset.zkey, btn.dataset.paperKey || null, btn);
           });
         });
         container.querySelectorAll(".raw-zotero-save-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const item = rawResults[Number(btn.dataset.idx)];
             const cand = item?.candidate_paper;
             if (!cand) return;
@@ -2734,7 +2851,7 @@
           });
         });
         container.querySelectorAll(".raw-basket-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const item = rawResults[Number(btn.dataset.idx)];
             const cand = item?.candidate_paper;
             if (!cand) return;
@@ -2746,7 +2863,7 @@
           });
         });
         container.querySelectorAll(".raw-dl-pdf-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const item = rawResults[Number(btn.dataset.idx)];
             if (!item?.pdfUrl) return;
             const saveDir = getChosenSaveDir();
@@ -2775,13 +2892,13 @@
           });
         });
         container.querySelectorAll(".card-open-local-pdf-btn").forEach((btn) => {
-          btn.addEventListener("click", () => openLocalPathInSystem(btn.dataset.path, "local"));
+          onAction(btn, "click", async () => openLocalPathInSystem(btn.dataset.path, "local"));
         });
         container.querySelectorAll(".raw-url-btn").forEach((btn) => {
-          btn.addEventListener("click", () => openExternalUrl(btn.dataset.url));
+          onAction(btn, "click", async () => openExternalUrl(btn.dataset.url));
         });
         container.querySelectorAll(".raw-to-lookup-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             switchTab("results");
             await callTool(
               "lookup_paper",
@@ -2804,7 +2921,6 @@
             state.navIndex = state.navStack.length - 1;
           }
         }
-        state.navSwitching = false;
 
         const histList = data?.runNavHistory || [];
         const canBack = state.navIndex > 0;
@@ -2821,7 +2937,7 @@
           .map((h) => {
             const isCur = h.runId === activeId;
             const shortTitle = String(h.humanTitle || h.runId).slice(0, 26);
-            return `<span class="run-nav-chip ${isCur ? "active" : ""}" data-run-id="${esc(h.runId)}" title="${esc(h.humanTitle || h.runId)} (${h.count}条)">${isCur ? "📌 " : ""}${esc(shortTitle)} (${h.count})</span>`;
+            return `<span class="run-nav-chip ${isCur ? "active" : ""}" data-run-id="${esc(h.runId)}" title="${esc(h.humanTitle || h.runId)} (${h.count}条)">${isCur ? "📌 " : ""}${esc(shortTitle)} (${esc(h.count)})</span>`;
           })
           .join("");
 
@@ -2834,24 +2950,28 @@
           </div>
         `;
 
-        navEl.querySelector("#btnNavBackRun")?.addEventListener("click", async () => {
-          if (state.navIndex <= 0) return;
-          state.navIndex -= 1;
+        const navigateRun = async (delta) => {
+          if (state.busy || state.navSwitching) return;
+          const previousIndex = state.navIndex;
+          const targetIndex = previousIndex + delta;
+          if (targetIndex < 0 || targetIndex >= state.navStack.length) return;
           state.navSwitching = true;
-          const targetId = state.navStack[state.navIndex];
-          await callTool("manage_runs", { operation: "load", runId: targetId }, "正在返回上一检索结果页...");
-        });
-
-        navEl.querySelector("#btnNavForwardRun")?.addEventListener("click", async () => {
-          if (state.navIndex >= state.navStack.length - 1) return;
-          state.navIndex += 1;
-          state.navSwitching = true;
-          const targetId = state.navStack[state.navIndex];
-          await callTool("manage_runs", { operation: "load", runId: targetId }, "正在前进到下一检索结果页...");
-        });
+          state.navIndex = targetIndex;
+          try {
+            await callTool("manage_runs", { operation: "load", runId: state.navStack[targetIndex] }, "正在切换检索结果页...");
+          } catch (err) {
+            state.navIndex = previousIndex;
+            throw err;
+          } finally {
+            state.navSwitching = false;
+            renderSessionNavBar(state.panelData);
+          }
+        };
+        onAction(navEl.querySelector("#btnNavBackRun"), "click", () => navigateRun(-1));
+        onAction(navEl.querySelector("#btnNavForwardRun"), "click", () => navigateRun(1));
 
         navEl.querySelectorAll(".run-nav-chip").forEach((chip) => {
-          chip.addEventListener("click", async () => {
+          onAction(chip, "click", async () => {
             const rId = chip.dataset.runId;
             if (!rId || rId === activeId) return;
             await callTool("manage_runs", { operation: "load", runId: rId }, "正在切换检索结果视图...");
@@ -2902,13 +3022,13 @@
             const cls = isOk ? "ok" : isPubRestricted ? "info" : isErr ? "err" : "warn";
             const labelSrc = src.replace(/^serper:\d+:page:\d+$/, "Google检索");
             if (isOk && st.fallback_used) {
-              return `<span class="pill static ok" title="${esc(st.note || JSON.stringify(st))}">${esc(labelSrc)}: 已由开放引文自动补齐 (${st.fetched ?? 0}条)</span>`;
+              return `<span class="pill static ok" title="${esc(st.note || JSON.stringify(st))}">${esc(labelSrc)}: 已由开放引文自动补齐 (${esc(st.fetched ?? 0)}条)</span>`;
             }
             if (isPubRestricted) {
               return `<span class="pill static info" title="该出版商在 Semantic Scholar 隐藏了参考文献，已由 OpenAlex / Crossref 提供">${esc(labelSrc)}: 出版商隐藏引文 (已由开放源提供)</span>`;
             }
             const errSuffix = st.error ? ` · ${st.error}` : "";
-            return `<span class="pill static ${cls}" title="${esc(st.note || JSON.stringify(st))}">${esc(labelSrc)}: ${isOk ? `成功 (${st.fetched ?? 0}条)` : `${st.status}${errSuffix}`}</span>`;
+            return `<span class="pill static ${cls}" title="${esc(st.note || JSON.stringify(st))}">${esc(labelSrc)}: ${esc(isOk ? `成功 (${st.fetched ?? 0}条)` : `${st.status || "未知"}${errSuffix}`)}</span>`;
           })
           .join(" ");
 
@@ -2957,19 +3077,24 @@
 
         headerEl.querySelector("#btnToggleAllAbstracts")?.addEventListener("click", () => {
           state.expandAllAbstracts = !state.expandAllAbstracts;
-          if (!state.expandAllAbstracts) state.expandedAbstracts.clear();
+          for (const p of [...papers, ...rawResults.map((item) => item.candidate_paper).filter(Boolean)]) {
+            if (state.expandAllAbstracts) state.expandedAbstracts.add(p.paper_key);
+            else state.expandedAbstracts.delete(p.paper_key);
+          }
           renderActiveRun(bundle);
         });
         headerEl.querySelector("#btnJumpToGraphFromRun")?.addEventListener("click", () => {
           switchTab("graph");
         });
-        headerEl.querySelector("#btnOpenExportedRunDir")?.addEventListener("click", () => {
-          openLocalPathInSystem(r.exported_save_dir, "local");
+        onAction(headerEl.querySelector("#btnOpenExportedRunDir"), "click", async () => {
+          await openLocalPathInSystem(r.exported_save_dir, "local");
         });
         headerEl.querySelectorAll(".run-file-btn").forEach((btn) => {
-          btn.addEventListener("click", () => inspectRunFile(btn.dataset.run, btn.dataset.path));
+          onAction(btn, "click", async () => {
+            await inspectRunFile(btn.dataset.run, btn.dataset.path);
+          });
         });
-        headerEl.querySelector("#btnExportRunBundle")?.addEventListener("click", async (e) => {
+        onAction(headerEl.querySelector("#btnExportRunBundle"), "click", async (e) => {
           const saveDir = getChosenSaveDir();
           const res = await callTool(
             "export_to_workspace",
@@ -2986,7 +3111,7 @@
             );
           }
         });
-        headerEl.querySelector("#btnSendRunToChat")?.addEventListener("click", async () => {
+        onAction(headerEl.querySelector("#btnSendRunToChat"), "click", async () => {
           const prompt = `我已经完成了文献检索（${human.title || bundle.runId}，共 ${totalCount} 条结果，保存在 \`${bundle.runDir}\`）。请读取该批次的结果文件，帮我按课题相关性做筛选并给出精读建议。`;
           await sendToChat(prompt, { runId: bundle.runId, runDir: bundle.runDir, query: r.query });
         });
@@ -3047,9 +3172,9 @@
             <div class="card" style="margin-bottom:8px;">
               <h3 class="card-title">⚖ 两次检索对比结果</h3>
               <div class="status-strip" style="margin:6px 0;">
-                <span class="pill ok static">新增文献: ${diffData.counts?.added ?? 0}</span>
-                <span class="pill err static">减少文献: ${diffData.counts?.removed ?? 0}</span>
-                <span class="pill warn static">信息更新: ${diffData.counts?.changed ?? 0}</span>
+                <span class="pill ok static">新增文献: ${esc(diffData.counts?.added ?? 0)}</span>
+                <span class="pill err static">减少文献: ${esc(diffData.counts?.removed ?? 0)}</span>
+                <span class="pill warn static">信息更新: ${esc(diffData.counts?.changed ?? 0)}</span>
               </div>
             </div>
           `;
@@ -3057,7 +3182,7 @@
 
         // 4. Normalized Papers List
         if (papers.length > 0) {
-          bodySections += `<div class="paper-list" id="mainPapersList">${papers.map(renderPaperCardHtml).join("")}</div>`;
+          bodySections += `<div class="paper-list" id="mainPapersList">${papers.map((p) => renderPaperCardHtml(p)).join("")}</div>`;
         }
 
         // 5. Raw Results (Serper Google Scholar / Patents / Web, or Exa raw items)
@@ -3077,7 +3202,7 @@
           `<div class="card"><p style="margin:0;color:var(--text-secondary);">本次检索未找到匹配文献，建议缩短或更换英文核心关键词后重试。</p></div>`;
 
         // Bind events
-        contentEl.querySelector("#btnOpenAcqPdf")?.addEventListener("click", async () => {
+        onAction(contentEl.querySelector("#btnOpenAcqPdf"), "click", async () => {
           const target = bundle.acquisition?.saved_pdf_path || bundle.acquisition?.file || "paper.pdf";
           await callTool("read_run_file", {
             runId: bundle.acquisition?.saved_pdf_path ? "local" : bundle.runId,
@@ -3085,8 +3210,8 @@
             openInSystem: true
           });
         });
-        contentEl.querySelector("#btnOpenAcqFolder")?.addEventListener("click", () => {
-          if (bundle.acquisition?.saved_dir) openLocalPathInSystem(bundle.acquisition.saved_dir, "local");
+        onAction(contentEl.querySelector("#btnOpenAcqFolder"), "click", async () => {
+          if (bundle.acquisition?.saved_dir) await openLocalPathInSystem(bundle.acquisition.saved_dir, "local");
         });
 
         const mainPapersEl = contentEl.querySelector("#mainPapersList");
@@ -3096,7 +3221,7 @@
         if (rawListEl) bindRawResultsEvents(rawListEl, rawResults);
 
         contentEl.querySelectorAll(".fetch-author-works-btn").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
+          onAction(btn, "click", async (e) => {
             e.stopPropagation();
             await callTool(
               "search_author",
@@ -3111,7 +3236,7 @@
         if (papers.length > 0 || rawResults.length > 0 || authorCandidates.length > 0) {
           let previewBodyHtml = "";
           if (papers.length > 0) {
-            previewBodyHtml = `<div class="paper-list" id="quickPapersList">${papers.slice(0, 5).map(renderPaperCardHtml).join("")}</div>`;
+            previewBodyHtml = `<div class="paper-list" id="quickPapersList">${papers.slice(0, 5).map((p) => renderPaperCardHtml(p)).join("")}</div>`;
           } else if (rawResults.length > 0) {
             previewBodyHtml = `<div class="paper-list" id="quickRawList">${rawResults.slice(0, 5).map(renderRawResultCardHtml).join("")}</div>`;
           } else if (authorCandidates.length > 0) {
@@ -3279,7 +3404,8 @@
         alpha: 0,
         alphaTarget: 0,
         rafId: null,
-        stageBound: false
+        stageBound: false,
+        pointerCleanup: null
       };
 
       function roleColor(role) {
@@ -3298,8 +3424,10 @@
 
       function clientToGraphWorld(svgEl, clientX, clientY) {
         const rect = svgEl.getBoundingClientRect();
-        const svgX = ((clientX - rect.left) / Math.max(1, rect.width)) * GRAPH_W;
-        const svgY = ((clientY - rect.top) / Math.max(1, rect.height)) * GRAPH_H;
+        // The default xMidYMid meet viewBox leaves letterboxing in narrow sidebars.
+        const scale = Math.max(0.0001, Math.min(rect.width / GRAPH_W, rect.height / GRAPH_H));
+        const svgX = (clientX - rect.left - (rect.width - GRAPH_W * scale) / 2) / scale;
+        const svgY = (clientY - rect.top - (rect.height - GRAPH_H * scale) / 2) / scale;
         const z = state.graphZoom;
         return {
           svgX,
@@ -3310,13 +3438,14 @@
       }
 
       function computeTimelineTargets(nodes) {
-        const validYears = nodes.map((n) => n.year).filter((y) => y && y >= 1970 && y <= 2030);
+        const validYear = (year) => Number.isInteger(Number(year)) && Number(year) >= 1000 && Number(year) <= 9999;
+        const validYears = nodes.map((n) => n.year).filter(validYear).map(Number);
         const minY = validYears.length ? Math.min(...validYears) : 2018;
         const maxY = validYears.length ? Math.max(...validYears) : 2026;
-        const span = Math.max(1, maxY - minY);
+        const span = maxY - minY;
         const byYearBuckets = new Map();
         nodes.forEach((n) => {
-          const yr = n.year && n.year >= 1970 ? n.year : Math.round((minY + maxY) / 2);
+          const yr = validYear(n.year) ? Number(n.year) : Math.round((minY + maxY) / 2);
           if (!byYearBuckets.has(yr)) byYearBuckets.set(yr, []);
           byYearBuckets.get(yr).push(n);
         });
@@ -3571,12 +3700,41 @@
         }
       }
 
+      function stopGraphPhysics() {
+        if (graphSim.rafId !== null) cancelAnimationFrame(graphSim.rafId);
+        graphSim.rafId = null;
+        graphSim.pointerCleanup?.();
+        graphSim.pointerCleanup = null;
+        graphSim.draggingNode = null;
+        graphSim.hoveredNodeId = null;
+        graphSim.alphaTarget = 0;
+        document.getElementById("graphHoverTooltip")?.classList.add("hidden");
+      }
+
       function startGraphPhysics(reheatAlpha = 0.85) {
+        if (disposed || document.hidden || state.activeTab !== "graph" || !graphSim.nodes.length ||
+            !document.getElementById("detailViewContainer").classList.contains("hidden")) return;
         graphSim.alpha = Math.max(graphSim.alpha, reheatAlpha);
-        if (!graphSim.rafId) {
+        if (graphSim.rafId === null) {
           graphSim.rafId = requestAnimationFrame(stepGraphPhysics);
         }
       }
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) stopGraphPhysics();
+        else startGraphPhysics(0.2);
+      });
+      window.addEventListener("pagehide", () => {
+        disposed = true;
+        ro?.disconnect();
+        stopGraphPhysics();
+        for (const { reject, timer } of pendingRpc.values()) {
+          clearTimeout(timer);
+          reject(new Error("面板已关闭"));
+        }
+        pendingRpc.clear();
+        state.inlineSubRuns.clear();
+      });
 
       function renderSelectedGraphNodeCard(node) {
         const selCardEl = document.getElementById("graphSelectedNodeCard");
@@ -3611,7 +3769,7 @@
         `;
         bindPaperListEvents(selCardEl.querySelector("#graphNodeCardMount"), [p]);
         selCardEl.querySelectorAll(".graph-expand-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const res = await callTool(
               "explore_related",
               { id: btn.dataset.id, relation: btn.dataset.rel, limit: 10, preserveActiveRun: true },
@@ -3642,13 +3800,19 @@
         const tooltipEl = document.getElementById("graphHoverTooltip");
         if (!svg) return;
 
+        stopGraphPhysics();
         if (incomingNodes.length === 0) {
-          if (graphSim.rafId) {
-            cancelAnimationFrame(graphSim.rafId);
-            graphSim.rafId = null;
-          }
           graphSim.nodes = [];
           graphSim.edges = [];
+          graphSim.nodeById.clear();
+          graphSim.neighborsById.clear();
+          graphSim.nodeElMap.clear();
+          graphSim.edgeElMap.clear();
+          graphSim.viewportEl = null;
+          graphSim.centerId = null;
+          state.graphSelectedNodeId = null;
+          svg.onwheel = null;
+          svg.onpointerdown = null;
           svg.innerHTML = `<text x="360" y="215" text-anchor="middle" fill="var(--text-secondary)" font-size="13">暂无可绘制的文献节点，请先执行一次文献检索或引文网络追踪。</text>`;
           if (selCardEl) selCardEl.innerHTML = "";
           return;
@@ -3835,6 +3999,7 @@
             e.stopPropagation();
             const n = graphSim.nodeById.get(nid);
             if (!n) return;
+            graphSim.pointerCleanup?.();
             gEl.setPointerCapture(e.pointerId);
             const downX = e.clientX;
             const downY = e.clientY;
@@ -3863,15 +4028,19 @@
               }
             };
 
-            const onPointerUp = (ue) => {
+            const cleanup = () => {
               gEl.removeEventListener("pointermove", onPointerMove);
               gEl.removeEventListener("pointerup", onPointerUp);
               gEl.removeEventListener("pointercancel", onPointerUp);
-              try { gEl.releasePointerCapture(ue.pointerId); } catch {}
-
+              try { gEl.releasePointerCapture(e.pointerId); } catch {}
+              if (!n.pinned) { n.fx = null; n.fy = null; }
               graphSim.draggingNode = null;
               graphSim.alphaTarget = 0;
-
+              if (graphSim.pointerCleanup === cleanup) graphSim.pointerCleanup = null;
+            };
+            const onPointerUp = (ue) => {
+              cleanup();
+              if (ue.type === "pointercancel") return;
               const pinAfterDrag = document.getElementById("chkPinDraggedNode")?.checked;
               if (dragged && pinAfterDrag) {
                 n.pinned = true;
@@ -3889,6 +4058,7 @@
               startGraphPhysics(dragged ? 0.32 : 0.12);
             };
 
+            graphSim.pointerCleanup = cleanup;
             gEl.addEventListener("pointermove", onPointerMove);
             gEl.addEventListener("pointerup", onPointerUp);
             gEl.addEventListener("pointercancel", onPointerUp);
@@ -3909,14 +4079,15 @@
 
         svg.onpointerdown = (e) => {
           if (e.button !== 0 || e.target.closest(".graph-node-g")) return;
+          graphSim.pointerCleanup?.();
           svg.style.cursor = "grabbing";
           const startClientX = e.clientX;
           const startClientY = e.clientY;
           const origZoomX = state.graphZoom.x;
           const origZoomY = state.graphZoom.y;
           const rect = svg.getBoundingClientRect();
-          const scaleX = GRAPH_W / Math.max(1, rect.width);
-          const scaleY = GRAPH_H / Math.max(1, rect.height);
+          const scaleX = 1 / Math.max(0.0001, Math.min(rect.width / GRAPH_W, rect.height / GRAPH_H));
+          const scaleY = scaleX;
 
           const onMove = (me) => {
             state.graphZoom.x = origZoomX + (me.clientX - startClientX) * scaleX;
@@ -3927,9 +4098,13 @@
             svg.style.cursor = "grab";
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("pointercancel", onUp);
+            if (graphSim.pointerCleanup === onUp) graphSim.pointerCleanup = null;
           };
+          graphSim.pointerCleanup = onUp;
           window.addEventListener("pointermove", onMove);
           window.addEventListener("pointerup", onUp);
+          window.addEventListener("pointercancel", onUp);
         };
 
         updateGraphVisualHighlights();
@@ -3996,7 +4171,7 @@
       document.getElementById("btnGraphZoomIn")?.addEventListener("click", () => zoomGraphByFactor(1.2));
       document.getElementById("btnGraphZoomOut")?.addEventListener("click", () => zoomGraphByFactor(0.84));
 
-      document.getElementById("btnExportGraphSvg")?.addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnExportGraphSvg"), "click", async (e) => {
         const svgEl = document.getElementById("graphSvg");
         if (!svgEl || !graphSim.nodes.length) {
           return showBanner("当前图谱暂无节点可导出", "warn");
@@ -4027,7 +4202,7 @@
         if (basket.length === 0) {
           container.innerHTML = `<p style="color:var(--text-secondary); margin:0;">收藏篮为空。在检索结果卡片上点击「⭐ 收藏」即可跨检索收集文献，支持一键导出 Obsidian 笔记与参考文献。</p>`;
         } else {
-          container.innerHTML = `<div class="paper-list" id="basketPapersList">${basket.map(renderPaperCardHtml).join("")}</div>`;
+          container.innerHTML = `<div class="paper-list" id="basketPapersList">${basket.map((p) => renderPaperCardHtml(p)).join("")}</div>`;
           bindPaperListEvents(container.querySelector("#basketPapersList"), basket);
         }
         updateCitationPreview();
@@ -4088,7 +4263,7 @@
           });
         });
         container.querySelectorAll(".run-item-card, .load-run-btn").forEach((el) => {
-          el.addEventListener("click", async () => {
+          onAction(el, "click", async () => {
             const runId = el.dataset.runId;
             if (!runId) return;
             await callTool("manage_runs", { operation: "load", runId }, "正在加载历史检索记录...");
@@ -4096,19 +4271,33 @@
           });
         });
         container.querySelectorAll(".del-single-run-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
+          onAction(btn, "click", async () => {
             const runId = btn.dataset.runId;
             if (!runId) return;
-            state.selectedRuns.delete(runId);
             await callTool("manage_runs", { operation: "delete", runId }, "正在删除历史记录...", btn);
+            state.selectedRuns.delete(runId);
             showBanner("已删除该条历史记录", "success");
           });
         });
       }
 
       function updatePanelData(data) {
+        if (disposed || !data) return;
         const isFirstLoad = !state.panelData;
+        if (state.panelData?.activeRun?.runId !== data.activeRun?.runId) state.expandAllAbstracts = false;
         state.panelData = data;
+        const existingRuns = new Set((data.recentRuns || []).map((r) => r.runId));
+        state.selectedRuns = new Set([...state.selectedRuns].filter((id) => existingRuns.has(id)));
+        if (!state.navSwitching) {
+          const currentId = state.navStack[state.navIndex];
+          state.navStack = state.navStack.filter((id) => existingRuns.has(id) || id === data.activeRun?.runId);
+          state.navIndex = state.navStack.indexOf(currentId);
+        }
+        for (const [key, entry] of state.inlineSubRuns) {
+          if (existingRuns.size === 0 || (entry.bundle?.runId && !existingRuns.has(entry.bundle.runId))) {
+            state.inlineSubRuns.delete(key);
+          }
+        }
         renderStatusStrip(data);
         renderActiveRun(data.activeRun);
         renderRelationshipGraph(data);
@@ -4145,7 +4334,7 @@
         document.getElementById("configPanel").classList.add("hidden");
       });
 
-      document.getElementById("btnSaveConfig").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnSaveConfig"), "click", async (e) => {
         const exportSubdir = getChosenSaveDir();
         await callTool(
           "save_config",
@@ -4168,7 +4357,7 @@
         showBanner("✅ 设置已保存并立即生效！", "success");
       });
 
-      document.getElementById("btnClearSavedKeys").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnClearSavedKeys"), "click", async (e) => {
         await callTool(
           "save_config",
           { clearKeys: ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey"] },
@@ -4178,7 +4367,7 @@
         showBanner("已清空面板内覆盖的 Key，恢复使用系统环境变量配置。", "success");
       });
 
-      document.getElementById("btnRunDoctorInCfg").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnRunDoctorInCfg"), "click", async (e) => {
         const res = await callTool("doctor_status", {}, "正在执行环境自检...", e.currentTarget);
         if (res?.doctorReport) {
           openDetailView(
@@ -4191,7 +4380,7 @@
 
       // Mode 1: Smart Unified Search
       const btnExecSearch = document.getElementById("btnExecSearch");
-      btnExecSearch.addEventListener("click", async () => {
+      onAction(btnExecSearch, "click", async () => {
         const raw = document.getElementById("qSearch").value.trim();
         if (!raw) return showBanner("请输入英文检索词或论文 DOI", "error");
 
@@ -4204,9 +4393,12 @@
 
         const sources = [...document.querySelectorAll(".src-chk:checked")].map((c) => c.value);
         if (!sources.length) return showBanner("请至少勾选一个文献源", "error");
-        const yearFrom = Number(document.getElementById("qSearchYearFrom").value) || undefined;
-        const yearTo = Number(document.getElementById("qSearchYearTo").value) || undefined;
-        const limit = Number(document.getElementById("qSearchLimit").value) || 10;
+        const yearFrom = readYearInput("qSearchYearFrom");
+        const yearTo = readYearInput("qSearchYearTo");
+        if (yearFrom !== undefined && yearTo !== undefined && yearFrom > yearTo) {
+          return showBanner("起始年份不能晚于结束年份。", "error");
+        }
+        const limit = readLimitInput("qSearchLimit");
         await callTool(
           "search_papers",
           { query: raw, sources, yearFrom, yearTo, limit },
@@ -4221,7 +4413,7 @@
 
       // Mode 1 Sub-fold
       const btnExecSeedAction = document.getElementById("btnExecSeedAction");
-      btnExecSeedAction.addEventListener("click", async () => {
+      onAction(btnExecSeedAction, "click", async () => {
         const id = normalizeDirectId(document.getElementById("qSeedIdInput").value.trim());
         if (!id) return showBanner("请填入种子论文 DOI 或稳定 ID", "error");
         const act = document.getElementById("qSeedActionType").value;
@@ -4246,12 +4438,12 @@
 
       // Mode 2: Google Scholar / Patents (Serper) & Exa AI Search
       const btnExecExtSearch = document.getElementById("btnExecExtSearch");
-      btnExecExtSearch.addEventListener("click", async () => {
+      onAction(btnExecExtSearch, "click", async () => {
         const query = document.getElementById("qExtQuery").value.trim();
         if (!query) return showBanner("请输入检索关键词或描述", "error");
         const channel = document.getElementById("qExtChannel").value;
-        const yearFrom = Number(document.getElementById("qExtYearFrom").value) || undefined;
-        const limit = Number(document.getElementById("qExtLimit").value) || 10;
+        const yearFrom = readYearInput("qExtYearFrom");
+        const limit = readLimitInput("qExtLimit");
 
         if (channel.startsWith("exa:")) {
           await callTool(
@@ -4276,13 +4468,13 @@
 
       // Mode 3: Author Search
       const btnExecAuthor = document.getElementById("btnExecAuthor");
-      btnExecAuthor.addEventListener("click", async () => {
+      onAction(btnExecAuthor, "click", async () => {
         const provider = document.getElementById("qAuthorProvider").value;
         const query = document.getElementById("qAuthorName").value.trim() || undefined;
-        const fromPaper = document.getElementById("qAuthorFromPaper").value.trim() || undefined;
+        const fromPaper = normalizeDirectId(document.getElementById("qAuthorFromPaper").value) || undefined;
         const authorId = document.getElementById("qAuthorId").value.trim() || undefined;
-        const yearFrom = Number(document.getElementById("qAuthorYearFrom").value) || undefined;
-        const limit = Number(document.getElementById("qAuthorLimit").value) || 10;
+        const yearFrom = readYearInput("qAuthorYearFrom");
+        const limit = readLimitInput("qAuthorLimit");
         if (!query && !fromPaper && !authorId) {
           return showBanner("请填写学者姓名、代表作 DOI 或学者 ID", "error");
         }
@@ -4300,17 +4492,18 @@
 
       // Mode 4: Europe PMC
       const btnExecEpmc = document.getElementById("btnExecEpmc");
-      btnExecEpmc.addEventListener("click", async () => {
+      onAction(btnExecEpmc, "click", async () => {
         const raw = document.getElementById("qEpmcQuery").value.trim();
         if (!raw) return showBanner("请输入检索词或 PMCID / DOI / PMID", "error");
-        const isDirectId = /^(PMC\d+|10\.\d{4,9}\/\S+|\d{6,10})$/i.test(raw);
+        const directId = normalizeDirectId(raw);
+        const isDirectId = /^(?:PMC\d+|(?:pmid|pmcid):\S+|10\.\d{4,9}\/\S+)$/i.test(directId);
         const fetchMode = document.getElementById("qEpmcFetch").value;
         const saveDir = getChosenSaveDir();
         const res = await callTool(
           "search_epmc",
           {
-            query: isDirectId && fetchMode !== "none" ? undefined : raw,
-            id: isDirectId ? raw : undefined,
+            query: isDirectId ? undefined : raw,
+            id: isDirectId ? directId : undefined,
             sort: document.getElementById("qEpmcSort").value,
             hasSuppl: document.getElementById("qEpmcSuppl").checked,
             openAccess: document.getElementById("qEpmcOa").checked,
@@ -4318,7 +4511,7 @@
             hasFulltext: document.getElementById("qEpmcFulltext").checked,
             fetchMode,
             saveDir,
-            limit: Number(document.getElementById("qEpmcLimit").value) || 10
+            limit: readLimitInput("qEpmcLimit")
           },
           fetchMode !== "none"
             ? `正在从 Europe PMC 下载全文/SI补充材料包并保存至 ${saveDir} ...`
@@ -4346,13 +4539,13 @@
         });
       });
 
-      document.getElementById("btnCopyCitation").addEventListener("click", () => {
+      onAction(document.getElementById("btnCopyCitation"), "click", async () => {
         const text = document.getElementById("citationPreviewBox").textContent || "";
-        navigator.clipboard?.writeText(text);
+        await copyTextToClipboard(text);
         showBanner(`✅ 已复制 ${state.citeFormat.toUpperCase()} 格式参考文献！`, "success");
       });
 
-      document.getElementById("btnExportMdCards").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnExportMdCards"), "click", async (e) => {
         const saveDir = getChosenSaveDir();
         const res = await callTool(
           "export_to_workspace",
@@ -4370,7 +4563,7 @@
         }
       });
 
-      document.getElementById("btnExportCitations").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnExportCitations"), "click", async (e) => {
         const saveDir = getChosenSaveDir();
         const res = await callTool(
           "export_to_workspace",
@@ -4388,7 +4581,7 @@
         }
       });
 
-      document.getElementById("btnSendBasketToChat").addEventListener("click", async () => {
+      onAction(document.getElementById("btnSendBasketToChat"), "click", async () => {
         const basket = state.panelData?.basket || [];
         if (!basket.length) return showBanner("收藏篮为空", "error");
         const listStr = basket
@@ -4400,15 +4593,14 @@
         );
       });
 
-      document.getElementById("btnClearBasket").addEventListener("click", async () => {
+      onAction(document.getElementById("btnClearBasket"), "click", async () => {
         await callTool("manage_basket", { action: "clear" });
       });
 
       // History Cleanup, Merge & Diff
-      document.getElementById("btnDeleteSelectedRuns").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnDeleteSelectedRuns"), "click", async (e) => {
         const ids = [...state.selectedRuns];
         if (ids.length < 1) return showBanner("请先在下方列表左侧打勾选择要删除的历史记录", "error");
-        state.selectedRuns.clear();
         await callTool(
           "manage_runs",
           { operation: "delete", runIds: ids },
@@ -4425,8 +4617,7 @@
         document.getElementById("btnConfirmClearAllRuns").classList.remove("hidden");
       });
 
-      document.getElementById("btnConfirmClearAllRuns").addEventListener("click", async (e) => {
-        state.selectedRuns.clear();
+      onAction(document.getElementById("btnConfirmClearAllRuns"), "click", async (e) => {
         await callTool(
           "manage_runs",
           { operation: "clear_all" },
@@ -4436,14 +4627,14 @@
         showBanner("✅ 已清空全部历史检索记录（收藏篮文献不受影响）", "success");
       });
 
-      document.getElementById("btnMergeSelectedRuns").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnMergeSelectedRuns"), "click", async (e) => {
         const ids = [...state.selectedRuns];
         if (ids.length < 1) return showBanner("请先在下方历史列表左侧打勾选择要合并的记录", "error");
         await callTool("manage_runs", { operation: "merge", runIds: ids }, "正在合并去重勾选的历史记录...", e.currentTarget);
         switchTab("results");
       });
 
-      document.getElementById("btnDiffSelectedRuns").addEventListener("click", async (e) => {
+      onAction(document.getElementById("btnDiffSelectedRuns"), "click", async (e) => {
         const ids = [...state.selectedRuns];
         if (ids.length !== 2) return showBanner("请恰好勾选 2 条历史记录进行对比", "error");
         await callTool(

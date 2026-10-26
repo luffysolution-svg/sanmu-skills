@@ -109,11 +109,13 @@ class DistributionTests(unittest.TestCase):
     def fixture(self, root):
         _, files = build.validate()
         extra = ["distribution/manifest.json", ".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"]
+        extra += [f"{build.ZCODE_SHELL_DIR}/{name}" for name in build.ZCODE_SHELL_FILES]
         for name in files + extra:
             destination = root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(build.ROOT / name, destination)
         subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "core.autocrlf", "false"], check=True)
         subprocess.run(["git", "-C", str(root), "add", "."], check=True)
 
     def track(self, root, name, text="development fixture"):
@@ -122,6 +124,37 @@ class DistributionTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         subprocess.run(["git", "-C", str(root), "add", "--force", name], check=True)
         return path
+
+    def test_zcode_shell_is_required_tracked_and_versioned(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fixture(root)
+            panel = root / build.ZCODE_SHELL_DIR / "assets/panel.html"
+            original = panel.read_text(encoding="utf-8")
+            panel.write_text(original.replace('class="brand-sub">v', 'class="brand-sub">v0.0.0-'), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "server/panel version"):
+                build.validate(root)
+            panel.write_text(original, encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "update-index", "--force-remove", "--", f"{build.ZCODE_SHELL_DIR}/assets/panel.html"],
+                           check=True, stdout=subprocess.PIPE)
+            with self.assertRaisesRegex(ValueError, "must be tracked"):
+                build.validate(root)
+            subprocess.run(["git", "-C", str(root), "add", "--", f"{build.ZCODE_SHELL_DIR}/assets/panel.html"], check=True)
+            panel.unlink()
+            with self.assertRaisesRegex(ValueError, "Missing or invalid ZCode"):
+                build.validate(root)
+
+    def test_zcode_archive_uses_identical_shared_engine_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archives = build.build(Path(temporary) / "out")
+            zcode = next(path for path in archives if path.parent.name == "zcode")
+            with zipfile.ZipFile(zcode) as archive:
+                for source in (build.ROOT / "skills/sanmu-paper-search/scripts").glob("*.py"):
+                    expected = source.read_bytes()
+                    self.assertEqual(archive.read(f"scripts/{source.name}"), expected)
+                    self.assertEqual(archive.read(f"skills/sanmu-paper-search/scripts/{source.name}"), expected)
+                metadata = json.loads(archive.read(".zcode-plugin/plugin.json"))
+                self.assertEqual(metadata["version"], build.read_json(build.ROOT / "distribution/manifest.json")["version"])
 
     def test_development_trees_are_excluded_even_if_tracked(self):
         with tempfile.TemporaryDirectory() as temporary:

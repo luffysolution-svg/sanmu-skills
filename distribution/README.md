@@ -25,7 +25,7 @@
 
 ## 版本与打包
 
-版本号记录在 `manifest.json`，同时改根目录 `plugin.json` 和 `.claude-plugin/plugin.json`，三处必须一致（`check` 会校验）。技能名称保持不变；腾讯 `slug` 默认与技能同名，首次发布前确认没有被占用。
+版本号记录在 `manifest.json`，同时改根目录 `plugin.json`、`.claude-plugin/plugin.json` 和 ZCode 外壳 `.zcode-plugin/plugin.json`，以及服务端、面板内的版本标识；这些版本必须一致（`check` 会校验）。ZCode 外壳文件必须完整且被 Git 跟踪，缺失时构建失败。技能名称保持不变；腾讯 `slug` 默认与技能同名，首次发布前确认没有被占用。
 
 从仓库根目录执行，只需要 Python 3.10+ 和 Git：
 
@@ -57,6 +57,7 @@ python distribution/build.py build --out dist/<版本>
 python tests/sanmu-doc2md/_selftest.py
 python -m unittest discover -s tests/sanmu-paper-reader -v
 python -m unittest discover -s tests/sanmu-paper-search -v
+node --test tests/zcode-paper-search/test_mcp_server.mjs tests/zcode-paper-search/test_panel.mjs
 ```
 
 样例和展示图片只供浏览仓库和开发验证；安装后的技能里，运行时链接都应指向包内资源。
@@ -137,7 +138,7 @@ skillhub publish ./dist/<版本>/skillhub/sanmu-paper-search --dry-run
 - 技能包的必填字段按[官方技能文档](https://open.workbuddy.cn/docs/skill)：`description`、`description_zh`、`description_en`、`version`、`author`。展示名虽未标必填，但缺失时实际会解析失败，所以也一并写入。
 - 付费资产名称只支持中文、英文字母、数字、`-` 和 `_`，不能含空格或间隔号。构建时校验中英文展示名；当前中文名为“三木学术文档转Markdown”“三木文献精读”“三木文献检索”。后台展示名从包内 `display_name` 解析且只读，改名后需重新上传 ZIP。
 - 本次三个付费技能均从“创建”入口重新建立，WorkBuddy 标识为 `sanmu-doc2md-paid`、`sanmu-paper-reader-paid`、`sanmu-paper-search-paid`，原已发布记录保持下架。实测旧免费记录的“更新版本”页不提供付费选项，而创建时沿用旧标识会提示技能已存在；渠道独立标识避免冲突，源码及 SkillHub 标识保持不变。
-- `workbuddyVersion` 当前为 `1.6.3`，与合集版本 `1.6.3` 保持一致。未设置时沿用合集版本。更新已有记录时，平台要求包内版本严格大于当前最新版本。
+- `workbuddyVersion` 当前为 `1.6.4`，与合集版本 `1.6.4` 保持一致。未设置时沿用合集版本。更新已有记录时，平台要求包内版本严格大于当前最新版本。
 - 三个新技能统一选择“按月付费”，金额为 `3` 元/月。价格在后台设置，ZIP 不携带定价；保存后核对确认页的“按月付费·3元/月”，再提交审核。
 - 解析失败时，先对照官方文档的“技能基础结构”排查；仍无法定位，可发邮件到 openworkbuddy@tencent.com。
 

@@ -167,6 +167,7 @@ python tests/sanmu-doc2md/_selftest.py                       # 需先装 doc2md 
 python -m unittest discover -s tests/sanmu-paper-reader -v
 python -m unittest discover -s tests/sanmu-paper-search -v
 python -m unittest discover -s distribution/tests -v
+node --test tests/zcode-paper-search/test_mcp_server.mjs tests/zcode-paper-search/test_panel.mjs
 ```
 
 打包、版本与各渠道发布流程见 [渠道发布说明](distribution/README.md)。

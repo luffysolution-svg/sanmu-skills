@@ -113,6 +113,11 @@ def ids(**values):
                 text = text.rstrip("/").rsplit("/", 1)[-1].upper()
             elif key in ("pmid", "pmcid", "orcid"):
                 text = text.rstrip("/").rsplit("/", 1)[-1]
+                if key == "pmcid":
+                    match = re.fullmatch(r"(?:PMC)?(\d+)", text, re.I)
+                    text = "PMC" + match[1] if match else None
+                elif key == "pmid" and not re.fullmatch(r"[0-9]+", text):
+                    text = None
             elif key == "arxiv":
                 text = re.sub(r"^arxiv:\s*", "", text.rsplit("/abs/", 1)[-1], flags=re.I)
             if text and text not in cleaned:
@@ -181,8 +186,6 @@ def _arxiv_families(paper):
 
 def _version_conflicts(a, b):
     """Only bibliographic/arXiv evidence, never a provider API version field."""
-    if not (_arxiv_families(a) & _arxiv_families(b)):
-        return []
     reasons = []
     a_doi, b_doi = (set(p.get("identifiers", {}).get("doi", [])) for p in (a, b))
     if a_doi and b_doi and not a_doi & b_doi:
@@ -194,6 +197,10 @@ def _version_conflicts(a, b):
     if ((kinds[0] & preprint and kinds[1] & published) or
             (kinds[1] & preprint and kinds[0] & published)):
         reasons.append("preprint_publication_type")
+    corrections = {"correction", "erratum", "retraction", "retraction notice", "retraction-notice"}
+    if ((kinds[0] & corrections and kinds[1] & published) or
+            (kinds[1] & corrections and kinds[0] & published)):
+        reasons.append("correction_publication_type")
     for family in _arxiv_families(a) & _arxiv_families(b):
         versions = [{value.casefold() for value in p.get("identifiers", {}).get("arxiv", [])
                      if re.sub(r"v\d+$", "", value.casefold()) == family
@@ -318,10 +325,12 @@ def deduplicate(papers):
             reasons = sorted({reason for a in groups[i] for b in groups[j]
                               for reason in _version_conflicts(a, b)})
             families = sorted(_arxiv_families(paper) & _arxiv_families(other))
-            if reasons:
+            if reasons and (families or _stable(paper) & _stable(other) or
+                            (_fallback(paper) and _fallback(paper) == _fallback(other))):
                 for source, target in ((paper, other), (other, paper)):
                     source["relations"] = unique(source.get("relations", []) + [{
-                        "type": "arxiv_version_relation", "target_identifiers": target["identifiers"],
+                        "type": "arxiv_version_relation" if families else "identity_conflict",
+                        "target_identifiers": target["identifiers"],
                         "evidence": {"shared_arxiv_families": families, "reasons": reasons}}])
     return result
 

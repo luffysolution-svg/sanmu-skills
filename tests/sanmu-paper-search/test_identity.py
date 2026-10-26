@@ -69,6 +69,22 @@ class IdentityTests(unittest.TestCase):
             self.assertTrue(all(len(p["identifiers"].get("doi", [])) <= 1 for p in result))
             self.assertTrue(all(p["relations"] for p in result))
 
+    def test_distinct_dois_and_publication_types_without_arxiv_remain_separate(self):
+        a = paper("10.1234/a")
+        b = paper("10.1234/b")
+        bridge = paper(None)
+        for item in (a, b, bridge):
+            item["identifiers"].update(ids(openalex="W1"))
+        for order in itertools.permutations((a, b, bridge)):
+            result = deduplicate(order)
+            self.assertEqual(len(result), 2)
+            self.assertTrue(all(len(p["identifiers"].get("doi", [])) <= 1 for p in result))
+            self.assertTrue(all(p["relations"] for p in result))
+        for kind in ("preprint", "posted-content", "correction", "erratum", "retraction"):
+            result = deduplicate([paper(), paper(kind=kind)])
+            self.assertEqual(len(result), 2, kind)
+            self.assertEqual(result[0]["relations"][0]["type"], "identity_conflict")
+
     def test_same_identity_merges_and_api_version_does_not_split_papers(self):
         a = paper(arxiv="2401.12345v1", schema_version="1.0", api_version="v1", version="v1")
         b = paper(arxiv="2401.12345v1", schema_version="2.0", api_version="v2", version="v2")

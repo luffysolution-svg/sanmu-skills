@@ -44,6 +44,49 @@ class PdfTests(unittest.TestCase):
         self.assertEqual(check('Other paper\nReferences\nExpected title 10.1234/right', '10.1234/right', 'Expected title')["status"], 'needs_review')
         self.assertEqual(check('Expected title\nhttps://doi.org/10.1234/right\nAbstract\nBody', '10.1234/right', 'Expected title')["status"], 'matched')
 
+    def test_signed_url_redaction_preserves_ports_and_ipv6(self):
+        url = fetch_pdf.public_url("https://user:pass@[2001:db8::1]:8443/paper.pdf?api%2Dkey=SECRET&authorization=AUTH&download=1")
+        self.assertIn("[2001:db8::1]:8443", url)
+        self.assertNotIn("SECRET", url)
+        self.assertNotIn("AUTH", url)
+        self.assertNotIn("pass", url)
+        self.assertIn("download=1", url)
+        self.assertEqual(fetch_pdf.assess_identity_text("Any unrelated heading", title="!!!")["status"], "needs_review")
+
+    def test_download_redirect_format_identity_and_fallback_selection(self):
+        from email.message import Message
+        class Response:
+            def __init__(self, payload, url):
+                self.payload, self.url = payload, url
+                self.headers = Message()
+                self.headers["Content-Type"] = "application/pdf"
+            def read(self, size): return self.payload[:size]
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+        with patch.object(fetch_pdf, "urlopen", return_value=Response(b"%PDF-1.4\n%%EOF", "http://example.org/file.pdf")), \
+                self.assertRaisesRegex(ValueError, "insecure_redirect"):
+            fetch_pdf._download_pdf_bytes("https://example.org/file.pdf")
+        with tempfile.TemporaryDirectory() as tmp:
+            payloads = [b"<html>login</html>", b"%PDF-1.4\nwrong\n%%EOF", b"%PDF-1.4\ncorrect\n%%EOF"]
+            urls = ["https://example.org/landing", "https://example.org/wrong.pdf", "https://example.org/correct.pdf"]
+            def opener(req, timeout):
+                return Response(payloads[urls.index(req.full_url)], req.full_url)
+            def identity(path, doi, title):
+                return {"status": "matched" if b"correct" in path.read_bytes() else "needs_review", "method": "fixture"}
+            with patch.object(fetch_pdf, "urlopen", side_effect=opener) as network, \
+                    patch.object(fetch_pdf, "identity_check", side_effect=identity):
+                record = fetch_pdf.fetch(urls[0], Path(tmp) / "run", doi="10.1234/right", fallback_urls=urls[1:])
+                self.assertEqual(network.call_count, 3)
+            self.assertEqual(record["identity"]["status"], "matched")
+            self.assertEqual(record["source_url"], urls[-1])
+            self.assertEqual((Path(tmp) / "run/paper.pdf").read_bytes(), payloads[-1])
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(fetch_pdf, "urlopen", return_value=Response(b"%PDF-1.4\n%%EOF", "https://example.org/file.pdf")), \
+                patch.object(fetch_pdf, "identity_check", return_value={"status": "needs_review"}):
+            record = fetch_pdf.fetch("https://example.org/file.pdf", Path(tmp) / "run", doi="10.1234/right")
+            self.assertEqual(record["identity"]["status"], "needs_review")
+            self.assertTrue((Path(tmp) / "run/paper.pdf").exists())
+
     def test_non_https_and_embedded_password_rejected(self):
         for url in ("http://publisher.org/a.pdf", "https://user:pass@publisher.org/a.pdf"):
             with self.subTest(url=url), self.assertRaises(ValueError):

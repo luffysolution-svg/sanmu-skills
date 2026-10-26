@@ -15,13 +15,16 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
-SENSITIVE = {"api_key", "apikey", "key", "token", "access_token", "email", "mailto", "signature", "credential", "x-amz-signature", "x-amz-credential", "x-amz-security-token"}
+SENSITIVE = {"apikey", "key", "token", "accesstoken", "email", "mailto", "signature", "credential",
+             "password", "secret", "authorization", "xapikey", "xamzsignature", "xamzcredential", "xamzsecuritytoken"}
 
 
 def public_url(value):
     parts = urlsplit(value)
-    query = [(k, "[REDACTED]" if k.lower() in SENSITIVE else v) for k, v in parse_qsl(parts.query, keep_blank_values=True)]
-    return urlunsplit((parts.scheme, parts.hostname or "", parts.path, urlencode(query), ""))
+    query = [(k, "[REDACTED]" if re.sub(r"[^a-z]", "", k.casefold()) in SENSITIVE else v)
+             for k, v in parse_qsl(parts.query, keep_blank_values=True)]
+    # Preserve explicit ports and IPv6 brackets while removing user information.
+    return urlunsplit((parts.scheme, parts.netloc.rsplit("@", 1)[-1], parts.path, urlencode(query), ""))
 
 
 def inspect_pdf(data):
@@ -40,7 +43,7 @@ def assess_identity_text(text, doi=None, title=None):
     normalize_doi = lambda s: re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", s.strip(), flags=re.I).casefold().rstrip(".,;:)")
     observed = {normalize_doi(s) for s in re.findall(r"10\.\d{4,9}/[^\s<>\"']+", heading, flags=re.I)}
     doi_found = bool(doi and normalize_doi(doi) in observed)
-    title_found = bool(title and clean(title) in clean(heading))
+    title_found = bool(title and clean(title) and clean(title) in clean(heading))
     matched = (doi_found if doi else title_found) and (title_found if title else True)
     return {"status": "matched" if matched else "needs_review", "method": "first_page_opening_text", "doi_found": doi_found, "title_found": title_found, "scope": "identity_hint_only; not_full_content_or_version_verification"}
 
@@ -78,8 +81,10 @@ def _normalize_candidate_pdf_url(url):
 def _download_pdf_bytes(url, max_bytes=80 * 1024 * 1024):
     url = _normalize_candidate_pdf_url(url)
     parts = urlsplit(url)
-    if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+    if (parts.scheme != "https" or not parts.hostname or parts.username is not None or parts.password is not None
+            or any(c.isspace() or ord(c) < 32 for c in url)):
         raise ValueError("A public HTTPS URL without embedded credentials is required")
+    parts.port  # Reject malformed port syntax before issuing a request.
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 sanmu-paper-search/1.6",
         "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
@@ -130,21 +135,32 @@ def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_u
         data = source_used = final_url = content_type = checks = None
         last_error = None
         tried_urls = []
+        pdf = stage / "paper.pdf"
+        first_unverified = None
         for cand in candidates:
             tried_urls.append(public_url(cand))
             try:
-                data, source_used, final_url, content_type, checks = _download_pdf_bytes(cand, max_bytes=max_bytes)
+                candidate = _download_pdf_bytes(cand, max_bytes=max_bytes)
+                pdf.write_bytes(candidate[0])
+                candidate_identity = identity_check(pdf, doi, title)
+                if candidate_identity["status"] == "needs_review":
+                    if first_unverified is None:
+                        first_unverified = candidate, candidate_identity
+                    continue
+                data, source_used, final_url, content_type, checks = candidate
+                identity = candidate_identity
                 break
-            except Exception as exc:
+            except (HTTPError, URLError, socket.timeout, TimeoutError, OSError, ValueError) as exc:
                 last_error = exc
                 continue
+        if data is None and first_unverified is not None:
+            candidate, identity = first_unverified
+            data, source_used, final_url, content_type, checks = candidate
+            pdf.write_bytes(data)
         if data is None:
             if last_error is not None:
                 raise last_error
             raise ValueError("not_pdf: no candidate URL returned a valid PDF stream")
-        pdf = stage / "paper.pdf"
-        pdf.write_bytes(data)
-        identity = identity_check(pdf, doi, title)
         record = {"schema_version": "1.0", "retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "file_obtained", "source_url": public_url(source_used), "final_url": public_url(final_url), "tried_urls": tried_urls, "content_type": content_type, "file": "paper.pdf", "sha256": hashlib.sha256(data).hexdigest(), "format_checks": checks, "identity": identity, "requested_identity": {"doi": doi, "title": title}, "license": "not_determined", "read": False}
         (stage / "acquisition.json").write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if out.exists():

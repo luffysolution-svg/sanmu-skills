@@ -1,6 +1,6 @@
 {
   "name": "sanmu-paper-search",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、Google Scholar/Patents (Serper) 与 Exa AI 多源检索、学者消歧、引文网络扩展、OA/SI 全文抓包、阅读进度追踪、Zotero 本地查重及一键导出项目知识库。",
   "author": {
     "name": "Sanmu (Wu Sen)"

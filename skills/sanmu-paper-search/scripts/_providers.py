@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-from _core import InputError, Redactor, doi, ids, location, now, record
+from _core import InputError, Redactor, deduplicate, doi, ids, location, now, record
 from _rate_limit import RateLimiter, RateLimitError
 
 BASE = {"openalex": "https://api.openalex.org", "semantic-scholar": "https://api.semanticscholar.org/graph/v1",
@@ -81,29 +81,33 @@ class Client:
         from _serper import post
         return post(self, mode, payload)
 
+    def contact_email(self, source):
+        preferred = {"openalex": "OPENALEX_EMAIL", "crossref": "CROSSREF_EMAIL",
+                     "unpaywall": "UNPAYWALL_EMAIL"}.get(source)
+        names = [preferred, "OPENALEX_EMAIL", "CROSSREF_EMAIL", "UNPAYWALL_EMAIL", "POLITE_EMAIL"]
+        return next((self.env.get(name, "").strip() for name in names if name and self.env.get(name, "").strip()), None)
+
     def get(self, source, path, params=None):
         params = dict(params or {})
         headers = {"User-Agent": "sanmu-paper-search/1.0 (metadata; Python stdlib)", "Accept": "application/json"}
-        key = self.env.get("OPENALEX_API_KEY") if source == "openalex" else None
+        key = self.env.get("OPENALEX_API_KEY", "").strip() if source == "openalex" else None
         if source == "semantic-scholar":
-            key = self.env.get("S2_API_KEY") or self.env.get("SEMANTIC_SCHOLAR_API_KEY")
+            key = self.env.get("S2_API_KEY", "").strip() or self.env.get("SEMANTIC_SCHOLAR_API_KEY", "").strip()
             if key:
                 headers["x-api-key"] = key
-        polite_email = (self.env.get("OPENALEX_EMAIL") or self.env.get("CROSSREF_EMAIL")
-                        or self.env.get("UNPAYWALL_EMAIL") or self.env.get("POLITE_EMAIL"))
+        polite_email = self.contact_email(source)
         if source == "openalex":
-            if self.env.get("OPENALEX_API_KEY"):
-                params["api_key"] = self.env["OPENALEX_API_KEY"]
+            if key:
+                params["api_key"] = key
             elif polite_email:
                 params["mailto"] = polite_email
                 headers["User-Agent"] = f"sanmu-paper-search/1.0 (mailto:{polite_email})"
-        if source == "crossref" and (self.env.get("CROSSREF_EMAIL") or polite_email):
-            params["mailto"] = self.env.get("CROSSREF_EMAIL") or polite_email
+        if source == "crossref" and polite_email:
+            params["mailto"] = polite_email
         if source == "unpaywall":
-            contact_email = self.env.get("UNPAYWALL_EMAIL") or polite_email
-            if not contact_email:
-                raise SourceError("UNPAYWALL_EMAIL is not configured")
-            params["email"] = contact_email
+            if not polite_email:
+                raise SourceError("UNPAYWALL_EMAIL or a fallback contact email is not configured")
+            params["email"] = polite_email
         base = "https://api.semanticscholar.org" if source == "semantic-scholar" and path.startswith("/recommendations/") else BASE[source]
         url = base + path + (("?" + urlencode(params)) if params else "")
         waited = 0.0
@@ -137,6 +141,8 @@ class Client:
                 raise
             try:
                 data = json.loads(body)
+                # NaN/Infinity and exponent overflow cannot enter a JSON run bundle.
+                json.dumps(data, allow_nan=False)
             except (ValueError, TypeError):
                 data = {"unparsed_body": body}
             self.raw.append(self.redactor.clean({"provider": source, "url": url, "attempt": attempt + 1,
@@ -154,7 +160,7 @@ class Client:
                         self.sleep(delay)
                         waited += delay
                     continue
-            if status is None or status >= 400:
+            if status is None or not 200 <= status < 300:
                 raise SourceError(f"HTTP {status}", status)
             if not isinstance(data, dict) or "unparsed_body" in data:
                 raise SourceError("Invalid JSON response", status)
@@ -168,18 +174,23 @@ def parse_id(value):
     if normalized:
         return "doi", normalized
     lowered = value.lower()
+    patterns = {"openalex": r"W[0-9]+", "semantic_scholar": r"[A-Za-z0-9_-]+",
+                "pmid": r"[0-9]+", "pmcid": r"(?:PMC)?[0-9]+", "corpus_id": r"[0-9]+",
+                "arxiv": r"(?:[0-9]{4}\.[0-9]{4,5}|[A-Za-z][A-Za-z0-9.-]*/[0-9]{7})(?:v[0-9]+)?"}
     for prefix, kind in (("https://openalex.org/", "openalex"), ("openalex:", "openalex"),
                          ("semantic-scholar:", "semantic_scholar"), ("s2:", "semantic_scholar"),
                          ("pmid:", "pmid"), ("pmcid:", "pmcid"), ("arxiv:", "arxiv"), ("corpusid:", "corpus_id")):
         if lowered.startswith(prefix):
             identifier = value[len(prefix):]
-            if not identifier or any(c.isspace() for c in identifier):
+            if not re.fullmatch(patterns[kind], identifier, re.I):
                 break
-            return kind, identifier
-    if value.startswith("W") and value[1:].isdigit():
-        return "openalex", value
-    if re.fullmatch(r"PMC\d+", value, re.I):
+            return kind, ids(**{kind: identifier})[kind][0]
+    if re.fullmatch(patterns["openalex"], value, re.I):
+        return "openalex", value.upper()
+    if re.fullmatch(r"PMC[0-9]+", value, re.I):
         return "pmcid", value.upper()
+    if re.fullmatch(r"[0-9]+", value):
+        return "pmid", value
     raise InputError("Use a DOI, openalex:W..., s2:paperId, pmid:..., pmcid:..., arxiv:..., or corpusid:...")
 
 
@@ -509,24 +520,15 @@ class Providers:
                         "truncated": bool(more), "author_id": author_id}, []
 
     def _extract_seed_doi(self, identifier):
+        kind, value = parse_id(identifier)
+        if kind == "doi":
+            return value
+        # Raw audit history can contain unrelated papers; resolve this seed explicitly.
         try:
-            kind, value = parse_id(identifier)
-            if kind == "doi":
-                return value
-        except Exception:
-            pass
-        for entry in reversed(self.client.raw):
-            body = entry.get("body")
-            if isinstance(body, dict):
-                ext = body.get("externalIds") or (body.get("citingPaperInfo") or {}).get("externalIds") or {}
-                if isinstance(ext, dict) and ext.get("DOI"):
-                    d = doi(ext.get("DOI"))
-                    if d:
-                        return d
-                d = doi(body.get("doi") or (body.get("ids") or {}).get("doi"))
-                if d:
-                    return d
-        return None
+            papers, _ = self.lookup("semantic-scholar", identifier)
+            return next(iter(papers[0]["identifiers"].get("doi", [])), None)
+        except (SourceError, ValueError, TypeError, KeyError, AttributeError, IndexError):
+            return None
 
     def _crossref_references_fallback(self, seed_doi, limit):
         msg = self.client.get("crossref", "/works/" + quote(seed_doi, safe="")).get("message")
@@ -598,40 +600,31 @@ class Providers:
                 if not isinstance(refs, list):
                     raise SourceError("OpenAlex response lacks requested relation")
                 target_refs = refs[:limit]
-                if self.client.opener is urlopen and len(target_refs) > 1:
-                    short_ids = [r.rsplit("/", 1)[-1].upper() for r in target_refs if r and r.rsplit("/", 1)[-1]]
-                    if short_ids:
-                        try:
-                            batch_data = self.client.get(source, "/works", {
-                                "filter": "openalex:" + "|".join(short_ids),
-                                "per-page": len(short_ids)
-                            })
-                            batch_entries = batch_data.get("results")
-                            if isinstance(batch_entries, list) and batch_entries:
-                                by_oa = {
-                                    (e.get("id") or "").rsplit("/", 1)[-1].upper(): normalize(source, e)
-                                    for e in batch_entries if isinstance(e, dict)
-                                }
-                                ordered = [by_oa[sid] for sid in short_ids if sid in by_oa]
-                                if ordered:
-                                    return ordered, {
-                                        "status": "ok",
-                                        "fetched": len(ordered),
-                                        "pages": 2,
-                                        "total": len(refs),
-                                        "truncated": len(refs) > limit,
-                                        "relation": relation
-                                    }
-                        except Exception:
-                            pass
-                papers, failures = [], []
-                for ref in target_refs:
+                by_oa, requests = {}, 1
+                short_ids = [parse_id(ref)[1] for ref in target_refs]
+                if len(short_ids) > 1:
+                    requests += 1
                     try:
-                        data = self.client.get(source, "/works/" + quote(ref.rsplit("/", 1)[-1], safe=""))
-                        papers.append(normalize(source, data))
+                        batch_data = self.client.get(source, "/works", {
+                            "filter": "openalex:" + "|".join(short_ids), "per-page": len(short_ids)})
+                        for entry in batch_data.get("results") or []:
+                            paper = normalize(source, entry)
+                            for stable_id in paper["identifiers"].get("openalex", []):
+                                if stable_id in short_ids:
+                                    by_oa[stable_id] = paper
+                    except (SourceError, ValueError, TypeError, KeyError, AttributeError, IndexError):
+                        pass  # Individual lookups below recover all missing batch targets.
+                papers, failures = [], []
+                for ref, stable_id in zip(target_refs, short_ids):
+                    try:
+                        if stable_id not in by_oa:
+                            requests += 1
+                            found, _ = self.lookup(source, stable_id)
+                            by_oa[stable_id] = found[0]
+                        papers.append(by_oa[stable_id])
                     except (SourceError, ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
                         failures.append({"id": ref, "error": str(exc), "http_status": getattr(exc, "status", None)})
-                status = {"status": "error" if failures else "ok", "fetched": len(papers), "pages": 1 + min(len(refs), limit),
+                status = {"status": "error" if failures else "ok", "fetched": len(papers), "pages": requests,
                           "total": len(refs), "truncated": len(refs) > limit, "relation": relation}
                 if failures:
                     status.update(error="Some related records failed", failures=failures)
@@ -692,6 +685,7 @@ class Providers:
                 seed_doi = self._extract_seed_doi(identifier)
                 fallback_papers = []
                 fallback_via = None
+                fallback_status = None
                 if relation == "references" and seed_doi:
                     try:
                         fallback_papers = self._crossref_references_fallback(seed_doi, limit - len(partial))
@@ -702,34 +696,26 @@ class Providers:
                 if not fallback_papers:
                     try:
                         oa_target = ("https://doi.org/" + seed_doi) if seed_doi else identifier
-                        oa_papers, _ = self.related("openalex", oa_target, relation, limit - len(partial))
+                        oa_papers, fallback_status = self.related("openalex", oa_target, relation, limit - len(partial))
                         if oa_papers:
                             fallback_papers = oa_papers
                             fallback_via = "openalex"
                     except Exception:
                         pass
-                combined = partial + fallback_papers
-                reason_tag = "出版商隐藏S2引文" if exc.kind == "publisher_restricted" else f"S2限流({exc.status or 'rate_limit'})"
-                if combined:
+                combined = deduplicate(partial + fallback_papers)
+                if fallback_papers:
                     return combined[:limit], {
-                        "status": "ok",
+                        "status": "error",
+                        "error": str(exc), "http_status": exc.status,
+                        "reason": exc.kind or "source_unavailable",
                         "fetched": len(combined[:limit]),
-                        "pages": 1,
-                        "truncated": len(combined) >= limit,
+                        "pages": getattr(exc, "pages", 0),
+                        "truncated": True,
                         "relation": relation,
                         "total": None,
                         "fallback_used": fallback_via,
-                        "note": f"{reason_tag}，已自动由 {fallback_via} 开放引文补齐"
-                    }
-                if exc.kind == "publisher_restricted":
-                    return [], {
-                        "status": "ok",
-                        "fetched": 0,
-                        "pages": 1,
-                        "truncated": False,
-                        "relation": relation,
-                        "total": None,
-                        "note": "该出版商在 Semantic Scholar 隐藏了参考文献，已由 OpenAlex 提供"
+                        "fallback_status": fallback_status,
+                        "note": "Original Semantic Scholar retrieval failed; alternate-source results retained."
                     }
             raise
 

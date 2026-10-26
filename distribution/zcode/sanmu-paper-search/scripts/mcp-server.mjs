@@ -5,10 +5,12 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
+  renameSync,
   statSync,
   writeFileSync,
-  cpSync,
   copyFileSync,
+  constants as fsConstants,
   rmSync
 } from "node:fs";
 import { homedir } from "node:os";
@@ -102,21 +104,32 @@ function readJsonSafe(filePath, fallback) {
 
 function writeJsonSafe(filePath, data) {
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+  const tempPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { encoding: "utf8", mode: 0o600, flag: "wx" });
+    renameSync(tempPath, filePath);
+  } finally {
+    if (existsSync(tempPath)) rmSync(tempPath, { force: true });
+  }
+}
+
+function readStoredObject(filePath) {
+  if (!existsSync(filePath)) return {};
+  let value;
+  try {
+    value = JSON.parse(readFileSync(filePath, "utf8"));
+  } catch {
+    throw new Error(`无法读取插件数据 ${basename(filePath)}；已保留原文件，请修复 JSON 后重试。`);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`插件数据 ${basename(filePath)} 必须为 JSON 对象；已保留原文件。`);
+  }
+  return value;
 }
 
 function loadPanelConfig() {
-  return readJsonSafe(CONFIG_PATH, {
-    politeEmail: "",
-    openalexApiKey: "",
-    s2ApiKey: "",
-    exaApiKey: "",
-    serperApiKey: "",
-    zoteroUrl: "http://127.0.0.1:23119",
-    exportSubdir: "00-收件箱-待整理/文献检索",
-    defaultSources: ["openalex", "semantic-scholar", "crossref"],
-    defaultLimit: 10
-  });
+  // Defaults are applied after inheritance so an absent panel setting does not hide userConfig.
+  return readStoredObject(CONFIG_PATH);
 }
 
 function savePanelConfig(patch) {
@@ -145,13 +158,21 @@ function savePanelConfig(patch) {
 }
 
 function loadState() {
-  return readJsonSafe(STATE_PATH, {
+  const saved = readStoredObject(STATE_PATH);
+  if ((saved.basket !== undefined && !Array.isArray(saved.basket)) ||
+      (saved.evidenceMap !== undefined && (!saved.evidenceMap || typeof saved.evidenceMap !== "object" || Array.isArray(saved.evidenceMap)))) {
+    throw new Error("state.json 中的收藏篮或阅读记录格式无效；已保留原文件。");
+  }
+  return {
     lastRunId: null,
     runNavHistory: [],
     lastZoteroImport: null,
     basket: [],
-    evidenceMap: {}
-  });
+    evidenceMap: {},
+    zoteroImports: {},
+    runExports: {},
+    ...saved
+  };
 }
 
 function recordMainRunNavigation(state, runId) {
@@ -170,6 +191,96 @@ function saveState(state) {
 
 function isAbsolutePath(p) {
   return Boolean(p && (/^[A-Za-z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\")));
+}
+
+function isWithin(root, target) {
+  const rel = relative(resolve(root), resolve(target));
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && !isAbsolutePath(rel));
+}
+
+function resolveRunDir(runId, mustExist = true) {
+  if (typeof runId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(runId)) {
+    throw new Error("无效的批次 ID（只接受历史记录中的单个 ID）。");
+  }
+  const target = join(RUNS_DIR, runId);
+  if (mustExist && (!existsSync(target) || !statSync(target).isDirectory())) {
+    throw new Error(`未找到指定批次: ${runId}`);
+  }
+  if (existsSync(target) && !isWithin(realpathSync(RUNS_DIR), realpathSync(target))) {
+    throw new Error("批次路径越出插件历史目录。");
+  }
+  return target;
+}
+
+function assertReadablePath(target) {
+  const actual = existsSync(target) ? realpathSync(target) : resolve(target);
+  for (const privateFile of [CONFIG_PATH, STATE_PATH, ZOTERO_KEYS_PATH, OFFICIAL_ZOTERO_KEYS_PATH]) {
+    const protectedPath = existsSync(privateFile) ? realpathSync(privateFile) : resolve(privateFile);
+    if (relative(protectedPath, actual) === "") throw new Error("插件私有配置、阅读状态与授权密钥文件不能通过文件工具读取或打开。");
+  }
+}
+
+function uniqueDestination(dir, filename) {
+  const ext = extname(filename);
+  const stem = basename(filename, ext);
+  let candidate = join(dir, filename);
+  for (let n = 2; existsSync(candidate); n++) candidate = join(dir, `${stem} (${n})${ext}`);
+  return candidate;
+}
+
+function copyRunDirectory(sourceDir, destinationDir) {
+  const root = realpathSync(sourceDir);
+  const copyDirectory = (source, destination) => {
+    if (!isWithin(root, realpathSync(source))) throw new Error("批次中存在越界文件链接，已停止导出。");
+    assertReadablePath(source);
+    mkdirSync(destination);
+    for (const entry of readdirSync(source, { withFileTypes: true })) {
+      const from = join(source, entry.name);
+      const to = join(destination, entry.name);
+      if (entry.isSymbolicLink()) throw new Error("批次中存在文件链接，已停止导出。");
+      if (entry.isDirectory()) copyDirectory(from, to);
+      else if (entry.isFile()) {
+        assertReadablePath(from);
+        copyFileSync(from, to, fsConstants.COPYFILE_EXCL);
+      } else throw new Error("批次中存在不支持的文件类型，已停止导出。");
+    }
+  };
+  copyDirectory(sourceDir, destinationDir);
+}
+
+function redactSecrets(value) {
+  const cfg = readJsonSafe(CONFIG_PATH, {}) || {};
+  const secrets = new Set();
+  for (const key of ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey"]) {
+    if (typeof cfg[key] === "string" && cfg[key].trim()) secrets.add(cfg[key].trim());
+  }
+  for (const [key, val] of Object.entries(process.env)) {
+    if (/(?:API_KEY|TOKEN|SECRET|PASSWORD)$/i.test(key) && val && !val.startsWith("${")) secrets.add(val);
+  }
+  for (const keyFile of [ZOTERO_KEYS_PATH, OFFICIAL_ZOTERO_KEYS_PATH]) {
+    for (const key of Object.values(readJsonSafe(keyFile, {}) || {})) {
+      if (typeof key === "string" && key) secrets.add(key);
+    }
+  }
+  const visit = (item) => {
+    if (typeof item === "string") {
+      for (const secret of [...secrets].sort((a, b) => b.length - a.length)) item = item.split(secret).join("[REDACTED]");
+      return item.replace(/([?&](?:api[_-]?key|key|token|access_token|secret|password)=)[^&#\s"<>]+/gi, "$1[REDACTED]");
+    }
+    if (Array.isArray(item)) return item.map(visit);
+    if (item && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, val]) => [key, visit(val)]));
+    return item;
+  };
+  return visit(value);
+}
+
+function validateZoteroUrl(value) {
+  const url = new URL(value);
+  if (!["http:", "https:"].includes(url.protocol) || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+      url.username || url.password || url.search || url.hash || !["", "/"].includes(url.pathname)) {
+    throw new Error("Zotero 地址必须为本机 localhost、127.0.0.1 或 [::1] 的 HTTP(S) 服务地址。");
+  }
+  return url.origin;
 }
 
 function resolveTargetSaveDir(customDir) {
@@ -228,16 +339,8 @@ function getEffectiveConfig() {
   const serper = resolveCredential(cfg.serperApiKey, "USER_CONFIG_SERPER_API_KEY", [
     "SERPER_API_KEY"
   ]);
-  const zoteroUrl =
-    cfg.zoteroUrl ||
-    (process.env.USER_CONFIG_ZOTERO_URL && !process.env.USER_CONFIG_ZOTERO_URL.startsWith("${")
-      ? process.env.USER_CONFIG_ZOTERO_URL
-      : "http://127.0.0.1:23119");
-  const exportSubdir =
-    cfg.exportSubdir ||
-    (process.env.USER_CONFIG_EXPORT_SUBDIR && !process.env.USER_CONFIG_EXPORT_SUBDIR.startsWith("${")
-      ? process.env.USER_CONFIG_EXPORT_SUBDIR
-      : "00-收件箱-待整理/文献检索");
+  const zoteroUrl = validateZoteroUrl(resolveCredential(cfg.zoteroUrl, "USER_CONFIG_ZOTERO_URL", []).value || "http://127.0.0.1:23119");
+  const exportSubdir = resolveCredential(cfg.exportSubdir, "USER_CONFIG_EXPORT_SUBDIR", []).value || "00-收件箱-待整理/文献检索";
 
   const childEnv = {
     ...process.env,
@@ -247,9 +350,9 @@ function getEffectiveConfig() {
   };
   if (polite.value) {
     childEnv.POLITE_EMAIL = polite.value;
-    if (!childEnv.OPENALEX_EMAIL) childEnv.OPENALEX_EMAIL = polite.value;
-    if (!childEnv.CROSSREF_EMAIL) childEnv.CROSSREF_EMAIL = polite.value;
-    if (!childEnv.UNPAYWALL_EMAIL) childEnv.UNPAYWALL_EMAIL = polite.value;
+    for (const name of ["OPENALEX_EMAIL", "CROSSREF_EMAIL", "UNPAYWALL_EMAIL"]) {
+      if (polite.source !== "systemEnv" || !childEnv[name]) childEnv[name] = polite.value;
+    }
   }
   if (openalex.value) childEnv.OPENALEX_API_KEY = openalex.value;
   if (s2.value) {
@@ -315,7 +418,9 @@ function runPython(scriptPath, args, timeoutMs = 180000) {
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
     const timer = setTimeout(() => {
+      timedOut = true;
       child.kill();
     }, timeoutMs);
     child.stdout.on("data", (chunk) => {
@@ -344,14 +449,33 @@ function runPython(scriptPath, args, timeoutMs = 180000) {
           parsed = { rawText: trimmed };
         }
       }
-      resolvePromise({
-        exitCode: code ?? 1,
+      resolvePromise(redactSecrets({
+        exitCode: timedOut ? 124 : code ?? 3,
         stdout: trimmed,
-        stderr: stderr.trim(),
-        parsed
-      });
+        stderr: timedOut ? "Python 操作已超时，结果可能不完整，请重试。" : stderr.trim(),
+        parsed: timedOut ? { status: "failed", error: { kind: "timeout", message: "Python 操作已超时，结果可能不完整，请重试。" } } : parsed,
+        timedOut
+      }));
     });
   });
+}
+
+function pythonFailure(pyRes, fallback) {
+  const detail = pyRes.parsed?.error;
+  return typeof detail === "string" ? detail : detail?.message || pyRes.stderr || fallback;
+}
+
+function requirePythonBundle(pyRes, outDir, fallback) {
+  const run = readJsonSafe(join(outDir, "run.json"), null);
+  if (!run || ![0, 1].includes(pyRes.exitCode) || pyRes.parsed?.status === "failed" || run.status === "failed") {
+    const sourceErrors = Object.entries(run?.source_status || {}).filter(([, item]) => item?.status === "error")
+      .map(([name, item]) => `${name}: ${typeof item.error === "string" ? item.error : item.error?.message || "failed"}`).join("; ");
+    const error = new Error(pythonFailure(pyRes, sourceErrors || fallback));
+    error.runId = basename(outDir);
+    error.exitCode = pyRes.exitCode;
+    throw error;
+  }
+  return run;
 }
 
 function makeRunId(prefix) {
@@ -382,9 +506,28 @@ function normalizeAffiliationsList(affiliations) {
   return [...new Set(affiliations.map(formatAffiliationItem).filter(Boolean))];
 }
 
+function normalizeDoi(value) {
+  return String(value || "").trim().replace(/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*)/i, "").toLowerCase();
+}
+
+function samePaperIdentity(target, candidate) {
+  const a = target?.identifiers || {};
+  const b = candidate?.identifiers || {};
+  const aDois = (a.doi || []).map(normalizeDoi);
+  const bDois = (b.doi || []).map(normalizeDoi);
+  if (aDois.length && bDois.length) return aDois.some((id) => bDois.includes(id));
+  for (const ns of ["openalex", "semantic_scholar", "pmid", "pmcid", "arxiv"]) {
+    const normalized = (values) => (values || []).map((v) => String(v).toLowerCase().replace(/^https?:\/\/openalex\.org\//, ""));
+    if (normalized(a[ns]).some((id) => normalized(b[ns]).includes(id))) return true;
+  }
+  const titleKey = (s) => String(s || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const title = titleKey(target?.title);
+  return Boolean(title && title === titleKey(candidate?.title) && (!target.year || !candidate.year || target.year === candidate.year));
+}
+
 function computePaperKey(paper) {
   const ids = paper?.identifiers || {};
-  if (ids.doi?.[0]) return `doi:${String(ids.doi[0]).toLowerCase()}`;
+  if (ids.doi?.[0]) return `doi:${normalizeDoi(ids.doi[0])}`;
   if (ids.openalex?.[0]) return `openalex:${String(ids.openalex[0]).replace(/^https?:\/\/openalex\.org\//i, "")}`;
   if (ids.semantic_scholar?.[0]) return `s2:${ids.semantic_scholar[0]}`;
   if (ids.pmcid?.[0]) return `pmcid:${ids.pmcid[0]}`;
@@ -656,8 +799,8 @@ async function probeLocalZotero(papers) {
       headers: { "Zotero-Allowed-Request": "1" },
       signal: AbortSignal.timeout(1200)
     });
-    zoteroOnline = pingResp.ok || pingResp.status < 500;
     serverId = pingResp.headers.get("zotero-server-id") || null;
+    zoteroOnline = pingResp.ok && Boolean(serverId || pingResp.headers.get("zotero-api-version"));
   } catch {
     zoteroOnline = false;
   }
@@ -676,7 +819,7 @@ async function probeLocalZotero(papers) {
   for (const paper of papers.slice(0, 25)) {
     const key = paper.paper_key || computePaperKey(paper);
     const doi = paper?.identifiers?.doi?.[0];
-    const cleanDoi = doi ? String(doi).toLowerCase().trim() : "";
+    const cleanDoi = normalizeDoi(doi);
     const targetTitle = norm(paper.title);
     const queryCandidates = [];
     if (cleanDoi) {
@@ -701,10 +844,15 @@ async function probeLocalZotero(papers) {
         for (const item of items) {
           const data = item?.data || {};
           if (data.itemType === "attachment" || data.itemType === "note" || data.itemType === "annotation") continue;
-          const itemDoi = String(data.DOI || "").toLowerCase().trim();
+          const itemDoi = normalizeDoi(data.DOI);
           const itemTitle = norm(data.title);
-          const doiMatched = Boolean(cleanDoi && itemDoi && (itemDoi === cleanDoi || itemDoi.includes(cleanDoi)));
-          const titleMatched = Boolean(targetTitle && itemTitle && itemTitle === targetTitle);
+          const doiMatched = Boolean(cleanDoi && itemDoi && itemDoi === cleanDoi);
+          const noDoiConflict = !(cleanDoi && itemDoi && cleanDoi !== itemDoi);
+          const year = String(paper.year || "");
+          const itemYear = String(data.date || "").match(/\b\d{4}\b/)?.[0] || "";
+          const typeMatches = !(["preprint", "posted-content"].includes(paper.type) && data.itemType !== "preprint");
+          const titleMatched = Boolean(noDoiConflict && targetTitle && itemTitle === targetTitle && typeMatches &&
+            (!year || !itemYear || year === itemYear));
           if (doiMatched || titleMatched) {
             const colNames = (data.collections || []).map((ck) => colMap.get(ck) || ck).filter(Boolean);
             const tags = (data.tags || []).map((t) => t?.tag).filter(Boolean);
@@ -954,95 +1102,84 @@ async function savePaperToLocalZotero(paper, collectionKey = "") {
     }
   }
 
+  let undoAvailable = false;
+  let undoWarning = null;
+  try {
+    await rememberZoteroImport(baseUrl, serverId, apiKey, createdKey, pKey, attachmentKey);
+    undoAvailable = true;
+  } catch (err) {
+    undoWarning = err.message;
+  }
   return {
     alreadyExists: false,
     createdByPlugin: true,
     itemKey: createdKey,
     attachmentKey,
     pdfAttached,
+    undoAvailable,
+    undoWarning,
     selectUri: `zotero://select/library/items/${createdKey}`
   };
 }
 
-async function deletePaperFromLocalZotero(itemKey, attachmentKey = null) {
-  const cleanKey = String(itemKey || "").trim();
-  if (!cleanKey) throw new Error("未提供要撤销删除的 Zotero 条目 Key");
-  const { settings } = getEffectiveConfig();
-  const baseUrl = (settings.zoteroUrl || "http://127.0.0.1:23119").replace(/\/+$/, "");
+function zoteroItemSnapshot(item) {
+  const sort = (value) => Array.isArray(value) ? value.map(sort) : value && typeof value === "object"
+    ? Object.fromEntries(Object.keys(value).sort().filter((key) => !["key", "version"].includes(key)).map((key) => [key, sort(value[key])])) : value;
+  return JSON.stringify(sort(item?.data || {}));
+}
 
-  const probe = await probeLocalZotero([]);
-  if (!probe.zoteroOnline) {
-    throw new Error("未检测到本机 Zotero 桌面端在线，请先确认 Zotero 正在运行。");
-  }
-  const { key: apiKey, serverId } = await getOrAuthorizeZoteroWriteKey(baseUrl, probe.serverId);
-
-  const deleteSingleKey = async (targetKey) => {
-    if (!targetKey) return false;
-    const getResp = await fetch(`${baseUrl}/api/users/0/items/${encodeURIComponent(targetKey)}`, {
-      headers: {
-        "Zotero-Allowed-Request": "1",
-        "Zotero-API-Key": apiKey,
-        "Zotero-Server-ID": serverId
-      },
-      signal: AbortSignal.timeout(8000)
-    });
-    if (getResp.status === 404) return true;
-    let version = getResp.headers.get("last-modified-version") || "0";
-    if (getResp.ok) {
-      try {
-        const itemObj = await getResp.json();
-        if (itemObj?.version !== undefined) version = String(itemObj.version);
-      } catch {}
-    }
-    const delResp = await fetch(`${baseUrl}/api/users/0/items/${encodeURIComponent(targetKey)}`, {
-      method: "DELETE",
-      headers: {
-        "If-Unmodified-Since-Version": String(version),
-        "Zotero-Allowed-Request": "1",
-        "Zotero-API-Key": apiKey,
-        "Zotero-Server-ID": serverId
-      },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (delResp.ok || delResp.status === 204 || delResp.status === 404) {
-      return true;
-    }
-    const errText = await delResp.text().catch(() => "");
-    throw new Error(`从 Zotero 删除条目 ${targetKey} 失败 (HTTP ${delResp.status}): ${errText.slice(0, 160)}`);
-  };
-
-  // Delete child attachment first if present
+async function rememberZoteroImport(baseUrl, serverId, apiKey, itemKey, paperKey, attachmentKey = null) {
+  const headers = { "Zotero-Allowed-Request": "1", "Zotero-API-Key": apiKey, "Zotero-Server-ID": serverId };
+  const resp = await fetch(`${baseUrl}/api/users/0/items/${itemKey}`, { headers, signal: AbortSignal.timeout(8000) });
+  if (!resp.ok) throw new Error("条目已保存，但未能回读核验；为保护文献库，暂不提供自动撤销。");
+  const item = await resp.json();
+  const version = item?.version ?? item?.data?.version;
+  if (item?.key !== itemKey || !item.data || !Number.isInteger(version)) throw new Error("Zotero 回读身份/版本无效，无法建立自动撤销记录。");
+  const record = { itemKey, paperKey, serverId, baseUrl, version, snapshot: zoteroItemSnapshot(item), attachmentKey, children: {} };
   if (attachmentKey) {
-    try {
-      await deleteSingleKey(attachmentKey);
-    } catch {}
-  } else {
-    try {
-      const childResp = await fetch(`${baseUrl}/api/users/0/items/${encodeURIComponent(cleanKey)}/children`, {
-        headers: {
-          "Zotero-Allowed-Request": "1",
-          "Zotero-API-Key": apiKey,
-          "Zotero-Server-ID": serverId
-        },
-        signal: AbortSignal.timeout(5000)
-      });
-      if (childResp.ok) {
-        const children = await childResp.json();
-        if (Array.isArray(children)) {
-          for (const ch of children) {
-            if (ch?.key) {
-              try {
-                await deleteSingleKey(ch.key);
-              } catch {}
-            }
-          }
-        }
-      }
-    } catch {}
+    const childResp = await fetch(`${baseUrl}/api/users/0/items/${attachmentKey}`, { headers, signal: AbortSignal.timeout(8000) });
+    if (!childResp.ok) throw new Error("未能回读 PDF 附件，无法建立自动撤销记录。");
+    const child = await childResp.json();
+    if (child?.data?.parentItem !== itemKey) throw new Error("PDF 附件父条目不匹配。");
+    record.children[attachmentKey] = { version: child.version ?? child.data.version, snapshot: zoteroItemSnapshot(child) };
   }
+  const state = loadState();
+  state.zoteroImports = { ...(state.zoteroImports || {}), [itemKey]: record };
+  saveState(state);
+  return record;
+}
 
-  await deleteSingleKey(cleanKey);
-  return { deleted: true, itemKey: cleanKey };
+async function deletePaperFromLocalZotero(itemKey, record) {
+  if (!record || record.itemKey !== itemKey || !record.snapshot || !Number.isInteger(record.version)) {
+    throw new Error("只能撤销有完整核验记录的插件导入；既有或旧版未核验条目请在 Zotero 中管理。");
+  }
+  const { settings } = getEffectiveConfig();
+  const baseUrl = settings.zoteroUrl;
+  const probe = await probeLocalZotero([]);
+  if (!probe.zoteroOnline) throw new Error("未检测到本机 Zotero 桌面端在线，请先确认 Zotero 正在运行。");
+  if (probe.serverId !== record.serverId || baseUrl !== record.baseUrl) throw new Error("Zotero 服务实例已改变，拒绝撤销其他文献库的导入。");
+  const { key: apiKey, serverId } = await getOrAuthorizeZoteroWriteKey(baseUrl, probe.serverId);
+  const headers = { "Zotero-Allowed-Request": "1", "Zotero-API-Key": apiKey, "Zotero-Server-ID": serverId };
+  const response = await fetch(`${baseUrl}/api/users/0/items/${itemKey}`, { headers, signal: AbortSignal.timeout(8000) });
+  if (response.status === 404) return { deleted: true, itemKey };
+  if (!response.ok) throw new Error(`无法核验 Zotero 条目 (HTTP ${response.status})，未执行删除。`);
+  const item = await response.json();
+  if (item?.key !== itemKey || (item.version ?? item.data?.version) !== record.version || zoteroItemSnapshot(item) !== record.snapshot) {
+    throw new Error("Zotero 条目的身份或版本已改变，未执行删除。请在 Zotero 中核对。");
+  }
+  const childResp = await fetch(`${baseUrl}/api/users/0/items/${itemKey}/children?limit=100`, { headers, signal: AbortSignal.timeout(8000) });
+  if (!childResp.ok) throw new Error("未能核验 Zotero 子条目，未执行删除。");
+  const children = await childResp.json();
+  if (!Array.isArray(children) || children.some((child) => {
+    const saved = record.children?.[child.key];
+    return !saved || child.data?.parentItem !== itemKey || (child.version ?? child.data?.version) !== saved.version || zoteroItemSnapshot(child) !== saved.snapshot;
+  })) throw new Error("Zotero 条目已新增或修改附件/笔记，未执行删除。");
+  // Delete only the verified parent; Zotero handles its verified children atomically.
+  const delResp = await fetch(`${baseUrl}/api/users/0/items/${itemKey}`, {
+    method: "DELETE", headers: { ...headers, "If-Unmodified-Since-Version": String(record.version) }, signal: AbortSignal.timeout(10000)
+  });
+  if (!delResp.ok && delResp.status !== 404) throw new Error(`撤销 Zotero 导入失败 (HTTP ${delResp.status})，导入记录已保留。`);
+  return { deleted: true, itemKey };
 }
 
 function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
@@ -1060,10 +1197,7 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
 
     const unpacked = unpackJournalAndTldr(p);
     let stage = savedEv.stage || p.handoff_stage || "discovered";
-    if (stage === "discovered" && (p.abstract_available || unpacked.tldr || p.abstract)) {
-      stage = "metadata_checked";
-    }
-    if ((runMeta?.hasFetchedFiles || savedEv.pdfPath) && stage !== "read" && stage !== "identity_checked") {
+    if (((savedEv.pdfPath && existsSync(savedEv.pdfPath)) || runMeta?.fetchedPaperKey === key) && stage !== "read" && stage !== "identity_checked") {
       stage = "file_obtained";
     }
     if (p.read === true) {
@@ -1091,7 +1225,8 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
     const zMatch = baseZMatch
       ? {
           ...baseZMatch,
-          createdByPlugin: Boolean(baseZMatch.createdByPlugin || savedEv.zoteroMatch?.createdByPlugin),
+          createdByPlugin: Boolean(state.zoteroImports?.[baseZMatch.itemKey]),
+          undoAvailable: Boolean(state.zoteroImports?.[baseZMatch.itemKey]),
           attachmentKey: baseZMatch.attachmentKey || savedEv.zoteroMatch?.attachmentKey || null
         }
       : null;
@@ -1195,7 +1330,10 @@ function parseRawItemToCandidatePaper(flatItem, idx, state) {
     url: flatItem.link || flatItem.url || "",
     pdfUrl: flatItem.pdfUrl || null,
     oa_locations: oaLocations,
-    evidence_level: "abstract",
+    evidence_level: "metadata_only",
+    abstract: "",
+    abstract_available: false,
+    search_snippet: flatItem.snippet || flatItem.text || "",
     provenance: [{ provider: flatItem.serper_type ? `serper:${flatItem.serper_type}` : "raw_search" }]
   };
 
@@ -1240,7 +1378,9 @@ function normalizeRawResults(resultsRaw, state) {
       index: idx + 1,
       extracted_dois: extractedDois
     };
-    enrichedItem.candidate_paper = parseRawItemToCandidatePaper(enrichedItem, idx, state);
+    // General web/maps/shop snippets can mention unrelated DOIs and are not paper identities.
+    enrichedItem.candidate_paper = flat.serper_type === "scholar"
+      ? parseRawItemToCandidatePaper(enrichedItem, idx, state) : null;
     return enrichedItem;
   });
 }
@@ -1361,7 +1501,7 @@ function formatRunHumanSummary(runJson, acqJson, paperCount, resultCount) {
 }
 
 function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
-  const runDir = isAbsolutePath(runIdOrPath) ? runIdOrPath : join(RUNS_DIR, basename(runIdOrPath));
+  const runDir = resolveRunDir(runIdOrPath);
   if (!existsSync(runDir)) {
     throw new Error(`Run directory not found: ${runIdOrPath}`);
   }
@@ -1397,6 +1537,7 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       const full = join(dir, entry.name);
+      if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         walkFiles(full, rel);
       } else {
@@ -1425,9 +1566,12 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
   }
   walkFiles(runDir);
 
-  const hasFetchedFiles = Boolean(fulltextSummary || supplManifest || acquisitionJson);
+  const hasFetchedFiles = existsSync(join(runDir, "fulltext.xml")) ||
+    Boolean(supplManifest?.files?.some((file) => isWithin(runDir, resolve(runDir, file.path)) && existsSync(resolve(runDir, file.path))));
   const state = loadState();
-  const papers = enrichPapersList(papersRaw, state, zoteroMatches, { hasFetchedFiles });
+  const papers = enrichPapersList(papersRaw, state, zoteroMatches, {
+    fetchedPaperKey: hasFetchedFiles && papersRaw[0] ? computePaperKey(papersRaw[0]) : null
+  });
   const enrichedResults = normalizeRawResults(resultsRaw, state);
 
   const normalizedCandidates = Array.isArray(rawRunJson.author_candidates)
@@ -1453,6 +1597,7 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
 
   const runJson = {
     ...rawRunJson,
+    ...(state.runExports?.[runId] ? { exported_save_dir: state.runExports[runId] } : {}),
     command: cmdName,
     action: cmdName,
     timestamp: rawRunJson.created_at || rawRunJson.timestamp || acquisitionJson?.retrieved_at || null,
@@ -1542,13 +1687,19 @@ function generateCitations(papers) {
   const risBlocks = [];
   const gbtLines = [];
   const apaLines = [];
+  const usedKeys = new Set();
+  const bibValue = (value) => String(value).replace(/[\r\n]+/g, " ").replace(/[{}]/g, (char) => `\\${char}`);
+  const risValue = (value) => String(value).replace(/[\r\n]+/g, " ").trim();
 
   (papers || []).forEach((p, idx) => {
-    const key = formatBibtexKey(p, idx + 1);
+    const baseKey = formatBibtexKey(p, idx + 1);
+    let key = baseKey;
+    for (let n = 2; usedKeys.has(key); n++) key = `${baseKey}${n}`;
+    usedKeys.add(key);
     const authors = (p.authors || []).map((a) => a.name).filter(Boolean);
     const bibAuthors = authors.join(" and ") || "Unknown";
     const doi = p.identifiers?.doi?.[0] || "";
-    const journal = p.journal || p.venue || "";
+    const journal = unpackJournalAndTldr(p).journal;
     const year = p.year || "";
     const title = p.title || "Untitled";
     const url = p.clickable_links?.[0]?.url || (doi ? `https://doi.org/${doi}` : p.url || "");
@@ -1556,12 +1707,12 @@ function generateCitations(papers) {
     bibtexBlocks.push(
       [
         `@article{${key},`,
-        `  title = {${title}},`,
-        `  author = {${bibAuthors}},`,
-        year ? `  year = {${year}},` : null,
-        journal ? `  journal = {${journal}},` : null,
-        doi ? `  doi = {${doi}},` : null,
-        url ? `  url = {${url}}` : null,
+        `  title = {${bibValue(title)}},`,
+        `  author = {${bibValue(bibAuthors)}},`,
+        year ? `  year = {${bibValue(year)}},` : null,
+        journal ? `  journal = {${bibValue(journal)}},` : null,
+        doi ? `  doi = {${bibValue(doi)}},` : null,
+        url ? `  url = {${bibValue(url)}}` : null,
         `}`
       ]
         .filter(Boolean)
@@ -1571,13 +1722,13 @@ function generateCitations(papers) {
     risBlocks.push(
       [
         "TY  - JOUR",
-        `TI  - ${title}`,
-        ...authors.map((a) => `AU  - ${a}`),
-        year ? `PY  - ${year}` : null,
-        journal ? `JO  - ${journal}` : null,
-        doi ? `DO  - ${doi}` : null,
-        url ? `UR  - ${url}` : null,
-        p.abstract ? `AB  - ${p.abstract}` : null,
+        `TI  - ${risValue(title)}`,
+        ...authors.map((a) => `AU  - ${risValue(a)}`),
+        year ? `PY  - ${risValue(year)}` : null,
+        journal ? `JO  - ${risValue(journal)}` : null,
+        doi ? `DO  - ${risValue(doi)}` : null,
+        url ? `UR  - ${risValue(url)}` : null,
+        p.abstract ? `AB  - ${risValue(p.abstract)}` : null,
         "ER  - "
       ]
         .filter(Boolean)
@@ -1774,14 +1925,12 @@ async function enrichPaperAbstractAndMetadata(paper) {
       if (fastSrcs.length > 0) {
         await runPython(PAPER_SEARCH_PY, ["lookup", seedId, "--sources", fastSrcs.join(","), "--out", tempOut], 35000);
         const found = readJsonSafe(join(tempOut, "papers.json"), []);
-        if (Array.isArray(found) && found[0]) {
-          bestPaper = found[0];
-        }
+        if (Array.isArray(found)) bestPaper = found.find((candidate) => samePaperIdentity(paper, candidate)) || null;
         rmSync(tempOut, { recursive: true, force: true });
       }
       if ((!bestPaper || !bestPaper.abstract) && allSrcs.includes("semantic-scholar")) {
         await runPython(PAPER_SEARCH_PY, ["lookup", seedId, "--sources", "semantic-scholar", "--out", tempOut], 35000);
-        const s2Found = readJsonSafe(join(tempOut, "papers.json"), []);
+        const s2Found = readJsonSafe(join(tempOut, "papers.json"), []).filter((candidate) => samePaperIdentity(paper, candidate));
         if (Array.isArray(s2Found) && s2Found[0]) {
           bestPaper = bestPaper
             ? {
@@ -1809,9 +1958,7 @@ async function enrichPaperAbstractAndMetadata(paper) {
       await runPython(PAPER_SEARCH_PY, epmcArgs, 35000);
       const epmcFound = readJsonSafe(join(epmcOut, "papers.json"), []);
       if (Array.isArray(epmcFound) && epmcFound.length > 0) {
-        const normT = (s) => String(s || "").toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, "");
-        const targetT = normT(titleQuery);
-        const match = epmcFound.find((ep) => !targetT || normT(ep.title) === targetT) || epmcFound[0];
+        const match = epmcFound.find((candidate) => samePaperIdentity(paper, candidate));
         if (match) {
           bestPaper = bestPaper
             ? {
@@ -1836,9 +1983,7 @@ async function enrichPaperAbstractAndMetadata(paper) {
       );
       const srchFound = readJsonSafe(join(srchOut, "papers.json"), []);
       if (Array.isArray(srchFound) && srchFound.length > 0) {
-        const normT = (s) => String(s || "").toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, "");
-        const targetT = normT(titleQuery);
-        const match = srchFound.find((sp) => normT(sp.title) === targetT) || srchFound[0];
+        const match = srchFound.find((candidate) => samePaperIdentity(paper, candidate));
         if (match) bestPaper = match;
       }
       rmSync(srchOut, { recursive: true, force: true });
@@ -2317,6 +2462,7 @@ const TOOLS = [
     },
     execute: async () => {
       const pyRes = await runPython(PAPER_SEARCH_PY, ["doctor"]);
+      if (pyRes.exitCode !== 0 || pyRes.parsed?.status === "failed") throw new Error(pythonFailure(pyRes, "Python 环境自检失败"));
       const zoteroProbe = await probeLocalZotero([]);
       const panelState = await getFullPanelState();
       const summary = {
@@ -2403,9 +2549,7 @@ const TOOLS = [
       if (input.yearTo) args.push("--year-to", String(input.yearTo));
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
-      if (!existsSync(join(outDir, "run.json"))) {
-        throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "Search failed");
-      }
+      requirePythonBundle(pyRes, outDir, "Search failed");
       const state = loadState();
       recordMainRunNavigation(state, runId);
       saveState(state);
@@ -2452,9 +2596,7 @@ const TOOLS = [
         args.push("--title", String(input.title).trim());
       }
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
-      if (!existsSync(join(outDir, "run.json"))) {
-        throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "Lookup failed");
-      }
+      requirePythonBundle(pyRes, outDir, "Lookup failed");
       const state = loadState();
       if (!input.preserveActiveRun) {
         recordMainRunNavigation(state, runId);
@@ -2520,12 +2662,11 @@ const TOOLS = [
         outDir
       ];
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
-      if (!existsSync(join(outDir, "run.json"))) {
-        throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "Related exploration failed");
-      }
+      requirePythonBundle(pyRes, outDir, "Related exploration failed");
+      const latestState = loadState();
       if (!input.preserveActiveRun) {
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        recordMainRunNavigation(latestState, runId);
+        saveState(latestState);
       }
 
       const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
@@ -2582,39 +2723,9 @@ const TOOLS = [
       if (input.yearFrom && (hasAuthorId || hasFromPaper)) args.push("--year-from", String(input.yearFrom));
       if (input.yearTo && (hasAuthorId || hasFromPaper)) args.push("--year-to", String(input.yearTo));
 
-      await runPython(PAPER_SEARCH_PY, args);
-
-      // If Semantic Scholar author lookup hit rate limit (429) or failed, automatically fall back to OpenAlex!
-      const firstRunJson = readJsonSafe(join(outDir, "run.json"), null);
-      const firstPapers = readJsonSafe(join(outDir, "papers.json"), []);
-      const s2Failed =
-        (input.provider === "semantic-scholar") &&
-        (!firstRunJson ||
-          firstRunJson.status === "failed" ||
-          (firstPapers.length === 0 &&
-            (firstRunJson.author_candidates || []).length === 0 &&
-            firstRunJson.source_status?.["semantic-scholar"]?.status === "error"));
-
-      if (s2Failed && (input.query || input.fromPaper)) {
-        try {
-          rmSync(outDir, { recursive: true, force: true });
-        } catch {}
-        runId = makeRunId("author-oa");
-        outDir = join(RUNS_DIR, runId);
-        const fbArgs = ["author"];
-        if (input.query && String(input.query).trim()) fbArgs.push(String(input.query).trim());
-        fbArgs.push("--provider", "openalex", "--limit", String(input.limit || 10), "--out", outDir);
-        if (input.fromPaper && String(input.fromPaper).trim()) {
-          fbArgs.push("--from-paper", String(input.fromPaper).trim());
-        }
-        if (input.yearFrom && input.fromPaper) fbArgs.push("--year-from", String(input.yearFrom));
-        if (input.yearTo && input.fromPaper) fbArgs.push("--year-to", String(input.yearTo));
-        await runPython(PAPER_SEARCH_PY, fbArgs);
-      }
-
-      if (!existsSync(join(outDir, "run.json"))) {
-        throw new Error("Author query failed");
-      }
+      const pyRes = await runPython(PAPER_SEARCH_PY, args);
+      // A confirmed S2 author ID must never silently become an OpenAlex name search.
+      requirePythonBundle(pyRes, outDir, "Author query failed");
       const state = loadState();
       if (!input.preserveActiveRun) {
         recordMainRunNavigation(state, runId);
@@ -2699,9 +2810,7 @@ const TOOLS = [
       if (input.hasFulltext) args.push("--has-fulltext");
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args, 240000);
-      if (!existsSync(join(outDir, "run.json"))) {
-        throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "Europe PMC query failed");
-      }
+      requirePythonBundle(pyRes, outDir, "Europe PMC query failed");
 
       // If XML or supplementary files were downloaded, copy them to user's chosen saveDir!
       let exportedSaveDir = null;
@@ -2713,18 +2822,17 @@ const TOOLS = [
           const papers = readJsonSafe(join(outDir, "papers.json"), []);
           const firstPaper = papers[0] || {};
           const folderName = `${makeSafeFileStem(firstPaper.year, firstPaper.title, input.id || input.query || runId)}_EPMC`;
-          exportedSaveDir = join(baseSaveDir, folderName);
+          exportedSaveDir = uniqueDestination(baseSaveDir, folderName);
           mkdirSync(exportedSaveDir, { recursive: true });
           if (hasXml) {
             copyFileSync(join(outDir, "fulltext.xml"), join(exportedSaveDir, "fulltext.xml"));
           }
           if (hasSuppl) {
-            cpSync(join(outDir, "supplementary"), join(exportedSaveDir, "supplementary"), { recursive: true });
+            copyRunDirectory(join(outDir, "supplementary"), join(exportedSaveDir, "supplementary"));
           }
-          const runJsonPath = join(outDir, "run.json");
-          const runJson = readJsonSafe(runJsonPath, {});
-          runJson.exported_save_dir = exportedSaveDir;
-          writeJsonSafe(runJsonPath, runJson);
+          const exportState = loadState();
+          exportState.runExports = { ...(exportState.runExports || {}), [runId]: exportedSaveDir };
+          saveState(exportState);
         }
       }
 
@@ -2778,9 +2886,7 @@ const TOOLS = [
       if (input.yearTo) args.push("--year-to", String(input.yearTo));
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
-      if (!existsSync(join(outDir, "run.json"))) {
-        throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "Exa search failed");
-      }
+      requirePythonBundle(pyRes, outDir, "Exa search failed");
       const state = loadState();
       recordMainRunNavigation(state, runId);
       saveState(state);
@@ -2822,6 +2928,16 @@ const TOOLS = [
           default: "scholar"
         },
         url: { type: "string", description: "当 type 为 webpage 或 lens 时的目标公开网页 URL" },
+        params: {
+          type: "object",
+          description: "路由专用参数。reviews 需 cid、fid 或 placeId；支持共享 CLI 对当前 type 允许的参数。不要与 query/url/year/page 重复。",
+          properties: {
+            cid: { type: "string" }, fid: { type: "string" }, placeId: { type: "string" },
+            gl: { type: "string" }, hl: { type: "string" },
+            sortBy: { type: "string", enum: ["mostRelevant", "newest", "highestRating", "lowestRating"] },
+            topicId: { type: "string" }, nextPageToken: { type: "string" }
+          }
+        },
         limit: { type: "integer", minimum: 1, maximum: 20, default: 10 },
         page: { type: "integer", minimum: 1, maximum: 100 },
         pages: { type: "integer", minimum: 1, maximum: 3, default: 1 },
@@ -2846,14 +2962,13 @@ const TOOLS = [
         outDir
       );
       if (input.url && String(input.url).trim()) args.push("--url", String(input.url).trim());
+      if (input.params) args.push("--params", JSON.stringify(input.params));
       if (input.page) args.push("--page", String(input.page));
       if (mode === "scholar" && input.yearFrom) args.push("--year-from", String(input.yearFrom));
       if (mode === "scholar" && input.yearTo) args.push("--year-to", String(input.yearTo));
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
-      if (!existsSync(join(outDir, "run.json"))) {
-        throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "Serper search failed");
-      }
+      requirePythonBundle(pyRes, outDir, "Serper search failed");
       const state = loadState();
       recordMainRunNavigation(state, runId);
       saveState(state);
@@ -2882,6 +2997,10 @@ const TOOLS = [
         inputIdOrRun: {
           type: "string",
           description: "当 action=resolve_oa 时：传入论文 DOI/稳定 ID，或历史运行批次 ID"
+        },
+        preserveActiveRun: {
+          type: "boolean",
+          description: "设为 true 时保持当前主结果，将 OA 定位结果作为 subRun 返回。"
         },
         unpaywall: {
           type: "string",
@@ -2934,14 +3053,13 @@ const TOOLS = [
         // Copy verified PDF to user's chosen saveDir with a clean, readable filename!
         const destDir = resolveTargetSaveDir(input.saveDir);
         const fileStem = makeSafeFileStem(input.year, input.title, input.doi || runId);
-        const savedPdfPath = join(destDir, `${fileStem}.pdf`);
-        copyFileSync(join(outDir, "paper.pdf"), savedPdfPath);
+        const savedPdfPath = uniqueDestination(destDir, `${fileStem}.pdf`);
+        copyFileSync(join(outDir, "paper.pdf"), savedPdfPath, fsConstants.COPYFILE_EXCL);
 
         const acqPath = join(outDir, "acquisition.json");
         const acq = readJsonSafe(acqPath, {});
         acq.saved_pdf_path = savedPdfPath;
         acq.saved_dir = destDir;
-        writeJsonSafe(acqPath, acq);
 
         const state = loadState();
         const key = input.paperKey || (input.doi ? `doi:${String(input.doi).toLowerCase()}` : null);
@@ -2949,7 +3067,7 @@ const TOOLS = [
           const prev = state.evidenceMap[key] || {};
           state.evidenceMap[key] = {
             ...prev,
-            stage: acq.identity?.status === "matched" ? "identity_checked" : "file_obtained",
+            stage: prev.stage === "read" ? "read" : acq.identity?.status === "matched" ? "identity_checked" : "file_obtained",
             pdfPath: savedPdfPath,
             acquisition: acq,
             updatedAt: new Date().toISOString()
@@ -2967,7 +3085,7 @@ const TOOLS = [
 
         const panelState = await getFullPanelState();
         return {
-          text: `PDF 下载并核验成功，已保存至：\`${savedPdfPath}\`\n- 首屏核验: \`${acq.identity?.status || "file_obtained"}\``,
+          text: `PDF 已下载保存至：\`${savedPdfPath}\`\n- 首屏身份核验: \`${acq.identity?.status || "未执行"}\``,
           structured: {
             ...panelState,
             lastDownload: {
@@ -2996,9 +3114,7 @@ const TOOLS = [
       args.push("--unpaywall", input.unpaywall || "auto", "--out", outDir);
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
-      if (!existsSync(join(outDir, "run.json"))) {
-        throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "OA resolution failed");
-      }
+      requirePythonBundle(pyRes, outDir, "OA resolution failed");
       const state = loadState();
       if (!input.preserveActiveRun) {
         recordMainRunNavigation(state, runId);
@@ -3043,7 +3159,8 @@ const TOOLS = [
       if (op === "load") {
         const state = loadState();
         if (input.runId) {
-          recordMainRunNavigation(state, basename(input.runId));
+          resolveRunDir(input.runId);
+          recordMainRunNavigation(state, input.runId);
           saveState(state);
         }
         const panelState = await getFullPanelState(input.runId);
@@ -3053,17 +3170,15 @@ const TOOLS = [
         };
       }
       if (op === "delete") {
-        const targets = [
+        const targets = [...new Set([
           ...(input.runId ? [input.runId] : []),
           ...(Array.isArray(input.runIds) ? input.runIds : [])
-        ]
-          .map((id) => basename(String(id || "").trim()))
-          .filter(Boolean);
+        ])];
+        if (!targets.length) throw new Error("请指定要删除的批次 ID。");
+        const directories = targets.map((id) => resolveRunDir(id, false));
         let deletedCount = 0;
-        for (const id of targets) {
-          const dir = join(RUNS_DIR, id);
-          const rel = relative(RUNS_DIR, dir);
-          if (!rel.startsWith("..") && !isAbsolutePath(rel) && existsSync(dir)) {
+        for (const dir of directories) {
+          if (existsSync(dir)) {
             rmSync(dir, { recursive: true, force: true });
             deletedCount++;
           }
@@ -3102,25 +3217,24 @@ const TOOLS = [
         };
       }
       if (op === "check") {
-        const targetDir = join(RUNS_DIR, basename(input.runId || ""));
+        const targetDir = resolveRunDir(input.runId);
         const pyRes = await runPython(PAPER_SEARCH_PY, ["check", targetDir, "--include-metadata"]);
         const panelState = await getFullPanelState(input.runId);
         return {
-          text: `批次 \`${input.runId}\` 哈希完整性校验结果：\`${pyRes.parsed?.status || "unknown"}\``,
+          isError: pyRes.exitCode !== 0 || pyRes.parsed?.status === "failed",
+          text: `批次 \`${input.runId}\` 哈希完整性校验结果：\`${pyRes.parsed?.status || "failed"}\``,
           structured: { ...panelState, checkResult: pyRes.parsed }
         };
       }
       if (op === "merge") {
-        const ids = (input.runIds || []).map((id) => join(RUNS_DIR, basename(id)));
+        const ids = [...new Set(input.runIds || [])].map((id) => resolveRunDir(id));
         if (ids.length < 1) throw new Error("请至少选择一条记录进行合并");
         const runId = makeRunId("merged");
         const outDir = join(RUNS_DIR, runId);
         const args = ["merge", ...ids, "--out", outDir];
         if (input.zoteroJsonPath) args.push("--zotero", input.zoteroJsonPath);
         const pyRes = await runPython(PAPER_SEARCH_PY, args);
-        if (!existsSync(join(outDir, "run.json"))) {
-          throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "Merge failed");
-        }
+        requirePythonBundle(pyRes, outDir, "Merge failed");
         const state = loadState();
         recordMainRunNavigation(state, runId);
         saveState(state);
@@ -3138,15 +3252,13 @@ const TOOLS = [
         const outDir = join(RUNS_DIR, runId);
         const args = [
           "diff",
-          join(RUNS_DIR, basename(input.beforeRunId)),
-          join(RUNS_DIR, basename(input.afterRunId)),
+          resolveRunDir(input.beforeRunId),
+          resolveRunDir(input.afterRunId),
           "--out",
           outDir
         ];
         const pyRes = await runPython(PAPER_SEARCH_PY, args);
-        if (!existsSync(join(outDir, "run.json"))) {
-          throw new Error(pyRes.parsed?.error?.message || pyRes.stderr || "Diff failed");
-        }
+        requirePythonBundle(pyRes, outDir, "Diff failed");
         const state = loadState();
         recordMainRunNavigation(state, runId);
         saveState(state);
@@ -3185,12 +3297,17 @@ const TOOLS = [
       } else if (isAbsolutePath(rawRel)) {
         target = resolve(rawRel);
       } else if (input.runId && input.runId !== "local") {
-        const runDir = join(RUNS_DIR, basename(input.runId));
+        const runDir = resolveRunDir(input.runId);
         target = rawRel === "." ? runDir : resolve(runDir, rawRel);
+        if (!isWithin(runDir, target) || (existsSync(target) && !isWithin(realpathSync(runDir), realpathSync(target)))) {
+          throw new Error("文件路径不能越出指定批次目录。");
+        }
       } else {
         target = resolve(WORKSPACE_ROOT, rawRel);
+        if (!isWithin(WORKSPACE_ROOT, target)) throw new Error("相对文件路径不能越出工作区；请提供明确的本地绝对路径。");
       }
 
+      assertReadablePath(target);
       if (!existsSync(target)) {
         throw new Error(`未找到目标文件或目录: ${target}`);
       }
@@ -3290,7 +3407,7 @@ const TOOLS = [
       required: ["action"]
     },
     execute: async (input) => {
-      const state = loadState();
+      let state = loadState();
       const act = input.action;
       if (act === "open_in_zotero") {
         const itemKey = String(input.zoteroItemKey || input.paper?.zotero_match?.itemKey || "").trim();
@@ -3306,6 +3423,7 @@ const TOOLS = [
       if (act === "save_to_zotero") {
         if (!input.paper) throw new Error("未提供要存入 Zotero 的论文数据");
         const zRes = await savePaperToLocalZotero(input.paper, input.collectionKey || "");
+        state = loadState();
         const key = input.paper.paper_key || computePaperKey(input.paper);
         const prev = state.evidenceMap[key] || {};
         state.evidenceMap[key] = {
@@ -3316,13 +3434,14 @@ const TOOLS = [
             matched: true,
             itemKey: zRes.itemKey,
             attachmentKey: zRes.attachmentKey || null,
-            createdByPlugin: !zRes.alreadyExists,
+            createdByPlugin: Boolean(state.zoteroImports?.[zRes.itemKey]),
+            undoAvailable: Boolean(state.zoteroImports?.[zRes.itemKey]),
             selectUri: zRes.selectUri,
             collections: zRes.collections || []
           },
           updatedAt: new Date().toISOString()
         };
-        if (!zRes.alreadyExists) {
+        if (!zRes.alreadyExists && zRes.undoAvailable) {
           state.lastZoteroImport = {
             paperKey: key,
             itemKey: zRes.itemKey,
@@ -3347,21 +3466,17 @@ const TOOLS = [
             state.lastZoteroImport?.itemKey ||
             ""
         ).trim();
-        const pKey =
-          input.paperKey ||
-          state.lastZoteroImport?.paperKey ||
-          Object.keys(state.evidenceMap || {}).find(
-            (k) => state.evidenceMap[k]?.zoteroMatch?.itemKey === targetKey
-          ) ||
-          null;
-        const attKey =
-          (pKey && state.evidenceMap[pKey]?.zoteroMatch?.attachmentKey) ||
-          state.lastZoteroImport?.attachmentKey ||
-          null;
+        const importRecord = state.zoteroImports?.[targetKey];
+        if (!importRecord || (input.paperKey && importRecord.paperKey !== input.paperKey)) {
+          throw new Error("该条目没有对应的插件创建核验记录，拒绝删除既有 Zotero 文献。");
+        }
+        const pKey = importRecord.paperKey;
         if (!targetKey) {
           throw new Error("未找到可撤销的 Zotero 导入记录（请传入 zoteroItemKey 或先执行一次存入 Zotero）。");
         }
-        const delRes = await deletePaperFromLocalZotero(targetKey, attKey);
+        const delRes = await deletePaperFromLocalZotero(targetKey, importRecord);
+        state = loadState();
+        delete state.zoteroImports[targetKey];
         if (pKey && state.evidenceMap[pKey]) {
           delete state.evidenceMap[pKey].zoteroMatch;
           state.evidenceMap[pKey].zoteroUndoneKey = targetKey;
@@ -3389,6 +3504,7 @@ const TOOLS = [
         if (!input.paper) throw new Error("未提供要补全摘要的论文数据");
         const key = input.paper.paper_key || computePaperKey(input.paper);
         const enriched = await enrichPaperAbstractAndMetadata(input.paper);
+        state = loadState();
         const prev = state.evidenceMap[key] || {};
         state.evidenceMap[key] = {
           ...prev,
@@ -3488,17 +3604,16 @@ const TOOLS = [
       if (input.exportType === "graph_svg") {
         if (!input.svgContent) throw new Error("未提供图谱 SVG 内容");
         const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-        const svgPath = join(destRoot, `literature-graph-${stamp}.svg`);
-        writeFileSync(svgPath, String(input.svgContent), "utf8");
+        const svgPath = uniqueDestination(destRoot, `literature-graph-${stamp}.svg`);
+        writeFileSync(svgPath, String(input.svgContent), { encoding: "utf8", flag: "wx" });
         writtenFiles.push(svgPath);
       } else if (input.exportType === "run_bundle") {
-        const targetRunId = basename(input.runId || state.lastRunId || "");
-        if (!targetRunId) throw new Error("未指定要导出的批次 ID");
-        const srcRunDir = join(RUNS_DIR, targetRunId);
-        if (!existsSync(srcRunDir)) throw new Error(`未找到批次目录: ${targetRunId}`);
-        const dstRunDir = join(destRoot, targetRunId);
+        const targetRunId = input.runId || state.lastRunId || "";
+        const srcRunDir = resolveRunDir(targetRunId);
+        const dstRunDir = uniqueDestination(destRoot, targetRunId);
+        if (isWithin(srcRunDir, destRoot) || isWithin(srcRunDir, dstRunDir)) throw new Error("导出目录不能位于源批次内部。");
         mkdirSync(dirname(dstRunDir), { recursive: true });
-        cpSync(srcRunDir, dstRunDir, { recursive: true });
+        copyRunDirectory(srcRunDir, dstRunDir);
         writtenFiles.push(dstRunDir);
       } else {
         const targetPapers =
@@ -3511,22 +3626,22 @@ const TOOLS = [
         if (input.exportType === "markdown_cards") {
           for (const p of targetPapers) {
             const stem = makeSafeFileStem(p.year, p.title, "paper");
-            const fullPath = join(destRoot, `${stem}.md`);
-            writeFileSync(fullPath, generateMarkdownCard(p), "utf8");
+            const fullPath = uniqueDestination(destRoot, `${stem}.md`);
+            writeFileSync(fullPath, generateMarkdownCard(p), { encoding: "utf8", flag: "wx" });
             writtenFiles.push(fullPath);
           }
         } else if (input.exportType === "citations_bundle") {
           const cites = generateCitations(targetPapers);
           const stamp = new Date().toISOString().slice(0, 10);
-          const bibPath = join(destRoot, `references-${stamp}.bib`);
-          const risPath = join(destRoot, `references-${stamp}.ris`);
-          const mdPath = join(destRoot, `citations-${stamp}.md`);
-          writeFileSync(bibPath, cites.bibtex + "\n", "utf8");
-          writeFileSync(risPath, cites.ris + "\n", "utf8");
+          const bibPath = uniqueDestination(destRoot, `references-${stamp}.bib`);
+          const risPath = uniqueDestination(destRoot, `references-${stamp}.ris`);
+          const mdPath = uniqueDestination(destRoot, `citations-${stamp}.md`);
+          writeFileSync(bibPath, cites.bibtex + "\n", { encoding: "utf8", flag: "wx" });
+          writeFileSync(risPath, cites.ris + "\n", { encoding: "utf8", flag: "wx" });
           writeFileSync(
             mdPath,
             `# 导出参考文献清单 (${stamp})\n\n## GB/T 7714\n\n${cites.gbt7714}\n\n## APA\n\n${cites.apa}\n`,
-            "utf8"
+            { encoding: "utf8", flag: "wx" }
           );
           writtenFiles.push(bibPath, risPath, mdPath);
         }
@@ -3547,6 +3662,70 @@ const TOOLS = [
   }
 ];
 
+function validateInput(schema, value, path = "arguments") {
+  const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : [];
+  const matches = (type) => type === "object" ? value !== null && typeof value === "object" && !Array.isArray(value)
+    : type === "array" ? Array.isArray(value) : type === "integer" ? Number.isInteger(value)
+    : typeof value === type;
+  if (types.length && !types.some(matches)) throw new Error(`${path} 类型错误（需要 ${types.join("/")}）。`);
+  if (schema.enum && !schema.enum.includes(value)) throw new Error(`${path} 不在允许的选项中。`);
+  if (typeof value === "number" && ((schema.minimum !== undefined && value < schema.minimum) || (schema.maximum !== undefined && value > schema.maximum))) {
+    throw new Error(`${path} 超出允许范围。`);
+  }
+  if (typeof value === "string" && (value.includes("\0") || value.length > 2_000_000)) throw new Error(`${path} 包含无效字符或过长。`);
+  if (Array.isArray(value)) {
+    if (value.length > 500) throw new Error(`${path} 数组过长。`);
+    value.forEach((item, idx) => { if (schema.items) validateInput(schema.items, item, `${path}[${idx}]`); });
+  } else if (value && typeof value === "object") {
+    for (const key of schema.required || []) if (value[key] === undefined) throw new Error(`${path}.${key} 为必填参数。`);
+    for (const [key, val] of Object.entries(value)) {
+      if (["__proto__", "prototype", "constructor"].includes(key)) throw new Error(`${path} 包含无效键名。`);
+      if (schema.properties?.[key]) validateInput(schema.properties[key], val, `${path}.${key}`);
+      else if (schema.additionalProperties === false) throw new Error(`${path}.${key} 是未知参数。`);
+    }
+  }
+}
+
+function validateToolInput(name, input) {
+  const requiredText = (key) => { if (typeof input[key] !== "string" || !input[key].trim()) throw new Error(`${key} 不能为空。`); };
+  for (const key of ["yearFrom", "yearTo"]) if (input[key] !== undefined && (input[key] < 1000 || input[key] > 9999)) throw new Error(`${key} 必须在1000至9999之间。`);
+  if (input.yearFrom !== undefined && input.yearTo !== undefined && input.yearFrom > input.yearTo) throw new Error("起始年份不能晚于结束年份。");
+  for (const key of ["sources", "defaultSources"]) if (input[key] && !input[key].length) throw new Error(`${key} 至少选择一个来源。`);
+  if (["search_papers", "search_exa"].includes(name)) requiredText("query");
+  if (["lookup_paper", "explore_related"].includes(name)) requiredText("id");
+  if (name === "search_author" && ![input.query, input.authorId, input.fromPaper].some((v) => v?.trim())) throw new Error("请提供学者姓名、authorId 或 fromPaper。");
+  if (name === "search_epmc" && ![input.query, input.id].some((v) => v?.trim())) throw new Error("请提供 Europe PMC 检索词或标识符。");
+  if (name === "search_serper") {
+    const mode = input.type || "scholar";
+    if (["webpage", "lens"].includes(mode)) {
+      if (!input.url && !input.params?.url) throw new Error(`${mode} 需要 url。`);
+    } else if (mode === "reviews") {
+      if (!["cid", "fid", "placeId"].some((key) => input.params?.[key])) throw new Error("reviews 需要 params.cid、fid 或 placeId。");
+      if (input.query) throw new Error("reviews 不接受 query；请使用 params 指定地点。");
+    } else if (!(input.query?.trim() || input.params?.q || (mode === "maps" && (input.params?.cid || input.params?.placeId)) || (mode === "scholar" && (input.params?.cites || input.params?.cluster)))) requiredText("query");
+  }
+  if (name === "save_config") {
+    if (input.zoteroUrl?.trim()) validateZoteroUrl(input.zoteroUrl.trim());
+    const allowed = ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "politeEmail"];
+    if (input.clearKeys?.some((key) => !allowed.includes(key))) throw new Error("clearKeys 只允许清空 API Key 或联系邮箱。");
+    if (input.defaultSources?.some((source) => !["openalex", "semantic-scholar", "crossref"].includes(source))) throw new Error("defaultSources 含无效来源。");
+  }
+  if (name === "manage_basket") {
+    if (["add", "save_to_zotero", "enrich_abstract"].includes(input.action) && (!input.paper || typeof input.paper.title !== "string" || !input.paper.title.trim())) throw new Error("请提供有标题的论文数据。");
+    if (["remove", "update_evidence"].includes(input.action)) requiredText("paperKey");
+    for (const key of ["paperKey", "zoteroItemKey", "collectionKey"]) if (["__proto__", "prototype", "constructor"].includes(input[key])) throw new Error(`${key} 无效。`);
+    if (["zoteroItemKey", "collectionKey"].some((key) => input[key] && !/^[23456789A-Z]{8}$/.test(input[key]))) throw new Error("Zotero 条目或分类 Key 格式无效。");
+    if (input.paper) {
+      if (["__proto__", "prototype", "constructor"].includes(input.paper.paper_key)) throw new Error("paper_key 无效。");
+      for (const key of ["authors", "oa_locations", "provenance", "relations"]) if (input.paper[key] !== undefined && !Array.isArray(input.paper[key])) throw new Error(`paper.${key} 必须为数组。`);
+      if (input.paper.identifiers) for (const ids of Object.values(input.paper.identifiers)) if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("paper.identifiers 必须使用字符串数组。");
+    }
+  }
+  if (name === "read_run_file") requiredText("relativePath");
+}
+
+for (const tool of TOOLS) tool.inputSchema.additionalProperties = false;
+
 function buildToolsList() {
   return TOOLS.map((t) => ({
     name: t.name,
@@ -3566,21 +3745,26 @@ function buildToolsList() {
   }));
 }
 
+let toolQueue = Promise.resolve();
+
 async function handleRequest(message) {
+  if (!message || typeof message !== "object" || Array.isArray(message) || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
+    return { jsonrpc: "2.0", id: message?.id ?? null, error: { code: -32600, message: "Invalid JSON-RPC request" } };
+  }
   const { id, method, params } = message;
   if (method === "initialize") {
     return {
       jsonrpc: "2.0",
       id,
       result: {
-        protocolVersion: params?.protocolVersion || "2024-11-05",
+        protocolVersion: ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"].includes(params?.protocolVersion) ? params.protocolVersion : "2025-11-25",
         capabilities: {
           tools: { listChanged: true },
           resources: { listChanged: true }
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.6.3"
+          version: "1.6.4"
         }
       }
     };
@@ -3648,24 +3832,31 @@ async function handleRequest(message) {
       };
     }
     try {
-      const out = await tool.execute(params?.arguments || {});
-      return {
+      const input = params?.arguments === undefined ? {} : params.arguments;
+      validateInput(tool.inputSchema, input);
+      validateToolInput(toolName, input);
+      // One writer per MCP process: UI/model calls must not overwrite state read before an await.
+      const operation = toolQueue.then(() => tool.execute(input));
+      toolQueue = operation.catch(() => {});
+      const out = await operation;
+      return redactSecrets({
         jsonrpc: "2.0",
         id,
         result: {
+          ...(out.isError ? { isError: true } : {}),
           content: [{ type: "text", text: out.text || "OK" }],
           structuredContent: out.structured || {}
         }
-      };
+      });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = redactSecrets(err instanceof Error ? err.message : String(err));
       return {
         jsonrpc: "2.0",
         id,
         result: {
           isError: true,
           content: [{ type: "text", text: `[sanmu-paper-search error] ${msg}` }],
-          structuredContent: { error: { code: "execution_failed", message: msg } }
+          structuredContent: { error: { code: "execution_failed", message: msg, ...(err.runId ? { runId: err.runId, exitCode: err.exitCode } : {}) } }
         }
       };
     }
@@ -3677,16 +3868,27 @@ async function handleRequest(message) {
   };
 }
 
-for await (const line of createInterface({ input: process.stdin })) {
-  const trimmed = line.trim();
-  if (!trimmed) continue;
-  let message;
-  try {
-    message = JSON.parse(trimmed);
-  } catch {
-    continue;
+async function startStdio() {
+  for await (const line of createInterface({ input: process.stdin })) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let message;
+    try {
+      message = JSON.parse(trimmed);
+    } catch {
+      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }) + "\n");
+      continue;
+    }
+    if (message && typeof message === "object" && !Array.isArray(message) && message.id === undefined) continue;
+    let response;
+    try {
+      response = await handleRequest(message);
+    } catch (err) {
+      response = { jsonrpc: "2.0", id: message?.id ?? null, error: { code: -32603, message: redactSecrets(err.message || "Internal error") } };
+    }
+    process.stdout.write(JSON.stringify(response) + "\n");
   }
-  if (message.id === undefined) continue;
-  const response = await handleRequest(message);
-  process.stdout.write(JSON.stringify(response) + "\n");
 }
+
+export { handleRequest, startStdio };
+if (process.argv[1] && resolve(process.argv[1]) === __filename) await startStdio();

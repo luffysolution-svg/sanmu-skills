@@ -40,7 +40,7 @@ python scripts/paper_search.py diff "/path/to/work/runs/seed" "/path/to/work/run
 
 原有学术命令的 `summary.md` 是 `papers.json` 的同源精简视图（年份、标题、前三位作者、类型、标识符、证据层级），用于快速浏览；正文判断仍以 `papers.json` 与逐源状态为准。S2 题录按响应保留 `url`、`venue`、`journal`、`publication_date`、`citation_count`、`reference_count`；`search` / `lookup` 另请求 `tldr`，其他接口不保证该字段。TLDR 与摘要分别保存，不能据此标为已读。Serper 的摘要展示 `results.json` 中的类型、标题、链接、年份和片段，费用与状态见 `report.md`。
 
-S2 请求按同一 API key 跨进程节流，默认至少间隔 1.05 秒；匿名请求使用共享匿名桶。GET 遇 HTTP 429、502、503、504 最多三次尝试（含首次），等待总预算 10 秒；429 的 `Retry-After` 支持秒数和 HTTP 日期，冷却状态供后续进程遵守。超出等待预算时保留错误，稍后再试。S2 references 被出版社省略时记录 `publisher_restricted`，不把 HTTP 200 或缺少列表解读为零参考文献。
+S2 请求按同一 API key 跨进程节流，默认至少间隔 1.05 秒；匿名请求使用共享匿名桶。GET 遇 HTTP 429、502、503、504 最多三次尝试（含首次），等待总预算 10 秒；429 的 `Retry-After` 支持秒数和 HTTP 日期，冷却状态供后续进程遵守。超出等待预算时保留错误，稍后再试。S2 references 被出版社省略时记录 `publisher_restricted`，不把 HTTP 200 或缺少列表解读为零参考文献。原始来源失败后取得的替代来源引文保留在结果中，同时保留原始错误与 `fallback_used`，运行状态为部分完成。
 
 ## Serper（可选）
 
@@ -122,4 +122,4 @@ stdout 输出结构化 JSON，网络错误保留为独立状态。凭证从环�
 python scripts/fetch_pdf.py "https://publisher.example/article.pdf" --doi "10.xxxx/real-doi" --title "Exact paper title" --out "/path/to/work/runs/pdf"
 ```
 
-示例网址与 DOI 是占位符，实际使用从已核对的 OA 位置取得的真实 URL。输出 `paper.pdf`、`acquisition.json`，记录最终 URL、SHA-256、格式检查和身份状态。可选 PyMuPDF 可做首屏题名区的完整 DOI/标题文字层匹配；缺依赖时仍保存 PDF，并明确身份未核验。需要下载附件的任务逐项核对，未实现自动 SI 全量发现。
+示例网址与 DOI 是占位符，实际使用从已核对的 OA 位置取得的真实 URL。输出 `paper.pdf`、`acquisition.json`，记录最终 URL、SHA-256、格式检查和身份状态。可选 PyMuPDF 可做首屏题名区的完整 DOI/标题文字层匹配；身份待核对时继续尝试显式 `--fallback-url`，全部未匹配则保留首个有效 PDF 并标记 `needs_review`。缺依赖时仍保存 PDF，并明确身份未核验。需要下载附件的任务逐项核对，未实现自动 SI 全量发现。

@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request
+from xml.etree import ElementTree
 
 from _core import InputError, deduplicate, ids, location, now, prepare_out, record, write_bundle
 from _providers import SourceError, parse_id, plain_text
@@ -56,30 +57,34 @@ def plan(args):
         raise InputError("--year-from must not exceed --year-to")
     if getattr(args, "limit", None) is not None and not 1 <= args.limit <= 20:
         raise InputError("limit must be between 1 and 20")
+    if has_id and has_query:
+        raise InputError("Specify either a search query or --id, not both")
+    build_query(args)  # Reject unsupported explicit IDs before reserving output.
+
+
+def lookup_id(args):
+    value = getattr(args, "id", None) or (args.query or "").strip()
+    try:
+        kind, val = parse_id(value)
+    except InputError:
+        if getattr(args, "id", None):
+            raise
+        return None
+    if kind not in ("doi", "pmcid", "pmid"):
+        if getattr(args, "id", None):
+            raise InputError("Europe PMC --id supports only DOI, PMID or PMCID")
+        return None
+    return kind, val
 
 
 def build_query(args):
-    if getattr(args, "id", None) and str(args.id).strip():
-        kind, val = parse_id(args.id)
-        if kind == "doi":
-            return f'DOI:"{val}"', True
-        if kind == "pmcid":
-            return f'PMCID:{val}', True
-        if kind == "pmid":
-            return f'EXT_ID:"{val}"', True
-        return f'"{val}"', True
+    identity = lookup_id(args)
     query_text = (args.query or "").strip()
-    try:
-        kind, val = parse_id(query_text)
-        if kind == "doi":
-            return f'DOI:"{val}"', True
-        if kind == "pmcid":
-            return f'PMCID:{val}', True
-        if kind == "pmid":
-            return f'EXT_ID:"{val}"', True
-    except InputError:
-        pass
-    # Normal topic search with optional filters
+    if identity:
+        kind, val = identity
+        escaped = val.replace("\\", "\\\\").replace('"', '\\"')
+        query_text = {"doi": f'DOI:"{escaped}"', "pmcid": f"PMCID:{val}",
+                      "pmid": f'EXT_ID:"{val}" AND SRC:MED'}[kind]
     filters = []
     if getattr(args, "has_suppl", False):
         filters.append("HAS_SUPPL:y")
@@ -96,8 +101,11 @@ def build_query(args):
         filters.append(f"(PUB_YEAR:[{y_from or 1000} TO {y_to or 9999}])")
     combined = query_text
     if filters:
-        combined = f"{query_text} {' '.join(filters)}"
-    return combined, False
+        combined = f"({query_text}) AND " + " AND ".join(filters)
+    sort_token = {"cited": "sort_cited:y", "date": "sort_date:y"}.get(getattr(args, "sort", "relevance"))
+    if sort_token:
+        combined = f"({combined}) {sort_token}"
+    return combined, identity is not None
 
 
 def request_epmc(client, url, accept="application/json", binary=False):
@@ -122,48 +130,45 @@ def request_epmc(client, url, accept="application/json", binary=False):
             audit["response_headers"] = resp_headers
             if len(content) > MAX_RESPONSE:
                 raise SourceError("Response exceeds 64 MiB limit", audit["status"])
+            if binary:
+                audit["body"] = {"content_length": len(content), "type": resp_headers.get("Content-Type", "binary")}
+            else:
+                text = content.decode("utf-8", errors="replace")
+                audit["body"] = {"text_preview": text[:500]}
+                if "json" in accept:
+                    try:
+                        data = json.loads(text)
+                        json.dumps(data, allow_nan=False)
+                    except (ValueError, TypeError) as exc:
+                        audit["response_text"] = text
+                        if audit["status"] is not None and 200 <= audit["status"] < 300:
+                            raise SourceError("Invalid JSON response from Europe PMC", audit["status"]) from exc
+                        data = {"unparsed_body": text}
+                    audit["body"] = data
             if audit["status"] in (429, 502, 503, 504):
                 delay = retry_delay(resp_headers, attempt)
                 client.cooldown("europepmc", None, delay)
                 if attempt < 2 and delay <= 10.0 - waited:
-                    client.raw.append(client.redactor.clean(audit))
                     continue
             if audit["status"] is None or not (200 <= audit["status"] < 300):
-                audit["error"] = f"HTTP {audit['status']}"
-                client.raw.append(client.redactor.clean(audit))
                 raise SourceError(f"HTTP {audit['status']}", audit["status"])
-            if binary:
-                audit["body"] = {"content_length": len(content), "type": resp_headers.get("Content-Type", "binary")}
-                client.raw.append(client.redactor.clean(audit))
-                return content
-            text = content.decode("utf-8", errors="replace")
-            if "json" in accept:
-                try:
-                    data = json.loads(text)
-                except (ValueError, TypeError) as exc:
-                    audit["error"] = "Invalid JSON"
-                    client.raw.append(client.redactor.clean(audit))
-                    raise SourceError("Invalid JSON response from Europe PMC", audit["status"]) from exc
-                audit["body"] = data
-                client.raw.append(client.redactor.clean(audit))
-                return data
-            audit["body"] = {"text_preview": text[:500]}
-            client.raw.append(client.redactor.clean(audit))
-            return text
+            if not binary and "json" in accept and not isinstance(data, dict):
+                raise SourceError("Europe PMC response must be an object", audit["status"])
+            return content if binary else data if "json" in accept else text
         except (URLError, OSError, TimeoutError) as exc:
             audit["error"] = client.redactor.text(str(exc))
-            client.raw.append(client.redactor.clean(audit))
-            if getattr(client.rate_limiter, "shared", False) and attempt < 2:
-                delay = min(1.5 * (attempt + 1), max(0.0, 10.0 - waited))
-                if delay > 0:
+            if attempt < 2:
+                delay = 1.5 * (attempt + 1)
+                if delay <= max(0.0, 10.0 - waited):
                     client.sleep(delay)
                     waited += delay
                     continue
             raise SourceError("Network error: " + audit["error"]) from exc
         except SourceError as exc:
             audit["error"] = str(exc)
-            client.raw.append(client.redactor.clean(audit))
             raise
+        finally:
+            client.raw.append(client.redactor.clean(audit))
     raise SourceError("Europe PMC retry budget exhausted", 429)
 
 
@@ -198,7 +203,13 @@ def parse_authors(row):
         name = a.get("fullName") or " ".join(filter(None, [a.get("firstName"), a.get("lastName")]))
         if not name:
             continue
-        affils = [{"name": a["affiliation"]}] if a.get("affiliation") else []
+        details = (a.get("authorAffiliationDetailsList") or {}).get("authorAffiliation") or []
+        if isinstance(details, dict):
+            details = [details]
+        affils = [{"name": item["affiliation"]} for item in details
+                  if isinstance(item, dict) and item.get("affiliation")]
+        if not affils and a.get("affiliation"):
+            affils = [{"name": a["affiliation"]}]
         aid = a.get("authorId") or {}
         identifiers = {}
         if isinstance(aid, dict) and aid.get("type") == "ORCID" and aid.get("value"):
@@ -215,13 +226,16 @@ def normalize_epmc(row):
     raw_year = str(row.get("pubYear", "")).strip()
     year = int(raw_year) if raw_year.isdigit() and 1000 <= int(raw_year) <= 9999 else None
     doi_val = row.get("doi")
-    pmid_val = row.get("pmid")
-    pmcid_val = row.get("pmcid")
+    pmid_val = row.get("pmid") or (row.get("id") if row.get("source") == "MED" else None)
+    pmcid_val = row.get("pmcid") or (row.get("id") if row.get("source") == "PMC" else None)
     identifiers = ids(doi=doi_val, pmid=pmid_val, pmcid=pmcid_val)
     title = plain_text(row.get("title") or "")
     abstract = plain_text(row.get("abstractText") or "")
     venue = row.get("journalTitle") or ((row.get("journalInfo") or {}).get("journal", {})).get("title")
-    kind = row.get("pubType") or "journal-article"
+    kinds = (row.get("pubTypeList") or {}).get("pubType") or []
+    if isinstance(kinds, str):
+        kinds = [kinds]
+    kind = ",".join(kinds) or row.get("pubType") or ("preprint" if row.get("source") == "PPR" else None)
     authors = parse_authors(row)
     relations = parse_relations(row)
     oa_locations = []
@@ -229,13 +243,22 @@ def normalize_epmc(row):
         target_url = f"https://europepmc.org/article/pmc/{pmcid_val}" if pmcid_val else (f"https://doi.org/{doi_val}" if doi_val else None)
         if target_url:
             oa_locations.append(location(target_url, "europepmc", is_oa=True, evidence="europepmc_open_access"))
+    fulltext_urls = (row.get("fullTextUrlList") or {}).get("fullTextUrl") or []
+    if isinstance(fulltext_urls, dict):
+        fulltext_urls = [fulltext_urls]
+    for item in fulltext_urls:
+        if isinstance(item, dict) and item.get("url"):
+            oa_locations.append(location(item["url"], "europepmc", item.get("availabilityCode") == "OA",
+                                         evidence="europepmc_fulltext_url", version=item.get("documentStyle")))
     record_id = pmcid_val or (f"pmid:{pmid_val}" if pmid_val else doi_val) or row.get("id", "unknown")
     p = record("europepmc", record_id, title, year, identifiers, authors, abstract, kind=kind,
                oa_locations=oa_locations, relations=relations)
+    if venue:
+        p["venue"] = p["journal"] = venue
     p["citation_count"] = row.get("citedByCount") if isinstance(row.get("citedByCount"), int) else None
     p["extra_epmc"] = {
         "has_suppl": row.get("hasSuppl") == "Y",
-        "has_fulltext_xml": row.get("hasFT") == "Y",
+        "has_fulltext_xml": row.get("hasFT") == "Y" or row.get("inEPMC") == "Y",
         "has_pdf": row.get("hasPDF") == "Y",
         "is_open_access": row.get("isOpenAccess") == "Y",
         "in_epmc": row.get("inEPMC") == "Y",
@@ -245,6 +268,15 @@ def normalize_epmc(row):
 
 
 def parse_xml_summary(xml_text):
+    try:
+        # Reject entity expansion before parsing untrusted full text.
+        if re.search(r"<!ENTITY\b", xml_text, re.I):
+            raise ValueError("Entity declarations are not supported")
+        root = ElementTree.fromstring(xml_text)
+        if root.tag.rsplit("}", 1)[-1] != "article":
+            raise ValueError("Expected a JATS article root")
+    except (ElementTree.ParseError, ValueError) as exc:
+        raise SourceError("Invalid JATS full text XML: " + str(exc)) from exc
     sec_count = len(re.findall(r"<\s*sec[\s>]", xml_text, re.I))
     fig_count = len(re.findall(r"<\s*fig[\s>]", xml_text, re.I))
     table_count = len(re.findall(r"<\s*table-wrap[\s>]", xml_text, re.I))
@@ -347,8 +379,9 @@ def safe_extract_zip(zip_bytes, target_dir):
 
 def execute(args, client):
     plan(args)
-    out = prepare_out(args.out)
     query_str, is_id_lookup = build_query(args)
+    identity = lookup_id(args)
+    out = prepare_out(args.out)
     params = {
         "query": query_str,
         "format": "json",
@@ -356,11 +389,6 @@ def execute(args, client):
         "resultType": "core",
         "cursorMark": "*"
     }
-    sort_choice = getattr(args, "sort", "relevance")
-    if sort_choice == "cited":
-        params["sort"] = "CITED desc"
-    elif sort_choice == "date":
-        params["sort"] = "P_PDATE_D desc"
     search_url = ENDPOINT + "/search?" + urlencode(params)
     start_audit_len = len(client.raw)
     papers = []
@@ -371,26 +399,35 @@ def execute(args, client):
     fetch_mode = getattr(args, "fetch", "none")
     try:
         data = request_epmc(client, search_url, accept="application/json")
-        hit_count = data.get("hitCount", 0)
-        result_list = (data.get("resultList") or {}).get("result") or []
+        hit_count = data.get("hitCount")
+        envelope = data.get("resultList")
+        if type(hit_count) is not int or hit_count < 0 or not isinstance(envelope, dict):
+            raise SourceError("Europe PMC response requires hitCount and resultList")
+        result_list = envelope.get("result")
         if isinstance(result_list, dict):
             result_list = [result_list]
+        if not isinstance(result_list, list) or any(not isinstance(row, dict) for row in result_list):
+            raise SourceError("Europe PMC response requires a result array of objects")
         raw_results = result_list
-        for row in result_list:
-            papers.append(normalize_epmc(row))
-        papers = deduplicate(papers)
+        normalized = [normalize_epmc(row) for row in result_list[:args.limit]]
+        if identity and any(identity[1] not in p["identifiers"].get(identity[0], []) for p in normalized):
+            raise SourceError("Exact identifier mismatch in Europe PMC response")
+        papers = deduplicate(normalized)
         sources_status["europepmc"] = {
             "status": "ok",
             "fetched": len(papers),
             "hit_count": hit_count,
-            "truncated": hit_count > len(papers),
+            "pages": 1,
+            "truncated": hit_count > len(result_list) or len(result_list) > args.limit,
             "query_strategy": "id_lookup" if is_id_lookup else "search"
         }
-    except SourceError as exc:
+        if identity:
+            sources_status["europepmc"]["id_verified"] = bool(papers)
+    except (SourceError, ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
         sources_status["europepmc"] = {
             "status": "error",
             "error": str(exc),
-            "http_status": exc.status,
+            "http_status": getattr(exc, "status", None),
             "fetched": 0,
             "truncated": False
         }
@@ -406,9 +443,11 @@ def execute(args, client):
             if fetch_mode in ("xml", "all"):
                 try:
                     xml_url = f"{ENDPOINT}/{quote(pmcid)}/fullTextXML"
-                    xml_content = request_epmc(client, xml_url, accept="application/xml")
-                    xml_summary = parse_xml_summary(xml_content)
+                    candidate_xml = request_epmc(client, xml_url, accept="application/xml")
+                    candidate_summary = parse_xml_summary(candidate_xml)
+                    xml_content, xml_summary = candidate_xml, candidate_summary
                     fulltext_xml_fetched = True
+                    sources_status["epmc_xml"] = {"status": "ok", "fetched": 1, "pmcid": pmcid}
                 except SourceError as exc:
                     sources_status["epmc_xml"] = {"status": "error", "error": str(exc)}
             if fetch_mode in ("suppl", "all"):
@@ -417,9 +456,11 @@ def execute(args, client):
                     zip_bytes = request_epmc(client, suppl_url, accept="application/zip", binary=True)
                     suppl_manifest = safe_extract_zip(zip_bytes, out / "supplementary")
                     supplementary_fetched = True
+                    sources_status["epmc_supplementary"] = {"status": "ok", "fetched": suppl_manifest["total_files"],
+                                                              "pmcid": pmcid}
                 except SourceError as exc:
                     sources_status["epmc_supplementary"] = {"status": "error", "error": str(exc)}
-                except (zipfile.BadZipFile, OSError, ValueError) as exc:
+                except (zipfile.BadZipFile, OSError, ValueError, RuntimeError, NotImplementedError, EOFError) as exc:
                     # Drop partial extraction so the bundle manifest only lists a consistent run.
                     shutil.rmtree(out / "supplementary", ignore_errors=True)
                     sources_status["epmc_supplementary"] = {

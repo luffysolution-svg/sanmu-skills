@@ -123,12 +123,16 @@ class EPMCTests(unittest.TestCase):
         self.assertIn("(PUB_YEAR:[2023 TO 2025])", q)
 
         args_id = Args()
+        args_id.has_suppl = args_id.open_access = args_id.has_data = args_id.preprints = args_id.has_fulltext = False
+        args_id.year_from = args_id.year_to = None
         args_id.id = "PMC12710600"
         q_id, is_id2 = build_query(args_id)
         self.assertTrue(is_id2)
         self.assertEqual(q_id, 'PMCID:PMC12710600')
 
         args_doi = Args()
+        args_doi.has_suppl = args_doi.open_access = args_doi.has_data = args_doi.preprints = args_doi.has_fulltext = False
+        args_doi.year_from = args_doi.year_to = None
         args_doi.id = "10.1002/adma.202313513"
         q_doi, is_id3 = build_query(args_doi)
         self.assertTrue(is_id3)
@@ -253,6 +257,98 @@ class EPMCTests(unittest.TestCase):
             # Check full bundle integrity (all extracted files must be in manifest!)
             check = check_bundle(out)
             self.assertEqual(check["status"], "success", check["issues"])
+
+    def test_real_core_fields_and_pmid_source_mapping(self):
+        row = epmc_entry()
+        del row["pmid"], row["pubType"], row["hasFT"]
+        row["pubTypeList"] = {"pubType": ["Journal Article", "Research Support, Non-U.S. Gov't"]}
+        row["authorList"]["author"] = [{"fullName": "Jane Doe", "authorAffiliationDetailsList": {
+            "authorAffiliation": [{"affiliation": "Actual University"}]}}]
+        row["fullTextUrlList"] = {"fullTextUrl": [
+            {"url": "https://europepmc.org/articles/PMC12710600?pdf=render", "availabilityCode": "OA", "documentStyle": "pdf"}]}
+        paper = normalize_epmc(row)
+        self.assertEqual(paper["identifiers"]["pmid"], ["38639018"])
+        self.assertEqual(paper["venue"], "Advanced Materials")
+        self.assertIn("Journal Article", paper["type"])
+        self.assertEqual(paper["authors"][0]["affiliations"], [{"name": "Actual University"}])
+        self.assertTrue(paper["extra_epmc"]["has_fulltext_xml"])
+        self.assertTrue(paper["oa_locations"][-1]["is_oa"])
+        row = {"id": "38639018", "source": "PPR", "title": "A preprint"}
+        self.assertNotIn("pmid", normalize_epmc(row)["identifiers"])
+        self.assertEqual(normalize_epmc(row)["type"], "preprint")
+
+    def test_boolean_filters_sort_and_exact_id_preflight(self):
+        from argparse import Namespace
+        from urllib.parse import parse_qs, urlsplit
+        args = Namespace(id=None, query="cancer OR diabetes", has_suppl=True, year_from=2024, year_to=None, sort="cited")
+        query, is_id = build_query(args)
+        self.assertFalse(is_id)
+        self.assertEqual(query, "((cancer OR diabetes) AND HAS_SUPPL:y AND (PUB_YEAR:[2024 TO 9999])) sort_cited:y")
+        seen = []
+        def opener(req, timeout):
+            seen.append(parse_qs(urlsplit(req.full_url).query))
+            return MockResponse({"hitCount": 1, "resultList": {"result": [epmc_entry()]}})
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "pmid"
+            code, run = self.invoke(["epmc", "38639018", "--sort", "date", "--out", str(out)], Client({}, opener))
+            self.assertEqual(code, 0, run)
+            self.assertEqual(seen[0]["query"], ['(EXT_ID:"38639018" AND SRC:MED) sort_date:y'])
+            self.assertNotIn("sort", seen[0])
+            self.assertTrue(run["source_status"]["europepmc"]["id_verified"])
+            for index, flags in enumerate((["--id", "s2:abc"], ["--id", "invalid"], ["topic", "--id", "PMC1"])):
+                invalid = Path(tmp) / str(index)
+                code, _ = self.invoke(["epmc", *flags, "--out", str(invalid)], Client({}, lambda *a, **kw: self.fail("network")))
+                self.assertEqual(code, 2)
+                self.assertFalse(invalid.exists())
+
+    def test_malformed_or_wrong_identity_search_writes_failed_bundle(self):
+        bodies = [[], {"error": "Invalid query"}, {"hitCount": 1, "resultList": {"result": [None]}},
+                  {"hitCount": "1", "resultList": {"result": []}},
+                  {"hitCount": 1, "resultList": {"result": [dict(epmc_entry(), authorList=["malformed"])]}},
+                  {"hitCount": 1, "resultList": {"result": [dict(epmc_entry(), pmcid="PMC999")] }},
+                  b'{"hitCount": NaN, "resultList":{"result":[]}}',
+                  b'{"hitCount": 1e999, "resultList":{"result":[]}}']
+        with tempfile.TemporaryDirectory() as tmp:
+            for index, body in enumerate(bodies):
+                out = Path(tmp) / str(index)
+                code, run = self.invoke(["epmc", "PMC12710600", "--fetch", "all", "--out", str(out)],
+                                        Client({}, lambda req, timeout: MockResponse(body)))
+                self.assertEqual(code, 3, run)
+                self.assertEqual(run["source_status"]["europepmc"]["status"], "error")
+                self.assertEqual(run["counts"]["papers"], 0)
+                self.assertEqual(check_bundle(out)["status"], "success")
+
+    def test_invalid_xml_is_partial_and_one_audit_per_request(self):
+        from urllib.error import HTTPError
+        from _epmc import request_epmc
+        for payload in ("<html>error</html>", "<article>broken", '<!DOCTYPE article [<!ENTITY x "x">]><article>&x;</article>'):
+            with tempfile.TemporaryDirectory() as tmp:
+                def opener(req, timeout):
+                    if "/search?" in req.full_url:
+                        return MockResponse({"hitCount": 1, "resultList": {"result": [epmc_entry()]}})
+                    return MockResponse(payload)
+                out = Path(tmp) / "run"
+                code, run = self.invoke(["epmc", "PMC12710600", "--fetch", "xml", "--out", str(out)], Client({}, opener))
+                self.assertEqual(code, 1, run)
+                self.assertFalse(run["fulltext_xml_fetched"])
+                self.assertFalse((out / "fulltext.xml").exists())
+                self.assertEqual(run["counts"]["raw_responses"], 2)
+                self.assertEqual(check_bundle(out)["status"], "success")
+        def denied(req, timeout):
+            raise HTTPError(req.full_url, 403, "fixture", {}, io.BytesIO(b'{"error":"denied"}'))
+        client = Client({}, denied)
+        with self.assertRaisesRegex(Exception, "HTTP 403"):
+            request_epmc(client, "https://example.org")
+        self.assertEqual(len(client.raw), 1)
+        calls = []
+        def unavailable(req, timeout):
+            calls.append(req)
+            raise HTTPError(req.full_url, 503, "fixture", {"Retry-After": "0"}, io.BytesIO(b"Service unavailable"))
+        client = Client({}, unavailable, lambda _: None)
+        with self.assertRaisesRegex(Exception, "HTTP 503"):
+            request_epmc(client, "https://example.org")
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(client.raw), 3)
 
     def test_epmc_input_validation(self):
         cases = [

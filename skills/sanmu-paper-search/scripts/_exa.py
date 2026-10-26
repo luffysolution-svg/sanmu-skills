@@ -98,7 +98,9 @@ def post(client, payload):
                 # Reject exponent overflow as well as literal NaN/Infinity.
                 json.dumps(data, allow_nan=False)
             except (ValueError, TypeError) as exc:
-                raise SourceError("Invalid JSON response", audit["status"]) from exc
+                if audit["status"] is not None and 200 <= audit["status"] < 300:
+                    raise SourceError("Invalid JSON response", audit["status"]) from exc
+                data = {"unparsed_body": audit["response_text"]}
             audit["body"] = data
             if audit["status"] in (429, 502, 503, 504):
                 delay = retry_delay(headers, attempt)

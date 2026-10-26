@@ -366,7 +366,7 @@ def execute(args, client):
         else:
             papers, statuses = collect(adapter, args.sources, "lookup", args.input)
         if args.unpaywall != "never":
-            if client.env.get("UNPAYWALL_EMAIL"):
+            if client.contact_email("unpaywall"):
                 for paper in papers:
                     for identifier in paper["identifiers"].get("doi", []):
                         name = "unpaywall:" + identifier
@@ -379,9 +379,9 @@ def execute(args, client):
                         except (ValueError, TypeError, KeyError, AttributeError) as exc:
                             statuses[name] = _error(SourceError("Malformed Unpaywall response: " + str(exc)))
             elif args.unpaywall == "required":
-                statuses["unpaywall"] = _error(SourceError("UNPAYWALL_EMAIL is not configured"))
+                statuses["unpaywall"] = _error(SourceError("UNPAYWALL_EMAIL or a fallback contact email is not configured"))
             else:
-                statuses["unpaywall"] = {"status": "skipped", "reason": "UNPAYWALL_EMAIL is not configured"}
+                statuses["unpaywall"] = {"status": "skipped", "reason": "UNPAYWALL_EMAIL or a fallback contact email is not configured"}
     elif command == "merge":
         papers = deduplicate([p for group in loaded for p in group])
         # Local exports annotate matches only; unrelated private records do not enter the result.

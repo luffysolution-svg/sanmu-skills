@@ -75,6 +75,8 @@ paper_search.py epmc [QUERY]
 
 ## 产物结构与下游交接
 
+DOI、PMID（也可直接写数字）与 PMCID 查询会核对返回标识符；`--id` 仅接受这三类，不能与位置查询同时使用。PMID 检索限定 `SRC:MED`。筛选条件同时适用于主题和 ID 查询，布尔主题会整体括起来再与筛选条件相交；排序使用 Europe PMC 查询词 `sort_cited:y` / `sort_date:y`。`--fetch` 获取候选列表第一篇的 XML/SI，多个候选需先核对并逐篇用 ID 获取。
+
 当指定 `--fetch all` 或 `--fetch suppl` 时，产物目录包含：
 
 ```text

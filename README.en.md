@@ -167,6 +167,7 @@ python tests/sanmu-doc2md/_selftest.py                       # requires doc2md's
 python -m unittest discover -s tests/sanmu-paper-reader -v
 python -m unittest discover -s tests/sanmu-paper-search -v
 python -m unittest discover -s distribution/tests -v
+node --test tests/zcode-paper-search/test_mcp_server.mjs tests/zcode-paper-search/test_panel.mjs
 ```
 
 Packaging, versioning and per-channel publishing are described in the [distribution guide](distribution/README.en.md).

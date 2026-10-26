@@ -124,6 +124,20 @@ class ExaTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertEqual(run["cost_unknown_responses"], 1)
 
+    def test_plain_text_retryable_http_error_preserves_status_and_budget(self):
+        calls = []
+        def opener(request, timeout):
+            calls.append(request)
+            raise HTTPError(request.full_url, 503, "unavailable", {"Retry-After": "0"}, io.BytesIO(b"Service unavailable"))
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "run"
+            code, run = self.invoke(["exa", "q", "--out", str(out)], Client({"EXA_API_KEY": "dummy"}, opener, lambda _: None))
+            self.assertEqual(code, 3)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(run["source_status"]["exa"]["http_status"], 503)
+            self.assertEqual(run["cost_unknown_responses"], 3)
+            self.assertEqual(check_bundle(out)["status"], "success")
+
     def test_malformed_results_and_nonfinite_cost(self):
         bodies = [{"results": {}}, {"results": [None]}, {"results": [{"title": "x"}]},
                   {"results": [], "costDollars": {"total": -1}},

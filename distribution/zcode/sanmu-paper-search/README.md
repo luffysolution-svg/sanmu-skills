@@ -1,6 +1,6 @@
 # 三木文献检索 (sanmu-paper-search) ZCode 插件
 
-在 ZCode 对话侧边栏与 Agent 中使用 **三木文献检索 (`sanmu-paper-search` v1.6.3)**：
+在 ZCode 对话侧边栏与 Agent 中使用 **三木文献检索 (`sanmu-paper-search` v1.6.4)**：
 
 ## 核心特性
 
