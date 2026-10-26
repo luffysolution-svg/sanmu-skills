@@ -42,6 +42,10 @@ COMMON_VENUE_ALIASES = {
     "appl catal b": "Applied Catalysis B: Environmental",
     "appl catal b environ": "Applied Catalysis B: Environmental",
     "applied catalysis b environmental and energy": "Applied Catalysis B: Environmental",
+    "jmst": "Journal of Materials Science & Technology",
+    "j mater sci technol": "Journal of Materials Science & Technology",
+    "journal of material science and technology": "Journal of Materials Science & Technology",
+    "journal of materials science and technology": "Journal of Materials Science & Technology",
     "j mater chem a": "Journal of Materials Chemistry A",
     "chem soc rev": "Chemical Society Reviews",
     "chem rev": "Chemical Reviews",
@@ -70,7 +74,8 @@ def normalize_venue_key(name):
 
 
 def candidate_venue_names(venue_name):
-    raw = str(venue_name or "").strip()
+    import html
+    raw = html.unescape(str(venue_name or "")).strip()
     if not raw:
         return []
     cleaned = re.sub(r"\s*\((?:online|print|electronic|issn[^)]*)\)\s*$", "", raw, flags=re.I)
@@ -89,6 +94,14 @@ def candidate_venue_names(venue_name):
         head_norm = normalize_venue_key(head)
         if head_norm in COMMON_VENUE_ALIASES and COMMON_VENUE_ALIASES[head_norm] not in cands:
             cands.append(COMMON_VENUE_ALIASES[head_norm])
+    if " & " in cleaned:
+        and_variant = cleaned.replace(" & ", " and ")
+        if and_variant not in cands:
+            cands.append(and_variant)
+    elif re.search(r"\band\b", cleaned, flags=re.I):
+        amp_variant = re.sub(r"\s+\band\b\s+", " & ", cleaned, flags=re.I)
+        if amp_variant not in cands:
+            cands.append(amp_variant)
     return cands[:3]
 
 
@@ -422,25 +435,52 @@ def enrich_papers_with_ranks(client, papers, max_lookups=15, use_cache=True, cac
         venue_str = str(journal or p.get("venue") or "").strip()
         if not venue_str:
             continue
+        venue_candidates = [venue_str]
+        for conflict in p.get("conflicts") or []:
+            if isinstance(conflict, dict) and conflict.get("field") in ("journal", "venue"):
+                for alt in conflict.get("values") or []:
+                    if isinstance(alt, dict):
+                        alt = alt.get("name")
+                    alt_str = str(alt or "").strip()
+                    if alt_str and alt_str not in venue_candidates:
+                        venue_candidates.append(alt_str)
+
         norm_key = normalize_venue_key(venue_str)
         if not norm_key:
             continue
 
-        if use_cache and fresh_cache_entry(cache.get(norm_key)):
-            cached_rank = cache[norm_key].get("rank")
-            if cached_rank:
-                p["venue_rank"] = cached_rank
-                enriched_count += 1
-            diagnostics["completed"] += 1
+        hit_cached = False
+        if use_cache:
+            for vc in venue_candidates:
+                vc_key = normalize_venue_key(vc)
+                if vc_key and fresh_cache_entry(cache.get(vc_key)):
+                    cached_rank = cache[vc_key].get("rank")
+                    if cached_rank:
+                        p["venue_rank"] = cached_rank
+                        enriched_count += 1
+                        diagnostics["completed"] += 1
+                        hit_cached = True
+                        break
+            if not hit_cached and all(normalize_venue_key(vc) and fresh_cache_entry(cache.get(normalize_venue_key(vc))) for vc in venue_candidates):
+                diagnostics["completed"] += 1
+                hit_cached = True
+        if hit_cached:
             continue
 
         if not secret_key or lookups_done >= max_lookups:
             diagnostics["truncated"] = True
             continue
         try:
-            lookups_done += 1
-            rank_obj = lookup_venue_rank(client, venue_str, cache=cache, use_cache=use_cache)
-            cache_dirty = True
+            rank_obj = None
+            for vc in venue_candidates:
+                if lookups_done >= max_lookups:
+                    break
+                lookups_done += 1
+                rank_obj = lookup_venue_rank(client, vc, cache=cache, use_cache=use_cache)
+                cache_dirty = True
+                if rank_obj:
+                    cache[norm_key] = {"rank": rank_obj, "updated_at": now()}
+                    break
             diagnostics["completed"] += 1
             if rank_obj:
                 p["venue_rank"] = rank_obj

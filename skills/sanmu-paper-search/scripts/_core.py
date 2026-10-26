@@ -93,7 +93,13 @@ def doi(value):
     if not value:
         return None
     text = unquote(str(value)).strip()
-    text = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", text, flags=re.I).lower().rstrip(".,;:)]>")
+    text = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", text, flags=re.I)
+    m_pub_doi = re.match(r"^https?://[^/\s]+/.+?/doi/(?:(?:abs|abstract|full|pdf|epdf|pdfdirect)/)?(10\.\d{4,9}/\S+)$", text, flags=re.I)
+    if m_pub_doi:
+        text = m_pub_doi.group(1)
+    text = text.lower().rstrip(".,;:)]>")
+    text = re.sub(r"/(?:full|pdf|epdf|pdfdirect|abs|abstract|html|meta|suppl|figures|references|citations)(?:[/?#].*)?$", "", text, flags=re.I)
+    text = re.sub(r"^(10\.1021/[^/\s]+)/\d{5,}$", r"\1", text, flags=re.I)
     return text if re.fullmatch(r"10\.\d{4,9}/\S+", text) else None
 
 
@@ -224,6 +230,8 @@ def _authors_name_aligned(left_name, right_name):
         return True
     if lt[-1] != rt[-1] or lt[0][0] != rt[0][0]:
         return False
+    if "".join(lt[:-1]) == "".join(rt[:-1]):
+        return True
     if len(lt[0]) > 1 and len(rt[0]) > 1 and lt[0] != rt[0]:
         return False
     return True

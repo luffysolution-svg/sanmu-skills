@@ -1,5 +1,7 @@
+import contextlib
 from email.message import Message
 from datetime import datetime, timedelta, timezone
+import io
 from unittest.mock import patch
 import json
 from pathlib import Path
@@ -14,9 +16,16 @@ if str(SCRIPTS) not in sys.path:
 import _ai4scholar
 import _core
 import _easyscholar
+import _exa
 import _providers
 import fetch_pdf
 import paper_search
+
+
+def run_cli(argv, client):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        return paper_search.main(argv, client=client)
 
 
 class FakeResponse:
@@ -73,7 +82,7 @@ class EasyScholarAndAi4ScholarTests(unittest.TestCase):
             }
             client = _providers.Client(env=env, opener=opener, sleep=lambda _: None)
             out_dir = Path(tmp) / "rank-run"
-            code = paper_search.main(["rank", "Angewandte Chemie", "--out", str(out_dir)], client=client)
+            code = run_cli(["rank", "Angewandte Chemie", "--out", str(out_dir)], client=client)
             self.assertEqual(code, 0)
             self.assertEqual(len(calls), 1)
             self.assertIn("secretKey=a7a46efdbc9b4809b02945927ab88dd0", calls[0])
@@ -92,7 +101,7 @@ class EasyScholarAndAi4ScholarTests(unittest.TestCase):
 
             # Second lookup hits persistent cache with 0 network calls
             out_dir2 = Path(tmp) / "rank-run-cached"
-            code2 = paper_search.main(["rank", "Angewandte Chemie", "--out", str(out_dir2)], client=client)
+            code2 = run_cli(["rank", "Angewandte Chemie", "--out", str(out_dir2)], client=client)
             self.assertEqual(code2, 0)
             self.assertEqual(len(calls), 1)
 
@@ -237,7 +246,7 @@ class EasyScholarAndAi4ScholarTests(unittest.TestCase):
 
             # 1. Google Scholar search with non-breaking space publicationInfo
             gs_out = Path(tmp) / "gs"
-            self.assertEqual(paper_search.main(["ai4scholar", "NiO", "--mode", "gs-search", "--out", str(gs_out)], client=client), 0)
+            self.assertEqual(run_cli(["ai4scholar", "NiO", "--mode", "gs-search", "--out", str(gs_out)], client=client), 0)
             gs_papers = json.loads((gs_out / "papers.json").read_text(encoding="utf-8"))
             self.assertEqual(gs_papers[0]["venue"], "Advanced Materials")
             self.assertEqual(gs_papers[0]["authors"][0]["name"], "W Sen")
@@ -246,7 +255,7 @@ class EasyScholarAndAi4ScholarTests(unittest.TestCase):
 
             # 2. Google Patents search
             pat_out = Path(tmp) / "pat"
-            self.assertEqual(paper_search.main(["ai4scholar", "photocatalyst", "--mode", "patents", "--country", "CN", "--out", str(pat_out)], client=client), 0)
+            self.assertEqual(run_cli(["ai4scholar", "photocatalyst", "--mode", "patents", "--country", "CN", "--out", str(pat_out)], client=client), 0)
             pat_papers = json.loads((pat_out / "papers.json").read_text(encoding="utf-8"))
             self.assertEqual(pat_papers[0]["identifiers"]["patent"], ["CN116020450B"])
             self.assertEqual(pat_papers[0]["authors"][0]["affiliations"], ["South China Agricultural University"])
@@ -254,7 +263,7 @@ class EasyScholarAndAi4ScholarTests(unittest.TestCase):
 
             # 3. PubMed search
             pm_out = Path(tmp) / "pm"
-            self.assertEqual(paper_search.main(["ai4scholar", "nanozyme", "--mode", "pubmed-search", "--out", str(pm_out)], client=client), 0)
+            self.assertEqual(run_cli(["ai4scholar", "nanozyme", "--mode", "pubmed-search", "--out", str(pm_out)], client=client), 0)
             pm_papers = json.loads((pm_out / "papers.json").read_text(encoding="utf-8"))
             self.assertEqual(pm_papers[0]["identifiers"]["pmid"], ["39575807"])
             self.assertEqual(pm_papers[0]["venue"], "Nature Catalysis")
@@ -263,14 +272,14 @@ class EasyScholarAndAi4ScholarTests(unittest.TestCase):
 
             # 4. Nano Draw
             draw_out = Path(tmp) / "draw"
-            self.assertEqual(paper_search.main(["ai4scholar", "NiOx schematic", "--mode", "draw", "--draw-action", "smart", "--out", str(draw_out)], client=client), 0)
+            self.assertEqual(run_cli(["ai4scholar", "NiOx schematic", "--mode", "draw", "--draw-action", "smart", "--out", str(draw_out)], client=client), 0)
             self.assertTrue((draw_out / "figure.png").is_file())
             self.assertEqual(_core.check_bundle(draw_out)["status"], "success")
 
             # 5. Auto-Cite SSE
             cite_out = Path(tmp) / "cite"
             long_text = "Single-atom catalysts with frustrated Lewis pairs have attracted wide attention in solar-driven photocatalytic hydrogen evolution reactions over carbon nitride nanosheets."
-            self.assertEqual(paper_search.main(["ai4scholar", long_text, "--mode", "auto-cite", "--out", str(cite_out)], client=client), 0)
+            self.assertEqual(run_cli(["ai4scholar", long_text, "--mode", "auto-cite", "--out", str(cite_out)], client=client), 0)
             self.assertTrue((cite_out / "annotated_text.md").is_file())
             self.assertTrue((cite_out / "references.bib").is_file())
             cite_papers = json.loads((cite_out / "papers.json").read_text(encoding="utf-8"))
@@ -282,6 +291,76 @@ class EasyScholarAndAi4ScholarTests(unittest.TestCase):
         self.assertIn("https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/adma.202313513?download=true", cands)
         sp_cands = fetch_pdf.publisher_pdf_candidates("https://www.nature.com/articles/s41586-024-07487-w")
         self.assertIn("https://www.nature.com/content/pdf/10.1038/s41586-024-07487-w.pdf" if "10.1038" in "s41586" else "https://www.nature.com/articles/s41586-024-07487-w.pdf", sp_cands)
+
+    def test_bugfix_regressions_author_hyphen_doi_suffix_pmcid_and_conflict_rank(self):
+        # 1. Hyphenated Chinese given names fuse across OpenAlex and Semantic Scholar
+        p_oa = _providers.normalize("openalex", {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1002/adma.202313513",
+            "display_name": "Ni/NiOx Photocatalyst",
+            "publication_year": 2024,
+            "primary_location": {"source": {"display_name": "Nano-Structures &amp; Nano-Objects"}},
+            "locations": [{"landing_page_url": "https://www.ncbi.nlm.nih.gov/pmc/articles/11354686", "is_oa": True}],
+            "authorships": [
+                {"author": {"id": "https://openalex.org/A1", "display_name": "Xiaosong Zhou"}, "institutions": [{"display_name": "SCAU", "country_code": "CN"}]},
+                {"author": {"id": "https://openalex.org/A1", "display_name": "Xiaosong Zhou"}, "institutions": [{"display_name": "GDUT", "country_code": "CN"}]},
+                {"author": {"id": "https://openalex.org/A2", "display_name": "Siyuan Yang"}, "institutions": []},
+            ],
+        })
+        self.assertEqual(p_oa["venue"], "Nano-Structures & Nano-Objects")
+        self.assertEqual(p_oa["identifiers"]["pmcid"], ["PMC11354686"])
+        self.assertEqual(len(p_oa["authors"]), 2)
+        self.assertEqual(len(p_oa["authors"][0]["affiliations"]), 2)
+
+        p_s2 = _providers.normalize("semantic-scholar", {
+            "paperId": "s2100",
+            "title": "Ni/NiOx Photocatalyst",
+            "year": 2024,
+            "venue": "Nano-Structures &amp; Nano-Objects",
+            "externalIds": {"DOI": "10.1002/adma.202313513"},
+            "authors": [
+                {"authorId": "9001", "name": "Xiao-Song Zhou"},
+                {"authorId": "9002", "name": "Si-Yuan Yang"},
+            ],
+        })
+        self.assertEqual(p_s2["venue"], "Nano-Structures & Nano-Objects")
+        merged = _core.deduplicate([p_oa, p_s2])[0]
+        self.assertEqual(merged["authors"][0]["identifiers"]["openalex"], ["A1"])
+        self.assertEqual(merged["authors"][0]["identifiers"]["semantic_scholar"], ["9001"])
+        self.assertEqual(merged["authors"][1]["identifiers"]["semantic_scholar"], ["9002"])
+
+        # 2. DOI suffix stripping for ACS /5450803 and /pdf
+        self.assertEqual(_core.doi("https://pubs.acs.org/aaemcq/article-abstract/doi/10.1021/acsaem.6c02744/5450803"), "10.1021/acsaem.6c02744")
+        self.assertEqual(_core.doi("10.1002/adma.202313513/pdf"), "10.1002/adma.202313513")
+        gs_item = _ai4scholar.normalize_gs_item({
+            "title": "CrC/MnCdS Schottky Junction",
+            "link": "https://pubs.acs.org/aaemcq/article-abstract/doi/10.1021/acsaem.6c02744/5450803",
+            "publicationInfo": "Q Guo - ACS Applied Energy Materials, 2026",
+        })
+        self.assertEqual(gs_item["identifiers"]["doi"], ["10.1021/acsaem.6c02744"])
+
+        # 3. Exa venue extraction & Abstract prefix cleanup
+        exa_pubs = _exa.publications([{
+            "id": "exa-1",
+            "title": "Progress on Single-Atom Photocatalysts",
+            "url": "https://doi.org/10.1002/smtd.202300430",
+            "text": "# Progress on Single-Atom Photocatalysts\n\nSmall Methods. Published: 2023-08-31. 25 citations.\n",
+            "entities": [{
+                "id": "exa-1",
+                "type": "publication",
+                "properties": {
+                    "title": "Progress on Single-Atom Photocatalysts",
+                    "year": 2023,
+                    "doi": "10.1002/smtd.202300430",
+                    "abstract": "Abstract Solar energy utilization is important.",
+                },
+            }],
+        }])
+        self.assertEqual(exa_pubs[0]["venue"], "Small Methods")
+        self.assertEqual(exa_pubs[0]["abstract"], "Solar energy utilization is important.")
+
+        # 4. easyScholar JMST alias & conflict venue fallback
+        self.assertIn("Journal of Materials Science & Technology", _easyscholar.candidate_venue_names("Journal of Material Science and Technology"))
 
 
 if __name__ == "__main__":

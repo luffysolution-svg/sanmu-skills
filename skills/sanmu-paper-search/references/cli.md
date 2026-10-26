@@ -91,7 +91,7 @@ python scripts/paper_search.py epmc PMC12710600 --fetch all --out "/path/to/work
 
 ## easyScholar 期刊等级与分区（可选）
 
-配置 `EASYSCHOLAR_SECRET_KEY` 后，可通过 `rank` 子命令查询期刊或会议的中科院升级版分区（含 TOP 标记与小类）、JCR Q1–Q4、SCI 影响因子（含 5 年 IF）、JCI、CCF 推荐等级、EI/CSSCI/北大核心及中科院预警状态，或在 `search` / `lookup` / `related` / `author` / `epmc` / `ai4scholar` 时加 `--with-ranks` 自动写入每篇论文的 `venue_rank` 字段（自带本地缓存复用）。
+配置 `EASYSCHOLAR_SECRET_KEY` 后，可通过 `rank` 子命令查询期刊或会议的中科院升级版分区（含 TOP 标记与小类）、JCR Q1–Q4、SCI 影响因子（含 5 年 IF）、JCI、CCF 推荐等级、EI/CSSCI/北大核心及中科院预警状态，或在 `search` / `lookup` / `related` / `author` / `epmc` / `exa` / `ai4scholar` 时加 `--with-ranks` 自动写入每篇论文的 `venue_rank` 字段（自带本地缓存复用）。
 
 ```bash
 python scripts/paper_search.py rank "Advanced Materials" "ACS Catalysis" --out "/path/to/work/runs/ranks"

@@ -415,4 +415,23 @@ test('graph docked tooltip prevents hover flicker, caches DOM key, and easySchol
   assert.equal(tools(p).at(-1).params.arguments.mode, 'draw');
   assert.equal(tools(p).at(-1).params.arguments.drawAction, 'smart');
   answer(p); await flush();
+
+  // Verify fallback source badge, gs_citations card, and google-scholar author works routing
+  p.renderActiveRun({
+    runId: 'gs-cite-run',
+    run: {
+      source_status: { 'semantic-scholar': { status: 'error', error: 'HTTP 429', fetched: 5, fallback_used: 'openalex' } },
+      gs_citations: { citations: [{ title: 'MLA', snippet: 'Hei, X. Catalysts 2026.' }], links: [{ name: 'BibTeX', link: 'https://scholar.google.com/a.bib' }] },
+      author_candidates: [{ provider: 'google-scholar', author_id: 'GS_AUTH_1', name: 'Bolong Huang', affiliations: ['HKPolyU'] }]
+    },
+    papers: []
+  });
+  assert.match(p.document.getElementById('activeRunHeader').innerHTML, /已由开放引文自动补齐 \(5条\)/);
+  assert.match(p.document.getElementById('activeRunContent').innerHTML, /Google Scholar 标准引用格式/);
+  p.document.querySelector('.fetch-author-works-btn').click();
+  await flush();
+  assert.equal(tools(p).at(-1).params.name, 'search_ai4scholar');
+  assert.equal(tools(p).at(-1).params.arguments.mode, 'gs-author');
+  assert.equal(tools(p).at(-1).params.arguments.id, 'GS_AUTH_1');
+  answer(p); await flush();
 });

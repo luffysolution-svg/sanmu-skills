@@ -863,7 +863,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.6.8</span>
+        <span class="brand-sub">v1.6.9</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -1071,6 +1071,10 @@
                 <div class="field">
                   <label>起始年份 (可选)</label>
                   <input type="number" id="qExtYearFrom" placeholder="如 2021" />
+                </div>
+                <div class="field">
+                  <label>结束年份 (可选)</label>
+                  <input type="number" id="qExtYearTo" placeholder="如 2026" />
                 </div>
                 <div class="field">
                   <label>返回条数上限 (1-20)</label>
@@ -1576,7 +1580,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.6.8" },
+              appInfo: { name: "sanmu-paper-search", version: "1.6.9" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -1986,6 +1990,12 @@
       function normalizeDirectId(raw) {
         let s = String(raw || "").trim().replace(/^doi:\s*/i, "");
         s = s.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "");
+        const pubDoiUrl = s.match(/^https?:\/\/[^/\s]+\/(?:.+?\/)?doi\/(?:(?:abs|abstract|full|pdf|epdf|pdfdirect)\/)?(10\.\d{4,9}\/[^?#\s]+)(?:[?#].*)?$/i);
+        if (pubDoiUrl) {
+          s = pubDoiUrl[1]
+            .replace(/\/(?:full|pdf|epdf|pdfdirect|abs|abstract|html|meta|suppl)(?:\/.*)?$/i, "")
+            .replace(/^(10\.1021\/[^/\s]+)\/\d{5,}$/i, "$1");
+        }
         const arxivUrl = s.match(/^https?:\/\/(?:www\.)?arxiv\.org\/(?:abs|pdf)\/([^?#]+)(?:[?#].*)?$/i);
         if (arxivUrl) s = `arxiv:${arxivUrl[1].replace(/\.pdf$/i, "")}`;
         const pmidUrl = s.match(/^https?:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)\/?(?:[?#].*)?$/i);
@@ -3219,18 +3229,27 @@
           onAction(btn, "click", async (e) => {
             e.stopPropagation();
             const parentKey = btn.dataset.parentKey;
-            const res = await callTool(
-              "search_author",
-              {
-                provider: btn.dataset.prov || "openalex",
-                authorId: btn.dataset.id,
-                query: btn.dataset.name || undefined,
-                limit: 10,
-                preserveActiveRun: true
-              },
-              `正在拉取学者 ${btn.dataset.name || btn.dataset.id} 的代表作...`,
-              btn
-            );
+            const prov = btn.dataset.prov || "openalex";
+            const res =
+              prov === "google-scholar"
+                ? await callTool(
+                    "search_ai4scholar",
+                    { mode: "gs-author", id: btn.dataset.id, limit: 10, preserveActiveRun: true },
+                    `正在拉取 Google Scholar 学者 ${btn.dataset.name || btn.dataset.id} 的代表作...`,
+                    btn
+                  )
+                : await callTool(
+                    "search_author",
+                    {
+                      provider: prov,
+                      authorId: btn.dataset.id,
+                      query: btn.dataset.name || undefined,
+                      limit: 10,
+                      preserveActiveRun: true
+                    },
+                    `正在拉取学者 ${btn.dataset.name || btn.dataset.id} 的代表作...`,
+                    btn
+                  );
             if (parentKey && res?.subRun) {
               state.inlineSubRuns.set(parentKey, {
                 bundle: res.subRun,
@@ -3597,9 +3616,11 @@
               ? rawResults.length
               : authorCandidates.length > 0
                 ? authorCandidates.length
-                : bundle.acquisition
-                  ? 1
-                  : 0;
+                : r.gs_citations?.citations?.length
+                  ? r.gs_citations.citations.length
+                  : bundle.acquisition || r.draw_result || r.auto_cite_result || r.credits_balance
+                    ? 1
+                    : 0;
         document.getElementById("tabCountResults").textContent = String(totalCount);
 
         const srcMap = r.source_status || r.source_statuses || {};
@@ -3610,7 +3631,7 @@
             const isErr = !isPubRestricted && (st.status === "error" || st.status === "not_found");
             const cls = isOk ? "ok" : isPubRestricted ? "info" : isErr ? "err" : "warn";
             const labelSrc = src.replace(/^serper:\d+:page:\d+$/, "Google检索");
-            if (isOk && st.fallback_used) {
+            if (st.fallback_used && (st.fetched || 0) > 0) {
               return `<span class="pill static ok" title="${esc(st.note || JSON.stringify(st))}">${esc(labelSrc)}: 已由开放引文自动补齐 (${esc(st.fetched ?? 0)}条)</span>`;
             }
             if (isPubRestricted) {
@@ -3810,6 +3831,56 @@
                     </div>`
                   : ""
               }
+            </div>
+          `;
+        }
+
+        // 3.7 AI4Scholar Google Scholar Citations (gs-cite) & Credits Balance Card
+        if (r.gs_citations) {
+          const gc = r.gs_citations;
+          const citeItems = Array.isArray(gc.citations) ? gc.citations : [];
+          const citeLinks = Array.isArray(gc.links) ? gc.links : [];
+          bodySections += `
+            <div class="card" style="margin-bottom:8px;">
+              <div class="card-header">
+                <h3 class="card-title">📋 Google Scholar 标准引用格式（共 ${citeItems.length} 种格式）</h3>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:6px;">
+                ${citeItems
+                  .map(
+                    (c, idx) => `
+                  <div style="padding:7px 10px; background:var(--bg-primary); border:1px solid var(--border-primary); border-radius:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                    <div style="font-size:12px; line-height:1.5;">
+                      <strong style="color:var(--accent); margin-right:6px;">[${esc(c.title || `格式 ${idx + 1}`)}]</strong>
+                      <span>${esc(c.snippet || "")}</span>
+                    </div>
+                    <button type="button" class="btn sm gs-copy-cite-btn" data-text="${esc(c.snippet || "")}" style="flex-shrink:0;">📋 复制</button>
+                  </div>`
+                  )
+                  .join("")}
+              </div>
+              ${
+                citeLinks.length
+                  ? `<div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+                      ${citeLinks.map((l) => `<button type="button" class="btn sm ext-url-direct-btn" data-url="${esc(safeWebUrl(l.link))}">🔗 导出 ${esc(l.name || "文件")}</button>`).join("")}
+                    </div>`
+                  : ""
+              }
+            </div>
+          `;
+        }
+
+        if (r.credits_balance) {
+          const cb = r.credits_balance;
+          bodySections += `
+            <div class="card" style="margin-bottom:8px;">
+              <h3 class="card-title" style="margin-bottom:6px;">💰 AI4Scholar 账户积分余额</h3>
+              <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap:6px; font-size:12px;">
+                <div><strong>当前可用总积分：</strong><span class="pill ok static">${esc(cb.total_available ?? 0)}</span></div>
+                <div><strong>永久积分：</strong>${esc(cb.permanent ?? 0)}</div>
+                <div><strong>会员月度剩余：</strong>${esc(cb.member_monthly_remaining ?? 0)}</div>
+                <div><strong>当前 Key 已消耗：</strong>${esc(cb.key_credits_used ?? 0)}</div>
+              </div>
             </div>
           `;
         }
@@ -4056,15 +4127,31 @@
         const rawListEl = contentEl.querySelector("#rawResultsList");
         if (rawListEl) bindRawResultsEvents(rawListEl, rawResults);
 
+        contentEl.querySelectorAll(".gs-copy-cite-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            await copyTextToClipboard(btn.dataset.text || "");
+            showBanner("✅ 已复制该条标准引用格式到剪贴板！", "success");
+          });
+        });
         contentEl.querySelectorAll(".fetch-author-works-btn").forEach((btn) => {
           onAction(btn, "click", async (e) => {
             e.stopPropagation();
-            await callTool(
-              "search_author",
-              { provider: btn.dataset.prov, authorId: btn.dataset.id, limit: 10 },
-              `正在拉取学者 ${btn.dataset.name || btn.dataset.id} 的代表作...`,
-              btn
-            );
+            const prov = btn.dataset.prov || "openalex";
+            if (prov === "google-scholar") {
+              await callTool(
+                "search_ai4scholar",
+                { mode: "gs-author", id: btn.dataset.id, limit: 10 },
+                `正在拉取 Google Scholar 学者 ${btn.dataset.name || btn.dataset.id} 的代表作...`,
+                btn
+              );
+            } else {
+              await callTool(
+                "search_author",
+                { provider: prov, authorId: btn.dataset.id, limit: 10 },
+                `正在拉取学者 ${btn.dataset.name || btn.dataset.id} 的代表作...`,
+                btn
+              );
+            }
           });
         });
 
@@ -5794,12 +5881,16 @@
         if (!query) return showBanner("请输入检索关键词或描述", "error");
         const channel = document.getElementById("qExtChannel").value;
         const yearFrom = readYearInput("qExtYearFrom");
+        const yearTo = document.getElementById("qExtYearTo") ? readYearInput("qExtYearTo") : undefined;
+        if (yearFrom !== undefined && yearTo !== undefined && yearFrom > yearTo) {
+          return showBanner("起始年份不能晚于结束年份。", "error");
+        }
         const limit = readLimitInput("qExtLimit");
 
         if (channel.startsWith("exa:")) {
           await callTool(
             "search_exa",
-            { query, type: "auto", yearFrom, limit },
+            { query, type: "auto", yearFrom, yearTo, limit },
             `正在使用 Exa AI 语义检索「${query}」...`,
             btnExecExtSearch
           );
@@ -5814,6 +5905,7 @@
               mode: ai4sMode,
               query,
               yearFrom,
+              yearTo,
               limit,
               ...(ai4sMode === "patents" ? { country, patentStatus, assignee } : {})
             },
@@ -5824,7 +5916,7 @@
           const serperType = channel.split(":")[1] || "scholar";
           await callTool(
             "search_serper",
-            { query, type: serperType, yearFrom, limit },
+            { query, type: serperType, yearFrom, yearTo, limit },
             `正在通过 Google ${serperType === "patents" ? "Patents 检索专利" : "Scholar 检索学术文献"}「${query}」...`,
             btnExecExtSearch
           );
@@ -5833,6 +5925,7 @@
       });
       bindEnterKey(document.getElementById("qExtQuery"), btnExecExtSearch);
       bindEnterKey(document.getElementById("qExtYearFrom"), btnExecExtSearch);
+      bindEnterKey(document.getElementById("qExtYearTo"), btnExecExtSearch);
 
       // Mode 5: AI4Scholar Scientific Drawing (Nano Draw) & Auto-Cite
       const qStudioToolMode = document.getElementById("qStudioToolMode");

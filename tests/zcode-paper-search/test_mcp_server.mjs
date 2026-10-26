@@ -239,8 +239,52 @@ test("MCP offline regressions", async (t) => {
     assert.equal(result.isError, undefined);
     assert.equal(readFileSync(join(dest, "2025-Same title.pdf"), "utf8"), "existing PDF");
     assert.notEqual(result.structuredContent.lastDownload.pdfPath, join(dest, "2025-Same title.pdf"));
+    assert.equal(result.structuredContent.recentRuns[0].savedPath, result.structuredContent.lastDownload.pdfPath);
+    assert.equal(JSON.parse(readFileSync(join(result.structuredContent.lastDownload.outDir, "acquisition.json"), "utf8")).saved_pdf_path, result.structuredContent.lastDownload.pdfPath);
     assert.equal(JSON.parse(readFileSync(join(data, "state.json"), "utf8")).evidenceMap["doi:10.1234/one"].stage, "read");
     assert.doesNotMatch(result.content[0].text, /核验成功/);
+  });
+
+  await t.test("direct PDF URL detection, machine TDM filtering, DOI suffix stripping and payload compaction", async () => {
+    reset();
+    const richPaper = {
+      ...paper("frontiers", "Frontiers OA Paper"),
+      versions: [{ title: "Duplicate version" }],
+      conflicts: [{ field: "year", values: [2024, 2025] }],
+      authors: [{
+        name: "Alice Lee",
+        affiliations: ["South China Agricultural University (CN)", "College of Materials and Energy South China Agricultural University Guangzhou Guangdong 510643 P. R. China"],
+        raw_affiliation_strings: ["Raw long affiliation string"]
+      }],
+      venue_rank: { if: 15.2, badges: ["IF 15.2"], official_all: { huge: "payload" }, official_select: { huge: "payload" } },
+      oa_locations: [
+        { url: "https://www.frontiersin.org/articles/10.3389/fchem.2022.1048504/pdf", provider: "openalex", is_oa: true, license_status: "open" },
+        { url: "https://www.mdpi.com/1422-0067/25/16/8842/pdf?version=1", provider: "openalex", is_oa: true, license_status: "open" },
+        { url: "https://api.elsevier.com/content/article/PII:S1005030223007259?httpAccept=text/xml", provider: "crossref" }
+      ]
+    };
+    const dir = makeRun("compact-run", [richPaper]);
+    json(join(dir, "results.json"), {
+      type: "scholar",
+      results: [{
+        type: "scholar",
+        data: {
+          title: "ACS Paper",
+          link: "https://pubs.acs.org/aaemcq/article-abstract/doi/10.1021/acsaem.6c02744/5450803",
+          snippet: "Body text\n## References\nRef 1 doi:10.1038/ncomms8938"
+        }
+      }]
+    });
+    const sc = (await call("open_panel", { runId: "compact-run" })).structuredContent;
+    const enriched = sc.activeRun.papers[0];
+    assert.equal(enriched.versions, undefined);
+    assert.equal(enriched.conflicts, undefined);
+    assert.equal(enriched.authors[0].raw_affiliation_strings, undefined);
+    assert.deepEqual(enriched.authors[0].affiliations, ["South China Agricultural University (CN)"]);
+    assert.equal(enriched.venue_rank.official_all, undefined);
+    assert.equal(enriched.candidate_pdf_urls.length, 2);
+    assert.equal(enriched.clickable_links.some((l) => l.url.includes("api.elsevier.com")), false);
+    assert.deepEqual(sc.activeRun.results[0].extracted_dois, ["10.1021/acsaem.6c02744"]);
   });
 
   await t.test("Serper webpage and scholar params reach the Python route and unsupported types are rejected", async () => {

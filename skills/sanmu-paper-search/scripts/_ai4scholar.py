@@ -354,8 +354,10 @@ def normalize_gs_item(item):
         for text_cand in (link, item.get("snippet") or ""):
             m_d = re.search(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", str(text_cand))
             if m_d:
-                raw_doi = m_d.group(0).rstrip(".,;:)]>")
-                break
+                cand_doi = doi(m_d.group(0))
+                if cand_doi:
+                    raw_doi = cand_doi
+                    break
     identifiers = ids(doi=raw_doi)
     oa_locs = [location(pdf_url, "google-scholar", True, None, "gs_pdf_link", None)] if pdf_url else []
     gs_id = str(item.get("id") or link or title)
@@ -854,6 +856,32 @@ def execute(args, client):
                     "email": pr.get("email"),
                     "interests": [i.get("title") if isinstance(i, dict) else str(i) for i in (pr.get("interests") or [])],
                 })
+            if not cands:
+                try:
+                    s2_data, s2_cred = request_ai4scholar(
+                        client,
+                        "GET",
+                        "/graph/v1/author/search",
+                        params={"query": query_text, "limit": min(limit, 50), "fields": S2_AUTHOR_FIELDS + ",hIndex"},
+                    )
+                    track_credits(s2_cred)
+                    for a in s2_data.get("data") or []:
+                        if not isinstance(a, dict) or not a.get("authorId"):
+                            continue
+                        cands.append({
+                            "provider": "semantic-scholar",
+                            "author_id": str(a["authorId"]),
+                            "name": a.get("name") or "",
+                            "affiliations": a.get("affiliations") or [],
+                            "paper_count": a.get("paperCount"),
+                            "works_count": a.get("paperCount"),
+                            "citation_count": a.get("citationCount"),
+                            "cited_by_count": a.get("citationCount"),
+                            "h_index": a.get("hIndex"),
+                            "url": a.get("url") or f"https://www.semanticscholar.org/author/{a['authorId']}",
+                        })
+                except SourceError:
+                    pass
             extra["author_candidates"] = cands
             results_payload = cands
             sources[source_key] = {"status": "ok", "fetched": len(cands), "truncated": bool(data.get("nextPageToken"))}

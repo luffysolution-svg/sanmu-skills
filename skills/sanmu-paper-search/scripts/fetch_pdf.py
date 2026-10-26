@@ -264,7 +264,7 @@ def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_u
     for u in ([url] if url else []) + list(fallback_urls or []):
         if u and u not in candidates:
             candidates.append(u)
-    if resolve_doi and doi:
+    if not candidates and resolve_doi and doi:
         for resolved_u in resolve_doi_pdf_candidates(doi):
             if resolved_u not in candidates:
                 candidates.append(resolved_u)
@@ -281,22 +281,33 @@ def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_u
         tried_urls = []
         pdf = stage / "paper.pdf"
         first_unverified = None
-        for cand in candidates:
-            tried_urls.append(public_url(cand))
-            try:
-                candidate = _download_pdf_bytes(cand, max_bytes=max_bytes)
-                pdf.write_bytes(candidate[0])
-                candidate_identity = identity_check(pdf, doi, title)
-                if candidate_identity["status"] == "needs_review":
-                    if first_unverified is None:
-                        first_unverified = candidate, candidate_identity
+
+        def _try_candidate_list(url_list):
+            nonlocal data, source_used, final_url, content_type, checks, identity, first_unverified, last_error
+            for cand in url_list:
+                tried_urls.append(public_url(cand))
+                try:
+                    candidate = _download_pdf_bytes(cand, max_bytes=max_bytes)
+                    pdf.write_bytes(candidate[0])
+                    candidate_identity = identity_check(pdf, doi, title)
+                    if candidate_identity["status"] == "needs_review":
+                        if first_unverified is None:
+                            first_unverified = candidate, candidate_identity
+                        continue
+                    data, source_used, final_url, content_type, checks = candidate
+                    identity = candidate_identity
+                    return True
+                except (HTTPError, URLError, socket.timeout, TimeoutError, OSError, ValueError) as exc:
+                    last_error = exc
                     continue
-                data, source_used, final_url, content_type, checks = candidate
-                identity = candidate_identity
-                break
-            except (HTTPError, URLError, socket.timeout, TimeoutError, OSError, ValueError) as exc:
-                last_error = exc
-                continue
+            return False
+
+        identity = {"status": "not_checked", "method": "none"}
+        _try_candidate_list(candidates)
+        if data is None and first_unverified is None and resolve_doi and doi:
+            extra_cands = [u for u in resolve_doi_pdf_candidates(doi) if u not in candidates]
+            if extra_cands:
+                _try_candidate_list(extra_cands)
         if data is None and first_unverified is not None:
             candidate, identity = first_unverified
             data, source_used, final_url, content_type, checks = candidate

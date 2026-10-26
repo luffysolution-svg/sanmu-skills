@@ -136,6 +136,23 @@ def post(client, payload):
     raise SourceError("Exa retry budget exhausted", 429)
 
 
+def _extract_venue_from_exa_row(row, props):
+    for key in ("venue", "journal", "publication", "containerTitle"):
+        val = props.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    text = str(row.get("text") or "").strip()
+    if text.startswith("#"):
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if len(lines) >= 2 and lines[0].startswith("#"):
+            m = re.match(r"^([^.#\n]{2,120}?)\.\s+Published:\s+\d{4}", lines[1])
+            if m:
+                cand = m.group(1).strip()
+                if cand and cand.lower() not in ("review", "article", "preprint"):
+                    return cand
+    return None
+
+
 def publications(results):
     papers = []
     normalized_title = lambda value: re.sub(r"[^\w]", "", str(value).casefold())
@@ -155,10 +172,16 @@ def publications(results):
             authors = [{"name": author["name"], "identifiers": {}, "affiliations": []}
                        for author in props.get("authors", []) if isinstance(author, dict) and isinstance(author.get("name"), str)] if isinstance(props.get("authors"), list) else []
             abstract = props.get("abstract") if isinstance(props.get("abstract"), str) else None
+            if abstract:
+                abstract = re.sub(r"^Abstract[:\s]+", "", abstract.strip(), flags=re.I).strip() or None
             paper = record("exa", entity.get("id") or row.get("id") or row["url"], props["title"], year,
                            ids(doi=props.get("doi")), authors, abstract,
                            props.get("type") if isinstance(props.get("type"), str) else None)
             paper.update(url=row["url"], identity_status="discovered", publication_date=props.get("date"))
+            venue = _extract_venue_from_exa_row(row, props)
+            if venue:
+                paper["venue"] = venue
+                paper["journal"] = venue
             for source, target in (("citationCount", "citation_count"), ("referenceCount", "reference_count")):
                 value = props.get(source)
                 if type(value) is int and value >= 0:
@@ -183,6 +206,9 @@ def execute(args, client):
         status = {"status": "error", "error": str(exc), "http_status": exc.status,
                   "fetched": 0, "truncated": True}
     audits = client.raw[start:]
+    if getattr(args, "with_ranks", False) and papers:
+        from _easyscholar import enrich_papers_with_ranks
+        enrich_papers_with_ranks(client, papers, max_lookups=15)
     costs = [cost(row.get("body")) for row in audits]
     extra = {"result_count": len(results), "publication_count": len(papers),
              "unconverted_result_count": len(results) - len(papers),

@@ -43,6 +43,7 @@ paper_search.py exa QUERY
   --include-domain DOMAIN
   --exclude-domain DOMAIN
   --text-chars 0..10000
+  --with-ranks
   --out DIR
 ```
 

@@ -592,11 +592,28 @@ function formatAffiliationItem(aff) {
 
 function normalizeAffiliationsList(affiliations) {
   if (!Array.isArray(affiliations)) return [];
-  return [...new Set(affiliations.map(formatAffiliationItem).filter(Boolean))];
+  const uniqueList = [...new Set(affiliations.map(formatAffiliationItem).filter(Boolean))];
+  if (uniqueList.length <= 1) return uniqueList;
+  const shortInsts = uniqueList
+    .filter((s) => s.length <= 68)
+    .map((s) => s.replace(/\s*\([A-Z]{2}\)\s*$/, "").trim().toLowerCase())
+    .filter((s) => s.length >= 6);
+  if (!shortInsts.length) return uniqueList;
+  return uniqueList.filter((item) => {
+    if (item.length <= 75) return true;
+    const normItem = item.replace(/[\u2010-\u2015]/g, "-").toLowerCase();
+    return !shortInsts.some((inst) => normItem.includes(inst));
+  });
 }
 
 function normalizeDoi(value) {
-  return String(value || "").trim().replace(/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*)/i, "").toLowerCase();
+  return String(value || "")
+    .trim()
+    .replace(/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*)/i, "")
+    .replace(/[.,;:)\]>]+$/, "")
+    .replace(/\/(?:full|pdf|epdf|pdfdirect|abs|abstract|html|meta|suppl|figures|references|citations)(?:[/?#].*)?$/i, "")
+    .replace(/^(10\.1021\/[^/\s]+)\/\d{5,}$/i, "$1")
+    .toLowerCase();
 }
 
 function samePaperIdentity(target, candidate) {
@@ -662,10 +679,24 @@ function pickCompatibleSources(idStr, allowCrossref = false) {
   return allowCrossref ? ["openalex", "semantic-scholar", "crossref"] : ["openalex", "semantic-scholar"];
 }
 
+function isMachineTdmUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") return false;
+  const u = rawUrl.trim().toLowerCase();
+  return (
+    u.includes("api.elsevier.com/content/article/") ||
+    u.includes("api.wiley.com/onlinelibrary/tdm/") ||
+    u.includes("syndication.highwire.org/") ||
+    u.includes("harvest.aps.org/") ||
+    u.includes("httpaccept=text/xml") ||
+    u.includes("httpaccept=text/plain")
+  );
+}
+
 function isLikelyLandingPageUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== "string") return true;
   const u = rawUrl.trim().toLowerCase();
   if (!u.startsWith("https://") && !u.startsWith("http://arxiv.org/")) return true;
+  if (isMachineTdmUrl(u)) return true;
   if (
     /^https?:\/\/(dx\.)?doi\.org\//.test(u) ||
     u.includes("pubmed.ncbi.nlm.nih.gov/") ||
@@ -675,9 +706,7 @@ function isLikelyLandingPageUrl(rawUrl) {
     u.includes("europepmc.org/article/") ||
     u.includes("figshare.com/articles/") ||
     u.includes("hal.science/hal-") && !u.endsWith("/document") && !u.endsWith(".pdf") ||
-    /ncbi\.nlm\.nih\.gov\/pmc\/articles\/pmc\d+\/?$/.test(u) ||
-    u.includes("api.elsevier.com/content/article/") ||
-    u.includes("harvest.aps.org/") ||
+    /ncbi\.nlm\.nih\.gov\/pmc\/articles\/pmc\d+\/?(\?.*)?$/.test(u) ||
     u.includes("link.aps.org/article/") ||
     u.includes("dl.acm.org/doi/10.") && !u.includes("/doi/pdf/")
   ) {
@@ -692,15 +721,13 @@ function isLikelyDirectPdfUrl(rawUrl) {
   const low = u.toLowerCase();
   if (isLikelyLandingPageUrl(u)) return false;
   if (/^https?:\/\/arxiv\.org\/(pdf|abs)\//i.test(u)) return true;
-  if (/\.pdf(\?.*)?$/i.test(low)) return true;
+  if (/\.pdf([?#].*)?$/i.test(low)) return true;
+  if (/\/(?:pdf|epdf|pdfdirect|articlepdf|article-pdf)(?:[/?#]|$)/i.test(low)) return true;
   if (
-    low.includes("/pdf/") ||
-    low.includes("/pdfdirect/") ||
-    low.includes("/articlepdf/") ||
-    low.includes("/article-pdf/") ||
     low.includes("/bitstreams/") ||
     low.includes("delivery.cfm") ||
-    low.includes("blobtype=pdf")
+    low.includes("blobtype=pdf") ||
+    low.includes("pdf=render")
   ) {
     return true;
   }
@@ -787,13 +814,50 @@ function unpackJournalAndTldr(paper) {
   };
 }
 
+function canonicalLinkDedupKey(rawUrl) {
+  const s = String(rawUrl || "").trim();
+  if (!s) return "";
+  const httpsUrl = s.replace(/^http:\/\//i, "https://").replace(/^https:\/\/dx\.doi\.org\//i, "https://doi.org/");
+  const mPmc = httpsUrl.match(/^https:\/\/(?:www\.|pmc\.)?ncbi\.nlm\.nih\.gov\/pmc\/articles\/(?:PMC)?(\d+)\/?(?:\?tool=ebi)?$/i) ||
+               httpsUrl.match(/^https:\/\/europepmc\.org\/articles?\/(?:pmc\/)?(?:PMC)?(\d+)\/?$/i);
+  if (mPmc) return `pmc-page:${mPmc[1]}`;
+  return httpsUrl.replace(/\/+$/, "").toLowerCase();
+}
+
+function describeLocationLinkLabel(url, provider, isPdf, licenseStatus) {
+  const low = String(url || "").toLowerCase();
+  let hostTag = provider || "web";
+  if (low.includes("arxiv.org")) hostTag = "arXiv";
+  else if (low.includes("pmc.ncbi.nlm.nih.gov") || low.includes("ncbi.nlm.nih.gov/pmc")) hostTag = "PMC";
+  else if (low.includes("europepmc.org")) hostTag = "Europe PMC";
+  else if (low.includes("mdpi.com")) hostTag = "MDPI";
+  else if (low.includes("frontiersin.org")) hostTag = "Frontiers";
+  else if (low.includes("nature.com")) hostTag = "Nature";
+  else if (low.includes("springer.com")) hostTag = "Springer";
+  else if (low.includes("wiley.com")) hostTag = "Wiley";
+  else if (low.includes("acs.org")) hostTag = "ACS";
+  else if (low.includes("rsc.org")) hostTag = "RSC";
+  else if (low.includes("sciencedirect.com") || low.includes("elsevier.com")) hostTag = "Elsevier";
+  else if (low.includes("figshare.com")) hostTag = "Figshare";
+  else if (low.includes("zenodo.org")) hostTag = "Zenodo";
+  else if (low.includes("osti.gov")) hostTag = "OSTI";
+  else if (low.includes("hal.science")) hostTag = "HAL";
+  else if (low.includes("doaj.org")) hostTag = "DOAJ";
+
+  if (isPdf) return `OA PDF [${hostTag}]`;
+  if (licenseStatus === "open") return `OA 网页 [${hostTag}]`;
+  return `来源页 [${hostTag}]`;
+}
+
 function buildClickableLinks(paper) {
   const links = [];
   const seen = new Set();
   const add = (label, url, kind, isDirectPdf = false) => {
     if (!url || typeof url !== "string" || !url.startsWith("http")) return;
-    if (seen.has(url)) return;
-    seen.add(url);
+    if (isMachineTdmUrl(url)) return;
+    const dedupKey = canonicalLinkDedupKey(url);
+    if (!dedupKey || seen.has(dedupKey)) return;
+    seen.add(dedupKey);
     links.push({ label, url, kind, isDirectPdf });
   };
 
@@ -812,7 +876,7 @@ function buildClickableLinks(paper) {
     add(`PubMed: ${pmid}`, `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`, "pmid", false);
   }
   for (const pmcid of ids.pmcid || []) {
-    const cleanPmc = String(pmcid).startsWith("PMC") ? pmcid : `PMC${pmcid}`;
+    const cleanPmc = String(pmcid).toUpperCase().startsWith("PMC") ? String(pmcid).toUpperCase() : `PMC${pmcid}`;
     add(`Europe PMC: ${cleanPmc}`, `https://europepmc.org/article/PMC/${cleanPmc.replace(/^PMC/i, "")}`, "pmcid", false);
   }
   for (const arx of ids.arxiv || []) {
@@ -827,14 +891,10 @@ function buildClickableLinks(paper) {
     add("PDF 直链", normalizeDirectPdfUrl(paper.pdfUrl), "pdf", isLikelyDirectPdfUrl(paper.pdfUrl));
   }
   for (const loc of paper?.oa_locations || []) {
-    if (loc?.url) {
+    if (loc?.url && !isMachineTdmUrl(loc.url)) {
       const isPdf = isLikelyDirectPdfUrl(loc.url);
       const normUrl = isPdf ? normalizeDirectPdfUrl(loc.url) : loc.url;
-      const tag = isPdf
-        ? `OA PDF [${loc.provider || "web"}]`
-        : loc.license_status === "open"
-          ? `OA 网页 [${loc.provider || "web"}]`
-          : `来源链接 [${loc.provider || "web"}]`;
+      const tag = describeLocationLinkLabel(normUrl, loc.provider, isPdf, loc.license_status);
       add(tag, normUrl, isPdf ? "pdf" : "oa_page", isPdf);
     }
   }
@@ -1354,6 +1414,12 @@ function normalizeVenueCacheKey(name) {
     .trim();
 }
 
+function compactVenueRank(vr) {
+  if (!vr || typeof vr !== "object") return null;
+  const { official_all, official_select, custom_ranks, ...rest } = vr;
+  return rest;
+}
+
 function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
   const basketKeys = new Set((state.basket || []).map((p) => p.paper_key || computePaperKey(p)));
   const pdfIndex = scanSaveDirPdfIndex();
@@ -1377,6 +1443,7 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
         venueRank = rankCache[vKey].rank;
       }
     }
+    venueRank = compactVenueRank(venueRank);
     const explicitLocalPdf =
       savedEv.pdfPath && existsSync(savedEv.pdfPath)
         ? savedEv.pdfPath
@@ -1397,10 +1464,13 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
     if (p.read === true && stage !== "excluded") {
       stage = "read";
     }
-    const normalizedAuthors = (p.authors || []).map((a) => ({
-      ...a,
-      affiliations: normalizeAffiliationsList(a.affiliations)
-    }));
+    const normalizedAuthors = (p.authors || []).map((a) => {
+      const { raw_affiliation_strings, ...restAuthor } = a || {};
+      return {
+        ...restAuthor,
+        affiliations: normalizeAffiliationsList(a?.affiliations)
+      };
+    });
     const relCorrections = (p.relations || []).filter(
       (r) => r && (r.type === "retraction" || r.type === "correction" || r.type === "is-retracted-by")
     );
@@ -1426,9 +1496,10 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
         }
       : null;
     const candidatePdfUrls = extractDownloadablePdfUrls(p);
+    const { versions, conflicts, ...cleanP } = p;
 
     return {
-      ...p,
+      ...cleanP,
       journal: unpacked.journal,
       venue: unpacked.venue,
       journal_info: unpacked.journal_info,
@@ -1456,8 +1527,9 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
 
 function extractDoisFromText(text) {
   if (!text) return [];
-  const matches = String(text).match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/g) || [];
-  return [...new Set(matches.map((m) => m.replace(/[.,;:)\]]+$/, "").toLowerCase()))];
+  const headText = String(text).split(/\n##\s+References\b/i)[0];
+  const matches = headText.match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/g) || [];
+  return [...new Set(matches.map((m) => normalizeDoi(m)).filter((d) => /^10\.\d{4,9}\/\S+$/.test(d)))];
 }
 
 function parseRawItemToCandidatePaper(flatItem, idx, state) {
@@ -1567,7 +1639,14 @@ function normalizeRawResults(resultsRaw, state) {
           serper_type: item?.type || containerMeta?.type || undefined
         };
 
-    const snippetText = JSON.stringify(flat);
+    const entityDoi = Array.isArray(flat.entities)
+      ? flat.entities.find((e) => e?.type === "publication" && e?.properties?.doi)?.properties?.doi
+      : null;
+    const snippetText = entityDoi
+      ? String(entityDoi)
+      : [flat.url, flat.link, flat.doi, flat.snippet, flat.text ? String(flat.text).split(/\n##\s+References\b/i)[0] : ""]
+          .filter(Boolean)
+          .join(" ");
     const extractedDois = extractDoisFromText(snippetText);
     const enrichedItem = {
       ...flat,
@@ -1627,12 +1706,19 @@ function formatRunHumanSummary(runJson, acqJson, paperCount, resultCount) {
     };
   }
   if (cmd === "epmc") {
-    const kw = typeof q === "string" ? q : q.query || q.id || "检索";
+    const rawKw = typeof q === "string" ? q : q.query || q.id || "检索";
+    const cleanKw = String(rawKw)
+      .replace(/\s+sort_(?:cited|date):y\s*$/i, "")
+      .replace(/^\((.*)\)\s+AND\s+(?:HAS_SUPPL:y|OPEN_ACCESS:y|HAS_DATA:y|SRC:PPR|HAS_FT:y|\(PUB_YEAR:\[\d+\s+TO\s+\d+\]\))(?:\s+AND\s+.*)*$/i, "$1")
+      .replace(/^\((.*)\)$/, "$1")
+      .replace(/^DOI:"(.*)"$/i, "$1")
+      .replace(/^EXT_ID:"(\d+)"\s+AND\s+SRC:MED$/i, "pmid:$1")
+      .trim();
     const fetchMode = runJson?.fetch_mode || q?.fetch || "none";
     const actuallyFetched = Boolean(runJson?.fulltext_xml_fetched || runJson?.supplementary_fetched);
     return {
       modeLabel: "Europe PMC 与全文/SI",
-      title: `Europe PMC：「${kw}」`,
+      title: `Europe PMC：「${cleanKw || rawKw}」`,
       subtitle: `匹配 ${paperCount} 篇文献${actuallyFetched && fetchMode && fetchMode !== "none" ? ` · 已抓包 (${fetchMode})` : ""}`
     };
   }
@@ -1842,7 +1928,16 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
       papers = [...papers, ...enrichedRemoved];
     }
   }
-  const enrichedResults = normalizeRawResults(resultsRaw, state);
+  const sourceStatuses = rawRunJson.source_status || rawRunJson.source_statuses || {};
+  const cmdName = rawRunJson.command || rawRunJson.action || (acquisitionJson ? "fetch_pdf" : "search");
+  const ai4sMode = rawRunJson.ai4scholar_mode || rawRunJson.query?.mode || "";
+  const isWrappedSerperPayload = Boolean(resultsRaw && typeof resultsRaw === "object" && !Array.isArray(resultsRaw) && Array.isArray(resultsRaw.results));
+  const shouldIncludeRawResults =
+    isWrappedSerperPayload ||
+    cmdName === "serper" ||
+    (cmdName === "exa" && (rawRunJson.unconverted_result_count > 0 || papers.length === 0)) ||
+    (cmdName === "ai4scholar" && ai4sMode === "s2-snippets" && papers.length === 0);
+  const enrichedResults = shouldIncludeRawResults ? normalizeRawResults(resultsRaw, state) : [];
 
   const normalizedCandidates = Array.isArray(rawRunJson.author_candidates)
     ? rawRunJson.author_candidates.map((c) => {
@@ -1861,9 +1956,7 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
       })
     : [];
 
-  const sourceStatuses = rawRunJson.source_status || rawRunJson.source_statuses || {};
-  const cmdName = rawRunJson.command || rawRunJson.action || (acquisitionJson ? "fetch_pdf" : "search");
-  const humanSummary = formatRunHumanSummary(rawRunJson, acquisitionJson, papers.length, enrichedResults.length);
+  const humanSummary = formatRunHumanSummary(rawRunJson, acquisitionJson, papers.length, countNormalizedResults(resultsRaw));
 
   const runJson = {
     ...rawRunJson,
@@ -2069,6 +2162,20 @@ function summarizeRunForModel(bundle) {
       "",
       `#### 💰 AI4Scholar 积分余额：可用 **${cb.total_available ?? 0}**（永久积分: ${cb.permanent ?? 0}，会员月度剩余: ${cb.member_monthly_remaining ?? 0}，当前 Key 累计消耗: ${cb.key_credits_used ?? 0}）`
     );
+  }
+  if (r.gs_citations) {
+    const gc = r.gs_citations;
+    if (Array.isArray(gc.citations) && gc.citations.length) {
+      lines.push("", "#### 📋 Google Scholar 标准引用格式：");
+      for (const c of gc.citations) {
+        lines.push(`- **${c.title || "格式"}**：${c.snippet || ""}`);
+      }
+    }
+    if (Array.isArray(gc.links) && gc.links.length) {
+      lines.push(
+        "- **导出链接**：" + gc.links.map((l) => `[${l.name || "Link"}](${l.link})`).join(" | ")
+      );
+    }
   }
   if (bundle.results?.length && (!bundle.papers || bundle.papers.length === 0)) {
     lines.push("", `#### 检索结果条目（共 ${bundle.results.length} 条）：`);
@@ -2641,7 +2748,25 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
     }
   }
 
-  const nodes = [...nodeMap.values()];
+  const activePaperKeys = new Set([
+    ...((activeBundle?.papers || []).map((p) => p.paper_key)),
+    ...((basket || []).map((p) => p.paper_key))
+  ]);
+  const slimGraphPaper = (p) => {
+    if (!p || typeof p !== "object") return p;
+    const { versions, conflicts, provenance, relations, comment_corrections, ...rest } = p;
+    const isAlreadyInActiveOrBasket = activePaperKeys.has(p.paper_key);
+    return {
+      ...rest,
+      ...(isAlreadyInActiveOrBasket && typeof rest.abstract === "string" && rest.abstract.length > 360
+        ? { abstract: rest.abstract.slice(0, 360) + "..." }
+        : {})
+    };
+  };
+  const nodes = [...nodeMap.values()].map((n) => ({
+    ...n,
+    paper: slimGraphPaper(n.paper)
+  }));
   return {
     centerNodeId: centerNodeId || nodes[0]?.id || null,
     nodes,
@@ -2717,6 +2842,30 @@ async function getFullPanelState(activeRunId = null) {
     }
   }
 
+  const slimEvidenceMap = {};
+  for (const [k, ev] of Object.entries(state.evidenceMap || {})) {
+    if (!ev || typeof ev !== "object") continue;
+    const enr = ev.enriched;
+    slimEvidenceMap[k] = {
+      ...(ev.stage ? { stage: ev.stage } : {}),
+      ...(ev.basis ? { basis: ev.basis } : {}),
+      ...(ev.reason ? { reason: ev.reason } : {}),
+      ...(ev.pdfPath ? { pdfPath: ev.pdfPath } : {}),
+      ...(ev.zoteroMatch ? { zoteroMatch: ev.zoteroMatch } : {}),
+      ...(ev.zoteroUndoneKey ? { zoteroUndoneKey: ev.zoteroUndoneKey, zoteroUndoneAt: ev.zoteroUndoneAt } : {}),
+      ...(enr
+        ? {
+            enriched: {
+              ...(enr.abstract ? { abstract: enr.abstract } : {}),
+              ...(enr.journal ? { journal: enr.journal, venue: enr.venue } : {}),
+              ...(enr.tldr ? { tldr: enr.tldr } : {}),
+              ...(enr.pdfUrl ? { pdfUrl: enr.pdfUrl } : {})
+            }
+          }
+        : {})
+    };
+  }
+
   return {
     configStatus: eff.status,
     settings: {
@@ -2727,7 +2876,7 @@ async function getFullPanelState(activeRunId = null) {
     recentRuns,
     runNavHistory: navHistory.slice(-8),
     lastZoteroImport: state.lastZoteroImport || null,
-    evidenceMap: state.evidenceMap || {},
+    evidenceMap: slimEvidenceMap,
     zoteroImports: Object.keys(state.zoteroImports || {}),
     basket: enrichedBasket,
     citationsPreview: generateCitations(enrichedBasket),
@@ -3274,6 +3423,9 @@ const TOOLS = [
       ];
       if (input.yearFrom) args.push("--year-from", String(input.yearFrom));
       if (input.yearTo) args.push("--year-to", String(input.yearTo));
+      if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+        args.push("--with-ranks");
+      }
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Exa search failed");
@@ -3416,8 +3568,9 @@ const TOOLS = [
         const args = [];
         if (cleanUrl) args.push(cleanUrl);
         args.push("--out", outDir);
-        if (cleanDoi) args.push("--doi", cleanDoi);
-        if (!cleanUrl && cleanDoi) args.push("--resolve-doi");
+        if (cleanDoi) {
+          args.push("--doi", cleanDoi, "--resolve-doi");
+        }
         if (input.title) args.push("--title", String(input.title).trim());
         if (Array.isArray(input.fallbackUrls)) {
           for (const fb of input.fallbackUrls) {
@@ -3445,6 +3598,7 @@ const TOOLS = [
         const acq = readJsonSafe(acqPath, {});
         acq.saved_pdf_path = savedPdfPath;
         acq.saved_dir = destDir;
+        writeJsonSafe(acqPath, acq);
 
         const state = loadState();
         const key = input.paperKey || (input.doi ? `doi:${String(input.doi).toLowerCase()}` : null);
@@ -3504,7 +3658,7 @@ const TOOLS = [
       const resolvedRaw = readJsonSafe(join(outDir, "papers.json"), []);
       if (Array.isArray(resolvedRaw) && resolvedRaw.length > 0) {
         for (const rp of resolvedRaw) {
-          const pKey = input.paperKey || rp.paper_key || computePaperKey(rp);
+          const pKey = (resolvedRaw.length === 1 ? input.paperKey : null) || rp.paper_key || computePaperKey(rp);
           if (!pKey) continue;
           const prevEv = state.evidenceMap[pKey] || {};
           const prevEnriched = prevEv.enriched || {};
@@ -4187,7 +4341,12 @@ const TOOLS = [
       const panelState = await getFullPanelState(
         input?.preserveActiveRun || mode === "credits" ? state.lastRunId : runId
       );
-      const bundle = loadRunBundle(runId);
+      let bundle = panelState.activeRun?.runId === runId ? panelState.activeRun : null;
+      if (!bundle) {
+        const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
+        const subProbe = await probeLocalZotero(Array.isArray(subRaw) ? subRaw : []);
+        bundle = loadRunBundle(runId, subProbe.matches);
+      }
       return {
         text: summarizeRunForModel(bundle),
         structured:
@@ -4335,18 +4494,22 @@ const TOOLS = [
       const pyRes = await runPython(PAPER_SEARCH_PY, args, 280000);
       requirePythonBundle(pyRes, outDir, `AI4Scholar ${mode} failed`);
 
-      // Copy generated figure files (PNG, SVG, PDF, PPTX) to user's saveDir
+      // Copy generated figure or auto-cite files (PNG, SVG, PDF, PPTX, MD, BIB) to user's saveDir
       const destDir = resolveTargetSaveDir(input?.saveDir);
       const copiedPaths = {};
       const runJson = readJsonSafe(join(outDir, "run.json"), {});
       const drawRes = runJson?.draw_result || {};
-      const savedMap = drawRes?.savedFiles || {};
+      const savedMap = { ...(drawRes?.savedFiles || {}) };
+      if (mode === "auto-cite") {
+        if (existsSync(join(outDir, "annotated_text.md"))) savedMap.annotated_md = "annotated_text.md";
+        if (existsSync(join(outDir, "references.bib"))) savedMap.bibtex_file = "references.bib";
+      }
       const stem = makeSafeFileStem(new Date().getFullYear(), input?.prompt || mode, runId, runId);
       for (const [k, relName] of Object.entries(savedMap)) {
         const srcPath = join(outDir, relName);
         if (existsSync(srcPath) && statSync(srcPath).isFile()) {
           const ext = extname(relName);
-          const suffix = k === "pdf_file" ? "-vector" : k === "pptx_file" ? "-editable" : "";
+          const suffix = k === "pdf_file" ? "-vector" : k === "pptx_file" ? "-editable" : k === "annotated_md" ? "-autocite" : k === "bibtex_file" ? "-refs" : "";
           const dstPath = uniqueDestination(destDir, `${stem}${suffix}${ext}`, runId);
           copyFileSync(srcPath, dstPath, fsConstants.COPYFILE_EXCL);
           copiedPaths[k] = dstPath;
@@ -4354,11 +4517,33 @@ const TOOLS = [
       }
       if (Object.keys(copiedPaths).length > 0) {
         runJson.exported_save_dir = destDir;
-        runJson.draw_result = {
-          ...drawRes,
-          exportedFiles: copiedPaths
-        };
-        writeJsonSafe(join(outDir, "run.json"), runJson);
+        if (runJson.draw_result) {
+          runJson.draw_result = {
+            ...drawRes,
+            exportedFiles: copiedPaths
+          };
+        }
+        if (runJson.auto_cite_result) {
+          runJson.auto_cite_result = {
+            ...runJson.auto_cite_result,
+            exportedFiles: copiedPaths
+          };
+        }
+        const runPath = join(outDir, "run.json");
+        writeJsonSafe(runPath, runJson);
+        const manifestPath = join(outDir, "manifest.json");
+        if (existsSync(manifestPath)) {
+          try {
+            const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+            const runEntry = manifest?.files?.find((entry) => entry.path === "run.json");
+            if (manifest?.algorithm === "sha256" && runEntry) {
+              const runBytes = readFileSync(runPath);
+              runEntry.sha256 = createHash("sha256").update(runBytes).digest("hex");
+              runEntry.size = runBytes.length;
+              writeJsonSafe(manifestPath, manifest);
+            }
+          } catch {}
+        }
       }
 
       const state = loadState();
@@ -4528,7 +4713,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.6.8"
+          version: "1.6.9"
         }
       }
     };

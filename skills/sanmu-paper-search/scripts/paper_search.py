@@ -78,6 +78,7 @@ def parser():
     cmd.add_argument("--include-domain", action="append", default=[])
     cmd.add_argument("--exclude-domain", action="append", default=[])
     cmd.add_argument("--text-chars", type=int, default=3000)
+    cmd.add_argument("--with-ranks", action="store_true", help="Enrich papers with easyScholar journal ranks when configured")
     cmd.add_argument("--out", required=True)
     cmd = commands.add_parser("epmc", help="Europe PMC search, preprint discovery, and JATS XML / SI bundle fetching")
     cmd.add_argument("query", nargs="?", help="Search query, or DOI/PMID/PMCID for lookup/fetch")
@@ -413,6 +414,11 @@ def execute(args, client):
                 elif not candidates:
                     status["author_mode"] = "papers"
                     status["from_paper"] = args.from_paper
+                    if isinstance(status.get("total"), int):
+                        for cand in extra.get("author_candidates") or []:
+                            if cand.get("provider") == args.provider and cand.get("author_id") == args.author_id:
+                                cand["paper_count"] = status["total"]
+                                cand["works_count"] = status["total"]
             except SourceError as exc:
                 papers = getattr(exc, "papers", [])
                 statuses[args.provider] = _error(exc, len(papers))

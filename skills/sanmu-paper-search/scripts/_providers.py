@@ -159,6 +159,17 @@ class Client:
                 data = {"unparsed_body": body}
             self.raw.append(self.redactor.clean({"provider": source, "url": url, "attempt": attempt + 1,
                                                  "status": status, "body": data, "retrieved_at": now()}))
+            if (status == 429 and source == "semantic-scholar" and not use_ai4s_s2
+                    and self.opener is urlopen and self.env.get("AI4SCHOLAR_API_KEY", "").strip()
+                    and attempt < 2):
+                ai4s_fallback_key = self.env["AI4SCHOLAR_API_KEY"].strip()
+                use_ai4s_s2 = True
+                key = ai4s_fallback_key
+                headers.pop("x-api-key", None)
+                headers["Authorization"] = f"Bearer {ai4s_fallback_key}"
+                base = "https://ai4scholar.net" if path.startswith("/recommendations/") else "https://ai4scholar.net/graph/v1"
+                url = base + path + (("?" + urlencode(params)) if params else "")
+                continue
             if status in (429, 502, 503, 504):
                 backoff = 2 ** attempt + random.uniform(0, 0.25)
                 delay = max(self.retry_after(response_headers), backoff) if status == 429 else backoff
@@ -257,6 +268,7 @@ def normalize(source, data, relation=None):
         all_ids = data.get("ids") or {}
         raw_doi = data.get("doi") or all_ids.get("doi")
         arxiv_cands = []
+        pmcid_cands = [all_ids["pmcid"]] if all_ids.get("pmcid") else []
         if all_ids.get("arxiv"):
             arxiv_cands.append(all_ids.get("arxiv"))
         if raw_doi:
@@ -269,16 +281,40 @@ def normalize(source, data, relation=None):
                     m_loc_arx = re.search(r"arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5}(?:v\d+)?|[a-z-]+/[0-9]{7}(?:v\d+)?)(?:\.pdf)?(?:[?#].*)?$", str(u), re.I)
                     if m_loc_arx:
                         arxiv_cands.append(m_loc_arx.group(1))
+                    m_loc_pmc = re.search(r"(?:ncbi\.nlm\.nih\.gov/pmc/articles/|pmc\.ncbi\.nlm\.nih\.gov/articles/|europepmc\.org/articles?/(?:pmc/)?)(PMC\d+|\d{6,10})(?:[/?#]|$)", str(u), re.I)
+                    if m_loc_pmc and ("pmc" in str(u).lower()):
+                        pmcid_cands.append(m_loc_pmc.group(1))
         identifiers = ids(doi=raw_doi, openalex=data.get("id"),
-                          pmid=all_ids.get("pmid"), pmcid=all_ids.get("pmcid"),
+                          pmid=all_ids.get("pmid"), pmcid=pmcid_cands or None,
                           arxiv=arxiv_cands or None)
         authors = []
+        seen_author_ids = {}
         for entry in data.get("authorships") or []:
             author = entry.get("author") or {}
-            authors.append({"name": author.get("display_name", ""),
-                            "identifiers": ids(openalex=author.get("id"), orcid=author.get("orcid")),
-                            "affiliations": entry.get("institutions") or [],
-                            "raw_affiliation_strings": entry.get("raw_affiliation_strings") or []})
+            a_name = author.get("display_name", "")
+            a_ids = ids(openalex=author.get("id"), orcid=author.get("orcid"))
+            a_insts = entry.get("institutions") or []
+            a_raw_affs = entry.get("raw_affiliation_strings") or []
+            stable_key = (
+                ("oa:" + a_ids["openalex"][0]) if a_ids.get("openalex")
+                else ("orcid:" + a_ids["orcid"][0]) if a_ids.get("orcid")
+                else None
+            )
+            if stable_key and stable_key in seen_author_ids and authors[seen_author_ids[stable_key]]["name"] == a_name:
+                prev = authors[seen_author_ids[stable_key]]
+                for inst in a_insts:
+                    if inst not in prev["affiliations"]:
+                        prev["affiliations"].append(inst)
+                for r_aff in a_raw_affs:
+                    if r_aff not in prev["raw_affiliation_strings"]:
+                        prev["raw_affiliation_strings"].append(r_aff)
+                continue
+            if stable_key:
+                seen_author_ids[stable_key] = len(authors)
+            authors.append({"name": a_name,
+                            "identifiers": a_ids,
+                            "affiliations": list(a_insts),
+                            "raw_affiliation_strings": list(a_raw_affs)})
         abstract = None
         inverted = data.get("abstract_inverted_index")
         if isinstance(inverted, dict):
@@ -305,8 +341,9 @@ def normalize(source, data, relation=None):
             (data.get("host_venue") or {}).get("display_name") if isinstance(data.get("host_venue"), dict) else None
         )
         if oa_venue:
-            p["venue"] = oa_venue
-            p["journal"] = oa_venue
+            clean_oa_venue = html.unescape(str(oa_venue)).strip()
+            p["venue"] = clean_oa_venue
+            p["journal"] = clean_oa_venue
         if isinstance(data.get("cited_by_count"), int):
             p["citation_count"] = data["cited_by_count"]
         if isinstance(data.get("referenced_works_count"), int):
@@ -353,7 +390,13 @@ def normalize(source, data, relation=None):
                               ("citation_count", "citationCount"), ("reference_count", "referenceCount"),
                               ("publication_date", "publicationDate"), ("tldr", "tldr")):
             if remote in data:
-                p[field] = data[remote]
+                val = data[remote]
+                if field in ("venue", "journal"):
+                    if isinstance(val, str):
+                        val = html.unescape(val).strip()
+                    elif isinstance(val, dict) and isinstance(val.get("name"), str):
+                        val = {**val, "name": html.unescape(val["name"]).strip()}
+                p[field] = val
         return p
     titles = data.get("title") or []
     inst_re = re.compile(r"\b(?:university|institute|school of|department of|college of|laboratory|academy of|faculty of|ministry of|center for|centre for|hospital)\b", re.I)
