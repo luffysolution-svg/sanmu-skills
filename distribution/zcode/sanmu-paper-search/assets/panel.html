@@ -509,17 +509,130 @@
       position: absolute;
       left: 12px;
       top: 10px;
-      max-width: 340px;
+      max-width: 390px;
       background: var(--bg-primary);
       border: 1px solid var(--accent);
       border-radius: var(--radius-sm);
-      padding: 6px 9px;
+      padding: 7px 10px;
       font-size: 11.5px;
-      line-height: 1.4;
+      line-height: 1.45;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
-      pointer-events: none;
+      pointer-events: auto;
       z-index: 12;
       transition: opacity 0.15s ease;
+    }
+    .graph-tooltip-title {
+      font-weight: 700;
+      color: var(--accent);
+      cursor: pointer;
+      display: inline;
+    }
+    .graph-tooltip-title:hover {
+      text-decoration: underline;
+    }
+    .timeline-stage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .timeline-stage-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-primary);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius-sm);
+      padding: 7px 9px;
+      font-size: 11.5px;
+    }
+    .timeline-year-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      padding: 10px 10px 6px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-sm);
+      overflow-x: auto;
+      margin-bottom: 10px;
+    }
+    .timeline-year-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 44px;
+      flex: 1;
+      cursor: pointer;
+      padding: 4px 3px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .timeline-year-col:hover {
+      background: var(--accent-soft);
+      border-color: rgba(9, 105, 218, 0.3);
+    }
+    .timeline-year-col.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+    .timeline-bar-track {
+      width: 100%;
+      max-width: 26px;
+      height: 52px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      display: flex;
+      align-items: flex-end;
+      overflow: hidden;
+      margin: 3px 0;
+    }
+    .timeline-bar-fill {
+      width: 100%;
+      background: linear-gradient(180deg, var(--accent) 0%, #8250df 100%);
+      border-radius: 4px 4px 0 0;
+      transition: height 0.25s ease;
+    }
+    .timeline-year-group {
+      position: relative;
+      padding-left: 16px;
+      margin-bottom: 10px;
+      border-left: 2px solid var(--accent);
+    }
+    .timeline-year-group::before {
+      content: "";
+      position: absolute;
+      left: -6px;
+      top: 4px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--bg-primary);
+    }
+    .timeline-paper-row {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-sm);
+      padding: 7px 10px;
+      margin-top: 5px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .timeline-paper-row:hover {
+      border-color: var(--accent);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.06);
+    }
+    .timeline-year-tick {
+      cursor: pointer;
+    }
+    .timeline-year-tick:hover rect {
+      stroke: var(--accent);
+      stroke-width: 1.5;
     }
     .graph-node-g {
       cursor: grab;
@@ -736,7 +849,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.6.6</span>
+        <span class="brand-sub">v1.6.7</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -1031,7 +1144,6 @@
             <div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
               <button class="btn sm primary graph-layout-btn active" data-layout="force">🕸 力导向星系</button>
               <button class="btn sm graph-layout-btn" data-layout="timeline">📅 年份演进时间轴</button>
-              <button class="btn sm" id="btnReheatGraph" title="重新激发物理弹簧仿真，让节点自由舒展流动">🌊 激发流动</button>
               <button class="btn sm" id="btnResetGraphZoom" title="解锁固定节点并平滑居中适配视野">🎯 居中复位</button>
             </div>
           </div>
@@ -1061,9 +1173,10 @@
             <span><i class="legend-dot" style="background:#1a7f37;"></i>➡ 施引文献 (最新)</span>
             <span><i class="legend-dot" style="background:#d29922;"></i>✨ 相似推荐</span>
             <span><i class="legend-dot" style="background:#57606a;"></i>🔍 检索/收藏文献</span>
-            <span>⭕ 金圈 = 📚 Zotero已收录 | ⭐ = 收藏篮 | 拖拽节点牵引邻居自由流动 · 悬停高亮关联网络 · 双击解锁/锁定节点</span>
+            <span>⭕ 金圈 = 📚 Zotero已收录 | ⭐ = 收藏篮 | 单击节点选中 · 点击浮窗或下方卡片查看详情 · 双击节点锁定/解锁</span>
           </div>
         </div>
+        <div id="graphTimelineChronicle" class="hidden" style="margin-top:8px;"></div>
         <div id="graphSelectedNodeCard" style="margin-top:8px;"></div>
       </div>
 
@@ -1179,6 +1292,8 @@
         graphLayout: "force",
         graphSelectedNodeId: null,
         graphZoom: { k: 1, x: 0, y: 0 },
+        timelineYearFilter: null,
+        timelineSortOrder: "asc",
         busy: false
       };
 
@@ -1318,7 +1433,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.6.6" },
+              appInfo: { name: "sanmu-paper-search", version: "1.6.7" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -1418,12 +1533,88 @@
         });
       }
 
-      async function copyTextToClipboard(text) {
-        if (!navigator.clipboard?.writeText) throw new Error("当前环境不支持剪贴板，请手动选择并复制文本。");
+      function legacyExecCopy(text) {
         try {
-          await navigator.clipboard.writeText(text);
+          const ta = document.createElement("textarea");
+          ta.value = String(text ?? "");
+          ta.style.position = "fixed";
+          ta.style.top = "0";
+          ta.style.left = "0";
+          ta.style.width = "1px";
+          ta.style.height = "1px";
+          ta.style.padding = "0";
+          ta.style.border = "none";
+          ta.style.outline = "none";
+          ta.style.boxShadow = "none";
+          ta.style.background = "transparent";
+          ta.style.opacity = "0.01";
+          ta.style.zIndex = "-1";
+          document.body.appendChild(ta);
+          ta.focus({ preventScroll: true });
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          return Boolean(ok);
         } catch {
-          throw new Error("复制失败，请检查剪贴板权限或手动选择文本复制。");
+          return false;
+        }
+      }
+
+      function selectElementContents(el) {
+        if (!el) return false;
+        try {
+          const sel = window.getSelection();
+          if (!sel) return false;
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      async function copyTextToClipboard(text, sourceEl = null) {
+        const cleanText = String(text ?? "");
+        if (!cleanText.trim()) {
+          throw new Error("没有可复制的文本内容。");
+        }
+        // 1. Synchronous execCommand("copy") during user gesture (works in sandboxed iframes without clipboard-write policy)
+        let copied = legacyExecCopy(cleanText);
+        if (!copied && sourceEl) {
+          if (selectElementContents(sourceEl)) {
+            try {
+              copied = Boolean(document.execCommand("copy"));
+            } catch {}
+          }
+        }
+        // 2. Async Clipboard API if available
+        if (!copied && navigator.clipboard?.writeText) {
+          try {
+            await navigator.clipboard.writeText(cleanText);
+            copied = true;
+          } catch {}
+        }
+        // 3. Native host OS clipboard fallback via MCP server (clip.exe / pbcopy / xclip)
+        try {
+          await ensureInitialized();
+          const rpcRes = await sendRpcRequest(
+            "tools/call",
+            { name: "copy_clipboard", arguments: { text: cleanText } },
+            5000
+          );
+          if (!rpcRes?.isError && rpcRes?.structuredContent?.copied) {
+            copied = true;
+          }
+        } catch {}
+
+        if (sourceEl) {
+          selectElementContents(sourceEl);
+        }
+        if (!copied) {
+          throw new Error("已为您自动全选文本，请直接按 Ctrl+C (或 Cmd+C) 复制。");
         }
       }
 
@@ -1570,6 +1761,17 @@
       });
 
       function openDetailView(kindLabel, title, bodyHtml, afterMount) {
+        const backBtn = document.getElementById("btnBackToList");
+        if (backBtn) {
+          const backLabels = {
+            graph: "← 返回关系图谱",
+            basket: "← 返回收藏篮",
+            runs: "← 返回搜索历史",
+            search: "← 返回检索发现",
+            results: "← 返回结果列表"
+          };
+          backBtn.textContent = backLabels[state.activeTab] || "← 返回结果列表";
+        }
         document.getElementById("detailKindBadge").textContent = kindLabel;
         document.getElementById("detailTitle").textContent = title || "详细信息";
         const bodyEl = document.getElementById("detailBody");
@@ -1790,7 +1992,7 @@
               <div><strong>期刊/来源：</strong>${esc(journalStr || "未标注")}</div>
               <div><strong>被引次数：</strong><span class="pill info static">${esc(paper.citation_count ?? "未统计")}</span></div>
               <div><strong>参考文献数：</strong><span class="pill static">${esc(paper.reference_count ?? "未统计")}</span></div>
-              <div><strong>DOI：</strong>${doi ? `<code>${esc(doi)}</code>` : "无"}</div>
+              <div><strong>DOI：</strong>${doi ? `<code>${esc(doi)}</code> <button class="btn sm" id="drwCopyDoiBtn" style="padding:1px 6px; font-size:10.5px;">📋 复制</button>` : "无"}</div>
               <div><strong>Zotero本地库：</strong>${zMatch?.matched ? `<span class="pill ok static">📚 已收录 (${esc(zMatch.itemKey)})${esc(zColBadge)}</span>` : `<span class="pill static">未收录</span>`}</div>
             </div>
           </div>
@@ -1802,6 +2004,7 @@
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:6px; padding-top:8px; border-top:1px dashed var(--border-primary);">
               <button class="btn sm ${paper.in_basket ? "success" : "primary"}" id="drwToggleBasket">${paper.in_basket ? "⭐ 已在收藏篮 (点击移出)" : "⭐ 加入收藏篮"}</button>
+              <button class="btn sm" id="drwCopySingleCite" title="复制该篇文献的 GB/T 7714 标准参考文献格式">📋 复制单篇引用</button>
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success" id="drwOpenZoteroItem">📖 在 Zotero 桌面端定位打开 (${esc(zMatch.itemKey)})</button>
@@ -2012,22 +2215,43 @@
               }
             });
           });
+          onAction(container.querySelector("#drwCopyDoiBtn"), "click", async () => {
+            if (!doi) return;
+            await copyTextToClipboard(doi);
+            showBanner(`✅ 已复制 DOI：${doi}`, "success");
+          });
+          onAction(container.querySelector("#drwCopySingleCite"), "click", async () => {
+            const authorsList = (paper.authors || []).map((a) => a.name).filter(Boolean);
+            const gbtAuthors =
+              authorsList.length > 3 ? `${authorsList.slice(0, 3).join(", ")}, 等` : authorsList.join(", ") || "佚名";
+            const citeStr = `[1] ${gbtAuthors}. ${paper.title || "Untitled"}[J]. ${journalStr || "Academic Venue"}${paper.year ? `, ${paper.year}` : ""}${doi ? `. DOI:${doi}` : ""}.`;
+            await copyTextToClipboard(citeStr);
+            showBanner("✅ 已复制该文献的 GB/T 7714 引用格式！", "success");
+          });
           onAction(container.querySelector("#drwResolveOa"), "click", async (e) => {
             if (!seedId) return;
-            closeDetailView();
-            switchTab("results");
-            await callTool(
+            const res = await callTool(
               "resolve_oa_and_pdf",
-              { action: "resolve_oa", inputIdOrRun: seedId, unpaywall: "auto" },
-              "正在深度定位 OA 开放获取全文链接...",
+              { action: "resolve_oa", inputIdOrRun: seedId, paperKey: paper.paper_key, unpaywall: "auto", preserveActiveRun: true },
+              "正在深度定位 OA 开放获取全文链接 (+Unpaywall)...",
               e.currentTarget
             );
+            const updated = findUpdatedPaper(paper.paper_key, res?.subRun?.papers?.[0] || paper);
+            const oaCount = updated?.oa_locations?.length || 0;
+            const pdfCount = updated?.candidate_pdf_urls?.length || 0;
+            showBanner(
+              pdfCount > 0
+                ? `✅ 已定位到 ${pdfCount} 个免费 OA PDF 直链，可直接点击下载！`
+                : oaCount > 0
+                  ? `已核查到 ${oaCount} 个来源链接（未发现免登录直接 PDF 流，可点击浏览器打开）。`
+                  : "未在公开 OA 源与 Unpaywall 中检索到免费全文副本。",
+              pdfCount > 0 ? "success" : "info"
+            );
+            inspectPaper(updated);
           });
           onAction(container.querySelector("#drwFetchEpmcAll"), "click", async (e) => {
             const saveDir = getChosenSaveDir();
             const epmcId = pmcid || doi || paper.identifiers?.pmid?.[0] || "";
-            closeDetailView();
-            switchTab("results");
             const res = await callTool(
               "search_epmc",
               {
@@ -2035,17 +2259,23 @@
                 query: epmcId ? undefined : paper.title,
                 fetchMode: "suppl",
                 limit: 5,
-                saveDir
+                saveDir,
+                preserveActiveRun: true
               },
-              `正在从 Europe PMC 下载并解压 SI 补充材料包至 ${saveDir} ...`,
+              `正在从 Europe PMC 检索并下载 SI 补充材料包至 ${saveDir} ...`,
               e.currentTarget
             );
             if (res?.exportedSaveDir) {
               showBanner(
-                `✅ EPMC SI 补充材料包已保存至：${res.exportedSaveDir}`,
+                `✅ EPMC SI 补充材料包已解压保存至：${res.exportedSaveDir}`,
                 "success",
                 res.exportedSaveDir,
                 "📂 打开文件夹"
+              );
+            } else {
+              showBanner(
+                "Europe PMC 暂未收录该论文的独立 SI 补充材料压缩包（仅开放获取 PMC 归档文章提供直下 SI），请点击上方「🔗 DOI / 原文」在出版商页面下载。",
+                "warn"
               );
             }
           });
@@ -2126,13 +2356,17 @@
             });
             onAction(container.querySelector("#rawToggleBasket"), "click", async () => {
               if (!candPaper) return;
-              await callTool("manage_basket", {
+              const res = await callTool("manage_basket", {
                 action: inBasket ? "remove" : "add",
                 paper: candPaper,
                 paperKey: candPaper.paper_key
               });
               showBanner(inBasket ? "已从收藏篮移出" : "⭐ 已加入收藏篮！", "success");
-              closeDetailView();
+              const updatedRaw = (res?.activeRun?.results || []).find((r) => r.index === item.index) || {
+                ...item,
+                candidate_paper: { ...candPaper, in_basket: !inBasket }
+              };
+              inspectRawResultItem(updatedRaw);
             });
             onAction(container.querySelector("#rawDownloadPdf"), "click", async (e) => {
               const saveDir = getChosenSaveDir();
@@ -2453,13 +2687,13 @@
             ${tldrStr ? `<div class="snippet-box expanded" style="border-left:3px solid var(--accent); margin-bottom:4px;">💡 <strong>智能要点 (TLDR):</strong> ${esc(tldrStr)}</div>` : ""}
             ${
               p.abstract
-                ? `<div class="snippet-wrap" onclick="event.stopPropagation();">
+                ? `<div class="snippet-wrap">
                     <div class="snippet-box ${isAbsExpanded ? "expanded" : ""}" id="abs-box-${esc(p.paper_key)}">📖 <strong>摘要:</strong> ${esc(p.abstract)}</div>
                     ${hasLongAbstract ? `<span class="abs-toggle-link" data-abs-key="${esc(p.paper_key)}">${isAbsExpanded ? "▴ 收起摘要" : "▾ 展开完整摘要"}</span>` : ""}
                   </div>`
-                : `<div class="snippet-wrap" style="font-size:11.5px; color:var(--text-tertiary); margin:4px 0;" onclick="event.stopPropagation();">
+                : `<div class="snippet-wrap" style="font-size:11.5px; color:var(--text-tertiary); margin:4px 0;">
                     <span>当前源未含摘要文本</span>
-                    <button class="btn sm enrich-abs-btn exec-btn" data-paper-key="${esc(p.paper_key)}" style="margin-left:6px; padding:1px 7px;">🔎 一键跨源补全摘要</button>
+                    <button class="btn sm enrich-abs-btn exec-btn" data-paper-key="${esc(p.paper_key)}" onclick="event.stopPropagation();" style="margin-left:6px; padding:1px 7px;">🔎 一键跨源补全摘要</button>
                   </div>`
             }
             <div class="action-bar" onclick="event.stopPropagation();">
@@ -3656,30 +3890,208 @@
 
       function computeTimelineTargets(nodes) {
         const validYear = (year) => Number.isInteger(Number(year)) && Number(year) >= 1000 && Number(year) <= 9999;
-        const validYears = nodes.map((n) => n.year).filter(validYear).map(Number);
-        const minY = validYears.length ? Math.min(...validYears) : 2018;
-        const maxY = validYears.length ? Math.max(...validYears) : 2026;
-        const span = maxY - minY;
         const byYearBuckets = new Map();
+        const unknownGroup = [];
         nodes.forEach((n) => {
-          const yr = validYear(n.year) ? Number(n.year) : Math.round((minY + maxY) / 2);
-          if (!byYearBuckets.has(yr)) byYearBuckets.set(yr, []);
-          byYearBuckets.get(yr).push(n);
+          if (validYear(n.year)) {
+            const yr = Number(n.year);
+            if (!byYearBuckets.has(yr)) byYearBuckets.set(yr, []);
+            byYearBuckets.get(yr).push(n);
+          } else {
+            unknownGroup.push(n);
+          }
         });
-        for (const [yr, group] of byYearBuckets.entries()) {
-          const t = span === 0 ? 0.5 : (yr - minY) / span;
-          const xPos = 82 + t * (GRAPH_W - 164);
-          group.forEach((n, idx) => {
-            n.targetX = xPos + (group.length > 1 ? (idx % 2 === 0 ? -14 : 14) : 0);
-            const total = group.length;
-            n.targetY = total === 1 ? GRAPH_CY : 62 + (idx / Math.max(1, total - 1)) * (GRAPH_H - 128);
+
+        const sortedYears = [...byYearBuckets.keys()].sort((a, b) => a - b);
+        const minY = sortedYears.length ? sortedYears[0] : 2020;
+        const maxY = sortedYears.length ? sortedYears[sortedYears.length - 1] : 2026;
+        const yearSpan = Math.max(1, maxY - minY);
+
+        const rawBuckets = sortedYears.map((yr) => ({
+          key: String(yr),
+          year: yr,
+          label: String(yr),
+          nodes: byYearBuckets.get(yr) || []
+        }));
+        if (unknownGroup.length > 0) {
+          rawBuckets.push({
+            key: "unknown",
+            year: null,
+            label: "未知",
+            nodes: unknownGroup
           });
         }
+
+        const K = rawBuckets.length;
+        const leftPad = 82;
+        const rightPad = 52;
+        const usableW = GRAPH_W - leftPad - rightPad;
+
+        const xPositions = rawBuckets.map((b, idx) => {
+          if (K === 1) return GRAPH_CX;
+          const evenT = idx / Math.max(1, K - 1);
+          const linearT = b.year !== null && sortedYears.length > 1 ? (b.year - minY) / yearSpan : evenT;
+          const blendedT = 0.72 * evenT + 0.28 * linearT;
+          return leftPad + blendedT * usableW;
+        });
+
+        // Enforce minimum horizontal separation between adjacent year columns
+        if (K > 1) {
+          const minGap = Math.min(54, usableW / (K - 1));
+          for (let i = 1; i < K; i++) {
+            if (xPositions[i] - xPositions[i - 1] < minGap) {
+              xPositions[i] = xPositions[i - 1] + minGap;
+            }
+          }
+          const overflow = xPositions[K - 1] - (GRAPH_W - rightPad);
+          if (overflow > 0) {
+            for (let i = K - 1; i >= 0; i--) {
+              xPositions[i] -= overflow * (i / Math.max(1, K - 1));
+            }
+          }
+        }
+
+        const topY = 64;
+        const bottomY = GRAPH_H - 64;
+        const timelineColumns = [];
+
+        rawBuckets.forEach((b, colIdx) => {
+          const xPos = xPositions[colIdx] ?? GRAPH_CX;
+          const sortedGroup = b.nodes.slice().sort((a, c) => {
+            if (a.role === "seed" && c.role !== "seed") return -1;
+            if (c.role === "seed" && a.role !== "seed") return 1;
+            return Number(c.citationCount || 0) - Number(a.citationCount || 0);
+          });
+          const total = sortedGroup.length;
+          const totalCitations = sortedGroup.reduce((acc, item) => acc + Number(item.citationCount || 0), 0);
+
+          sortedGroup.forEach((n, idx) => {
+            const staggerX = total >= 5 ? (idx % 2 === 0 ? -11 : 11) : total >= 3 ? (idx % 2 === 0 ? -6 : 6) : 0;
+            n.targetX = xPos + staggerX;
+            n.targetY =
+              total === 1
+                ? GRAPH_CY - 8
+                : topY + (idx / Math.max(1, total - 1)) * (bottomY - topY);
+            n.timelineYearKey = b.key;
+          });
+
+          timelineColumns.push({
+            key: b.key,
+            year: b.year,
+            label: b.label,
+            x: xPos,
+            count: total,
+            totalCitations,
+            nodes: sortedGroup
+          });
+        });
+
+        graphSim.timelineColumns = timelineColumns;
+      }
+
+      function buildTimelineSvgGuides() {
+        if (state.graphLayout !== "timeline") return "";
+        const cols = graphSim.timelineColumns || [];
+        if (!cols.length) return "";
+        const bandW = cols.length > 1
+          ? Math.max(28, Math.min(64, ((GRAPH_W - 134) / cols.length) * 0.82))
+          : 76;
+
+        const swimlanesHtml = cols
+          .map((col, idx) => {
+            const isFilteredYear = state.timelineYearFilter && state.timelineYearFilter === col.key;
+            const bandFill = isFilteredYear
+              ? "rgba(9, 105, 218, 0.12)"
+              : idx % 2 === 0
+                ? "rgba(110, 119, 129, 0.045)"
+                : "transparent";
+            const bandStroke = isFilteredYear ? "var(--accent)" : "transparent";
+            const pillFill = isFilteredYear ? "var(--accent)" : "var(--bg-secondary)";
+            const pillTextFill = isFilteredYear ? "#ffffff" : "var(--text-primary)";
+            const pillStroke = isFilteredYear ? "var(--accent)" : "var(--border-primary)";
+            return `
+              <g class="timeline-year-tick" data-year-key="${esc(col.key)}">
+                <rect x="${(col.x - bandW / 2).toFixed(1)}" y="34" width="${bandW.toFixed(1)}" height="${GRAPH_H - 72}" rx="6" fill="${bandFill}" stroke="${bandStroke}" stroke-width="1" />
+                <line x1="${col.x.toFixed(1)}" y1="44" x2="${col.x.toFixed(1)}" y2="${GRAPH_H - 38}" stroke="var(--border-primary)" stroke-width="1" stroke-dasharray="3,4" />
+                <rect x="${(col.x - 18).toFixed(1)}" y="18" width="36" height="16" rx="8" fill="var(--bg-primary)" stroke="var(--border-primary)" stroke-width="1" />
+                <text x="${col.x.toFixed(1)}" y="29" text-anchor="middle" font-size="9.5" font-weight="600" fill="var(--text-secondary)">${col.count}篇</text>
+                <circle cx="${col.x.toFixed(1)}" cy="${GRAPH_H - 38}" r="3.5" fill="var(--accent)" />
+                <rect x="${(col.x - 21).toFixed(1)}" y="${GRAPH_H - 31}" width="42" height="19" rx="5" fill="${pillFill}" stroke="${pillStroke}" stroke-width="1" />
+                <text x="${col.x.toFixed(1)}" y="${GRAPH_H - 18}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${pillTextFill}">${esc(col.label)}</text>
+              </g>
+            `;
+          })
+          .join("");
+
+        return `
+          <g class="timeline-guides">
+            <text x="14" y="48" font-size="9.5" font-weight="600" fill="var(--text-tertiary)">⬆ 高被引</text>
+            <line x1="32" y1="56" x2="32" y2="${GRAPH_H - 58}" stroke="var(--border-primary)" stroke-width="1" stroke-dasharray="2,3" />
+            <text x="14" y="${GRAPH_H - 46}" font-size="9.5" fill="var(--text-tertiary)">⬇ 常规</text>
+            <line x1="54" y1="${GRAPH_H - 38}" x2="${GRAPH_W - 24}" y2="${GRAPH_H - 38}" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arrowCites)" />
+            ${swimlanesHtml}
+          </g>
+        `;
+      }
+
+      function inspectGraphNodePaper(node) {
+        if (!node) return;
+        const rawP = node.paper || {};
+        const pKey = rawP.paper_key || node.paperKey || node.id;
+        const latestP = findUpdatedPaper(pKey, rawP) || { ...rawP, paper_key: pKey };
+        inspectPaper({ ...latestP, paper_key: latestP.paper_key || pKey });
+      }
+
+      function renderGraphFloatingBar() {
+        const tooltipEl = document.getElementById("graphHoverTooltip");
+        if (!tooltipEl) return;
+        const activeId = graphSim.hoveredNodeId || state.graphSelectedNodeId;
+        const n = activeId ? graphSim.nodeById.get(activeId) : null;
+        if (!n || !n.paper) {
+          tooltipEl.classList.add("hidden");
+          return;
+        }
+        const p = findUpdatedPaper(n.paper.paper_key || n.paperKey || n.id, n.paper) || n.paper;
+        const deg = graphSim.neighborsById.get(n.id)?.size || 0;
+        const isHovered = Boolean(graphSim.hoveredNodeId);
+        const roleTagMap = {
+          seed: "🎯 中心种子",
+          reference: "⬅ 参考文献",
+          citation: "➡ 施引文献",
+          recommendation: "✨ 相似推荐",
+          basket: "⭐ 收藏文献",
+          search_hit: "🔍 检索文献"
+        };
+        tooltipEl.innerHTML = `
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:10.5px; color:var(--text-tertiary); margin-bottom:2px;">
+                <span style="font-weight:600; color:var(--accent);">${esc(roleTagMap[n.role] || "图谱节点")}</span>
+                · ${isHovered ? "悬停预览（单击节点可固定选中）" : "当前选中节点（点击标题或右侧按钮看详情）"}
+              </div>
+              <div class="graph-tooltip-title" id="graphTooltipTitleLink" title="点击打开该文献完整详情">${esc(p.title || n.title)}</div>
+            </div>
+            <button type="button" class="btn sm primary" id="btnGraphTooltipInspect" style="padding:2px 8px; font-size:11px; flex-shrink:0;">📄 查看详情 ➔</button>
+          </div>
+          <div style="color:var(--text-secondary); margin-top:3px; font-size:11px;">
+            👤 ${esc(n.firstAuthor)} · 📅 ${esc(n.year || "未知")} · 🔥 被引 ${esc(n.citationCount)} · 🕸 关联 ${deg}
+            ${n.inZotero ? " · 📚 Zotero已存" : ""}
+            ${n.inBasket ? " · ⭐ 已收藏" : ""}
+          </div>
+        `;
+        tooltipEl.classList.remove("hidden");
+        const openDetailHandler = (e) => {
+          e.stopPropagation();
+          inspectGraphNodePaper(n);
+        };
+        tooltipEl.querySelector("#graphTooltipTitleLink")?.addEventListener("click", openDetailHandler);
+        tooltipEl.querySelector("#btnGraphTooltipInspect")?.addEventListener("click", openDetailHandler);
       }
 
       function updateGraphVisualHighlights() {
         const focusId = graphSim.hoveredNodeId || state.graphSelectedNodeId;
         const focusNeighbors = graphSim.hoveredNodeId ? graphSim.neighborsById.get(graphSim.hoveredNodeId) || new Set() : null;
+        const yearFilter = state.graphLayout === "timeline" ? state.timelineYearFilter : null;
 
         for (const n of graphSim.nodes) {
           const gEl = graphSim.nodeElMap.get(n.id);
@@ -3692,10 +4104,13 @@
           const isSelected = n.id === state.graphSelectedNodeId;
           const isHovered = n.id === graphSim.hoveredNodeId;
           const isNeighborOfHover = focusNeighbors ? focusNeighbors.has(n.id) : false;
+          const matchesYearFilter = !yearFilter || n.timelineYearKey === yearFilter;
 
           let opacity = 1;
           if (graphSim.hoveredNodeId && !isHovered && !isNeighborOfHover) {
             opacity = 0.22;
+          } else if (yearFilter && !matchesYearFilter && !isSelected) {
+            opacity = 0.25;
           }
           gEl.style.opacity = String(opacity);
 
@@ -3727,6 +4142,8 @@
           let opacity = isConnectedToFocus ? 0.95 : 0.48;
           if (graphSim.hoveredNodeId && !isConnectedToHover) {
             opacity = 0.12;
+          } else if (yearFilter && e.source?.timelineYearKey !== yearFilter && e.target?.timelineYearKey !== yearFilter) {
+            opacity = 0.14;
           }
           lineEl.style.opacity = String(opacity);
 
@@ -3742,6 +4159,8 @@
           lineEl.setAttribute("stroke-width", isConnectedToFocus ? "2.3" : "1.3");
           lineEl.classList.toggle("active-flow", Boolean(isConnectedToFocus && e.type === "cites"));
         }
+
+        renderGraphFloatingBar();
       }
 
       function syncGraphDomPositions() {
@@ -3788,22 +4207,23 @@
         const alpha = graphSim.alpha;
 
         if (state.graphLayout === "timeline") {
-          // Spring attraction toward timeline column + collision repulsion
+          // Spring attraction toward timeline column + clean vertical spacing within each swimlane
           for (let i = 0; i < nodes.length; i++) {
             const a = nodes[i];
             if (a.fx == null) {
-              a.vx += ((a.targetX ?? GRAPH_CX) - a.x) * 0.12 * Math.max(0.25, alpha);
-              a.vy += ((a.targetY ?? GRAPH_CY) - a.y) * 0.12 * Math.max(0.25, alpha);
+              a.vx += ((a.targetX ?? GRAPH_CX) - a.x) * 0.24 * Math.max(0.3, alpha);
+              a.vy += ((a.targetY ?? GRAPH_CY) - a.y) * 0.16 * Math.max(0.3, alpha);
             }
             for (let j = i + 1; j < nodes.length; j++) {
               const b = nodes[j];
               const dx = b.x - a.x;
               const dy = b.y - a.y;
               const dist = Math.hypot(dx, dy) || 0.5;
-              const minDist = a.r + b.r + 18;
+              const minDist = a.r + b.r + 16;
               if (dist < minDist) {
-                const push = ((minDist - dist) / dist) * 0.35 * Math.max(0.25, alpha);
-                const px = dx * push;
+                const push = ((minDist - dist) / dist) * 0.32 * Math.max(0.25, alpha);
+                const sameCol = a.timelineYearKey === b.timelineYearKey;
+                const px = dx * push * (sameCol ? 0.35 : 0.15);
                 const py = dy * push;
                 if (a.fx == null) { a.vx -= px; a.vy -= py; }
                 if (b.fx == null) { b.vx += px; b.vy += py; }
@@ -3925,7 +4345,6 @@
         graphSim.draggingNode = null;
         graphSim.hoveredNodeId = null;
         graphSim.alphaTarget = 0;
-        document.getElementById("graphHoverTooltip")?.classList.add("hidden");
       }
 
       function startGraphPhysics(reheatAlpha = 0.85) {
@@ -3953,11 +4372,230 @@
         state.inlineSubRuns.clear();
       });
 
+      function renderTimelineChronicle() {
+        const chronEl = document.getElementById("graphTimelineChronicle");
+        if (!chronEl) return;
+        const cols = graphSim.timelineColumns || [];
+        if (state.graphLayout !== "timeline" || !cols.length) {
+          chronEl.classList.add("hidden");
+          chronEl.innerHTML = "";
+          return;
+        }
+        chronEl.classList.remove("hidden");
+
+        const validCols = cols.filter((c) => c.year !== null);
+        const maxColCount = Math.max(1, ...cols.map((c) => c.count));
+
+        // 1. Build 1-3 Evolutionary Stages
+        let stagesHtml = "";
+        if (validCols.length >= 2) {
+          const stageDefs = [];
+          if (validCols.length === 2) {
+            stageDefs.push(
+              { icon: "🌱", name: "早期奠基与溯源", slice: [validCols[0]], color: "#0969da" },
+              { icon: "🔥", name: "最新前沿跟进", slice: [validCols[1]], color: "#1a7f37" }
+            );
+          } else {
+            const p1 = Math.max(1, Math.floor(validCols.length / 3));
+            const p2 = Math.max(p1 + 1, Math.floor((validCols.length * 2) / 3));
+            stageDefs.push(
+              { icon: "🌱", name: "早期奠基与溯源", slice: validCols.slice(0, p1), color: "#0969da" },
+              { icon: "🚀", name: "快速演进发展期", slice: validCols.slice(p1, p2), color: "#8250df" },
+              { icon: "🔥", name: "最新前沿与爆发", slice: validCols.slice(p2), color: "#1a7f37" }
+            );
+          }
+
+          stagesHtml = `
+            <div class="timeline-stage-grid">
+              ${stageDefs
+                .map((st) => {
+                  const stageNodes = st.slice.flatMap((c) => c.nodes);
+                  const yStart = st.slice[0].year;
+                  const yEnd = st.slice[st.slice.length - 1].year;
+                  const spanStr = yStart === yEnd ? `${yStart} 年` : `${yStart}–${yEnd} 年`;
+                  const topNode = stageNodes
+                    .slice()
+                    .sort((a, b) => Number(b.citationCount || 0) - Number(a.citationCount || 0))[0];
+                  return `
+                    <div class="timeline-stage-box" style="border-left-color:${st.color};">
+                      <div style="display:flex; justify-content:space-between; align-items:center; gap:4px; margin-bottom:3px;">
+                        <strong style="color:${st.color};">${st.icon} ${esc(st.name)}</strong>
+                        <span class="pill static">${esc(spanStr)} · ${stageNodes.length}篇</span>
+                      </div>
+                      ${
+                        topNode
+                          ? `<div style="color:var(--text-secondary); font-size:11px; line-height:1.4;">
+                              代表作: <span class="graph-tooltip-title stage-rep-link" data-node-id="${esc(topNode.id)}" title="点击查看该阶段高被引代表作详情">${esc((topNode.title || "").slice(0, 48))}${(topNode.title || "").length > 48 ? "..." : ""}</span>
+                              <span style="color:var(--text-tertiary);">(${esc(topNode.year || "")} · 🔥被引 ${esc(topNode.citationCount)})</span>
+                            </div>`
+                          : ""
+                      }
+                    </div>
+                  `;
+                })
+                .join("")}
+            </div>
+          `;
+        }
+
+        // 2. Interactive Year Distribution Bar Strip
+        const barsHtml = cols
+          .map((col) => {
+            const pct = Math.max(16, Math.round((col.count / maxColCount) * 100));
+            const isAct = state.timelineYearFilter === col.key;
+            return `
+              <div class="timeline-year-col ${isAct ? "active" : ""}" data-year-key="${esc(col.key)}" title="点击筛选 ${esc(col.label)} 年的 ${col.count} 篇文献（总被引 ${col.totalCitations}）">
+                <span style="font-size:10.5px; font-weight:600; color:var(--accent);">${col.count}篇</span>
+                <div class="timeline-bar-track">
+                  <div class="timeline-bar-fill" style="height:${pct}%;"></div>
+                </div>
+                <span style="font-size:11px; font-weight:700; color:var(--text-primary);">${esc(col.label)}</span>
+                <span style="font-size:10px; color:var(--text-tertiary);">🔥${col.totalCitations}</span>
+              </div>
+            `;
+          })
+          .join("");
+
+        // 3. Chronological Year-by-Year Paper List
+        const orderedCols = cols
+          .filter((c) => !state.timelineYearFilter || c.key === state.timelineYearFilter)
+          .slice();
+        if (state.timelineSortOrder === "desc") {
+          orderedCols.reverse();
+        }
+
+        const chronicleGroupsHtml = orderedCols
+          .map((col) => {
+            const rowsHtml = col.nodes
+              .map((n) => {
+                const isSel = n.id === state.graphSelectedNodeId;
+                const dotColor = roleColor(n.role);
+                return `
+                  <div class="timeline-paper-row" data-node-id="${esc(n.id)}" style="${isSel ? "border-color:var(--accent); background:var(--accent-soft);" : ""}">
+                    <div style="flex:1; min-width:0;">
+                      <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                        <i class="legend-dot" style="background:${dotColor}; flex-shrink:0;"></i>
+                        <strong style="color:var(--accent); font-size:12.5px;">${esc(n.title)}</strong>
+                      </div>
+                      <div style="font-size:11px; color:var(--text-secondary); margin-top:2px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                        <span>👤 ${esc(n.firstAuthor)}</span>
+                        ${n.journal ? `<span>📘 ${esc(n.journal)}</span>` : ""}
+                        <span class="pill static">🔥 被引 ${esc(n.citationCount)}</span>
+                        ${n.inZotero ? `<span class="pill ok static">📚 Zotero已存</span>` : ""}
+                        ${n.inBasket ? `<span class="pill ok static">⭐ 已收藏</span>` : ""}
+                        ${n.hasPdf ? `<span class="pill ok static">✅ 已存PDF</span>` : ""}
+                      </div>
+                    </div>
+                    <button type="button" class="btn sm primary timeline-inspect-btn" data-node-id="${esc(n.id)}" style="flex-shrink:0;">📄 详情 ➔</button>
+                  </div>
+                `;
+              })
+              .join("");
+
+            return `
+              <div class="timeline-year-group">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                  <div>
+                    <strong style="font-size:13px; color:var(--text-primary);">📅 ${esc(col.label)} 年</strong>
+                    <span class="pill info static" style="margin-left:5px;">${col.count} 篇文献 · 累计被引 ${col.totalCitations}</span>
+                  </div>
+                </div>
+                ${rowsHtml}
+              </div>
+            `;
+          })
+          .join("");
+
+        chronEl.innerHTML = `
+          <div class="card">
+            <div class="card-header" style="margin-bottom:8px;">
+              <div>
+                <h3 class="card-title">📅 文献年份演进脉络与阶段里程碑</h3>
+                <div style="font-size:11.5px; color:var(--text-secondary); margin-top:2px;">
+                  点击柱状年份可筛选对应泳道；点击任意文献条目或「📄 详情」直接查看完整题录与摘要
+                </div>
+              </div>
+              <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                ${
+                  state.timelineYearFilter
+                    ? `<button type="button" class="btn sm primary" id="btnClearTimelineFilter">🔄 显示全部年份 (${graphSim.nodes.length}篇)</button>`
+                    : ""
+                }
+                <button type="button" class="btn sm" id="btnToggleTimelineSort">
+                  ${state.timelineSortOrder === "asc" ? "⏳ 演进正序 (早→晚)" : "🕒 最新优先 (晚→早)"}
+                </button>
+              </div>
+            </div>
+            ${stagesHtml}
+            <div class="timeline-year-bars">${barsHtml}</div>
+            <div style="max-height:360px; overflow-y:auto; padding-right:2px;">
+              ${chronicleGroupsHtml}
+            </div>
+          </div>
+        `;
+
+        chronEl.querySelector("#btnClearTimelineFilter")?.addEventListener("click", () => {
+          state.timelineYearFilter = null;
+          renderRelationshipGraph(state.panelData);
+        });
+        chronEl.querySelector("#btnToggleTimelineSort")?.addEventListener("click", () => {
+          state.timelineSortOrder = state.timelineSortOrder === "asc" ? "desc" : "asc";
+          renderTimelineChronicle();
+        });
+        chronEl.querySelectorAll(".timeline-year-col").forEach((colEl) => {
+          colEl.addEventListener("click", () => {
+            const yk = colEl.dataset.yearKey;
+            state.timelineYearFilter = state.timelineYearFilter === yk ? null : yk;
+            const colObj = (graphSim.timelineColumns || []).find((c) => c.key === yk);
+            if (colObj?.nodes?.[0]) {
+              state.graphSelectedNodeId = colObj.nodes[0].id;
+            }
+            renderRelationshipGraph(state.panelData);
+          });
+        });
+        chronEl.querySelectorAll(".stage-rep-link").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const n = graphSim.nodeById.get(el.dataset.nodeId);
+            if (n) {
+              state.graphSelectedNodeId = n.id;
+              inspectGraphNodePaper(n);
+            }
+          });
+        });
+        chronEl.querySelectorAll(".timeline-paper-row").forEach((rowEl) => {
+          rowEl.addEventListener("click", () => {
+            const n = graphSim.nodeById.get(rowEl.dataset.nodeId);
+            if (!n) return;
+            state.graphSelectedNodeId = n.id;
+            updateGraphVisualHighlights();
+            renderSelectedGraphNodeCard(n);
+            inspectGraphNodePaper(n);
+          });
+        });
+        chronEl.querySelectorAll(".timeline-inspect-btn").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const n = graphSim.nodeById.get(btn.dataset.nodeId);
+            if (n) {
+              state.graphSelectedNodeId = n.id;
+              inspectGraphNodePaper(n);
+            }
+          });
+        });
+      }
+
       function renderSelectedGraphNodeCard(node) {
         const selCardEl = document.getElementById("graphSelectedNodeCard");
         if (!selCardEl || !node?.paper) return;
-        const p = node.paper;
+        const rawKey = node.paper.paper_key || node.paperKey || node.id;
+        const p = {
+          ...(findUpdatedPaper(rawKey, node.paper) || node.paper),
+          paper_key: rawKey
+        };
+        node.paper = p;
         const seedId = node.seedId || p.resolvable_seed_id || p.identifiers?.doi?.[0] || "";
+        const inActiveRunList = (state.panelData?.activeRun?.papers || []).some((ap) => ap.paper_key === p.paper_key);
         const roleLabels = {
           seed: "🎯 中心种子文献",
           reference: "⬅ 参考文献 (向前溯源)",
@@ -3971,19 +4609,40 @@
             <div class="card-header" style="margin-bottom:6px;">
               <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                 <span class="pill purple static">${esc(roleLabels[node.role] || "图谱节点")}</span>
-                <span style="font-size:11.5px; color:var(--text-secondary);">点击下方卡片可看完整详情；点击右侧按钮可将新发现的引文直接融入当前星系图谱</span>
+                <span style="font-size:11.5px; color:var(--text-secondary);">点击「📄 查看文献详情」或下方卡片任意区域打开详情</span>
               </div>
               <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                <button type="button" class="btn sm primary" id="btnGraphNodeOpenDetail">📄 查看文献详情 ➔</button>
+                ${inActiveRunList ? `<button type="button" class="btn sm" id="btnGraphNodeLocateInResults" title="切换到检索结果列表并高亮定位该文献">🔍 在结果列表中定位</button>` : ""}
                 ${seedId ? `
-                  <button class="btn sm primary graph-expand-btn exec-btn" data-id="${esc(seedId)}" data-rel="references">⬅ 融入它的参考文献</button>
-                  <button class="btn sm primary graph-expand-btn exec-btn" data-id="${esc(seedId)}" data-rel="citations">➡ 融入它的施引文献</button>
+                  <button class="btn sm graph-expand-btn exec-btn" data-id="${esc(seedId)}" data-rel="references">⬅ 融入参考文献</button>
+                  <button class="btn sm graph-expand-btn exec-btn" data-id="${esc(seedId)}" data-rel="citations">➡ 融入施引文献</button>
                   <button class="btn sm graph-expand-btn exec-btn" data-id="${esc(seedId)}" data-rel="recommendations">✨ 融入相似论文</button>
                 ` : ""}
               </div>
             </div>
-            <div id="graphNodeCardMount">${renderPaperCardHtml(p, true)}</div>
+            <div id="graphNodeCardMount">${renderPaperCardHtml(p, false)}</div>
           </div>
         `;
+        selCardEl.querySelector("#btnGraphNodeOpenDetail")?.addEventListener("click", () => {
+          inspectPaper(p);
+        });
+        selCardEl.querySelector("#btnGraphNodeLocateInResults")?.addEventListener("click", () => {
+          state.resultFilter = "all";
+          state.resultKeyword = "";
+          switchTab("results");
+          renderActiveRun(state.panelData?.activeRun);
+          setTimeout(() => {
+            const targetCard = document.querySelector(`#mainPapersList .paper-card[data-paper-key="${CSS.escape(p.paper_key)}"]`);
+            if (targetCard) {
+              targetCard.scrollIntoView({ behavior: "smooth", block: "center" });
+              targetCard.style.boxShadow = "0 0 0 3px var(--accent)";
+              setTimeout(() => {
+                targetCard.style.boxShadow = "";
+              }, 2200);
+            }
+          }, 60);
+        });
         bindPaperListEvents(selCardEl.querySelector("#graphNodeCardMount"), [p]);
         selCardEl.querySelectorAll(".graph-expand-btn").forEach((btn) => {
           onAction(btn, "click", async () => {
@@ -4021,6 +4680,7 @@
         if (incomingNodes.length === 0) {
           graphSim.nodes = [];
           graphSim.edges = [];
+          graphSim.timelineColumns = [];
           graphSim.nodeById.clear();
           graphSim.neighborsById.clear();
           graphSim.nodeElMap.clear();
@@ -4032,6 +4692,8 @@
           svg.onpointerdown = null;
           svg.innerHTML = `<text x="360" y="215" text-anchor="middle" fill="var(--text-secondary)" font-size="13">暂无可绘制的文献节点，请先执行一次文献检索或引文网络追踪。</text>`;
           if (selCardEl) selCardEl.innerHTML = "";
+          tooltipEl?.classList.add("hidden");
+          document.getElementById("graphTimelineChronicle")?.classList.add("hidden");
           return;
         }
 
@@ -4115,14 +4777,7 @@
         graphSim.edgeElMap.clear();
 
         // Build persistent SVG DOM once per structural update
-        const timelineGridHtml =
-          state.graphLayout === "timeline"
-            ? `<g class="timeline-guides">
-                 <line x1="60" y1="${GRAPH_H - 22}" x2="${GRAPH_W - 60}" y2="${GRAPH_H - 22}" stroke="var(--border-primary)" stroke-width="1.5" />
-                 <text x="65" y="${GRAPH_H - 7}" font-size="10.5" fill="var(--text-tertiary)">⬅ 早期基础文献 (References)</text>
-                 <text x="${GRAPH_W - 65}" y="${GRAPH_H - 7}" text-anchor="end" font-size="10.5" fill="var(--text-tertiary)">最新跟进演进 (Citations) ➡</text>
-               </g>`
-            : "";
+        const timelineGridHtml = buildTimelineSvgGuides();
 
         const edgesDomHtml = nextEdges
           .map((e) => {
@@ -4163,6 +4818,18 @@
         `;
 
         graphSim.viewportEl = svg.querySelector("#graphViewport");
+        svg.querySelectorAll(".timeline-year-tick").forEach((tickEl) => {
+          tickEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const yk = tickEl.dataset.yearKey;
+            state.timelineYearFilter = state.timelineYearFilter === yk ? null : yk;
+            const colObj = (graphSim.timelineColumns || []).find((c) => c.key === yk);
+            if (colObj?.nodes?.[0]) {
+              state.graphSelectedNodeId = colObj.nodes[0].id;
+            }
+            renderRelationshipGraph(state.panelData);
+          });
+        });
         svg.querySelectorAll(".graph-edge-line").forEach((el) => {
           graphSim.edgeElMap.set(el.dataset.edgeId, el);
         });
@@ -4170,23 +4837,11 @@
           const nid = gEl.dataset.nodeId;
           graphSim.nodeElMap.set(nid, gEl);
 
-          // Hover Spotlight & Floating Tooltip
+          // Hover Spotlight & Floating Bar
           gEl.addEventListener("pointerenter", () => {
             if (graphSim.draggingNode) return;
             graphSim.hoveredNodeId = nid;
             updateGraphVisualHighlights();
-            const n = graphSim.nodeById.get(nid);
-            if (n && tooltipEl) {
-              const deg = (graphSim.neighborsById.get(nid)?.size || 0);
-              tooltipEl.innerHTML = `
-                <div style="font-weight:700; color:var(--accent); margin-bottom:2px;">${esc(n.title)}</div>
-                <div style="color:var(--text-secondary);">
-                  👤 ${esc(n.firstAuthor)} · 📅 ${esc(n.year || "未知")} · 🔥 被引 ${esc(n.citationCount)} · 🕸 关联度 ${deg}
-                  ${n.inZotero ? " · 📚 Zotero已存" : ""}
-                </div>
-              `;
-              tooltipEl.classList.remove("hidden");
-            }
           });
 
           gEl.addEventListener("pointerleave", () => {
@@ -4194,7 +4849,6 @@
             if (graphSim.hoveredNodeId === nid) {
               graphSim.hoveredNodeId = null;
               updateGraphVisualHighlights();
-              tooltipEl?.classList.add("hidden");
             }
           });
 
@@ -4326,6 +4980,7 @@
 
         updateGraphVisualHighlights();
         syncGraphDomPositions();
+        renderTimelineChronicle();
         renderSelectedGraphNodeCard(nextNodeById.get(state.graphSelectedNodeId));
         startGraphPhysics(addedNewNodes ? 0.92 : 0.45);
       }
@@ -4340,18 +4995,20 @@
 
       function resetAndCenterGraph() {
         state.graphZoom = { k: 1, x: 0, y: 0 };
+        state.timelineYearFilter = null;
         for (const n of graphSim.nodes) {
           n.pinned = false;
           n.fx = null;
           n.fy = null;
         }
-        updateGraphVisualHighlights();
+        renderRelationshipGraph(state.panelData);
         startGraphPhysics(0.88);
       }
 
       document.querySelectorAll(".graph-layout-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           state.graphLayout = btn.dataset.layout;
+          state.timelineYearFilter = null;
           document.querySelectorAll(".graph-layout-btn").forEach((b) => {
             b.classList.toggle("active", b === btn);
             b.classList.toggle("primary", b === btn);
@@ -4371,16 +5028,6 @@
           renderRelationshipGraph(state.panelData);
           startGraphPhysics(0.65);
         });
-      });
-
-      document.getElementById("btnReheatGraph")?.addEventListener("click", () => {
-        for (const n of graphSim.nodes) {
-          if (!n.pinned) {
-            n.vx += (Math.random() - 0.5) * 6;
-            n.vy += (Math.random() - 0.5) * 6;
-          }
-        }
-        startGraphPhysics(0.95);
       });
 
       document.getElementById("btnResetGraphZoom")?.addEventListener("click", resetAndCenterGraph);
@@ -4792,10 +5439,22 @@
         });
       });
 
-      onAction(document.getElementById("btnCopyCitation"), "click", async () => {
-        const text = document.getElementById("citationPreviewBox").textContent || "";
-        await copyTextToClipboard(text);
-        showBanner(`✅ 已复制 ${state.citeFormat.toUpperCase()} 格式参考文献！`, "success");
+      onAction(document.getElementById("btnCopyCitation"), "click", async (e) => {
+        const previewEl = document.getElementById("citationPreviewBox");
+        const rawText = state.panelData?.citationsPreview?.[state.citeFormat] || "";
+        if (!rawText.trim()) {
+          return showBanner("收藏篮为空，请先在检索结果中点击「⭐ 收藏」添加文献后再复制参考文献。", "warn");
+        }
+        const btn = e.currentTarget;
+        await copyTextToClipboard(rawText, previewEl);
+        if (btn) {
+          const orig = btn.innerHTML;
+          btn.innerHTML = "✅ 已复制！";
+          setTimeout(() => {
+            btn.innerHTML = orig;
+          }, 1800);
+        }
+        showBanner(`✅ 已复制 ${state.citeFormat.toUpperCase()} 格式参考文献到剪贴板！`, "success");
       });
 
       onAction(document.getElementById("btnBatchSaveBasketToZotero"), "click", async (e) => {

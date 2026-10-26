@@ -1455,8 +1455,6 @@ function parseRawItemToCandidatePaper(flatItem, idx, state) {
     authors,
     identifiers,
     citation_count: flatItem.citedBy ?? null,
-    abstract: flatItem.snippet || flatItem.text || "",
-    abstract_available: Boolean(flatItem.snippet || flatItem.text),
     url: flatItem.link || flatItem.url || "",
     pdfUrl: flatItem.pdfUrl || null,
     oa_locations: oaLocations,
@@ -1987,6 +1985,43 @@ function openZoteroUriInSystem(uri) {
   }
 }
 
+function copyTextToSystemClipboard(rawText) {
+  const text = String(rawText ?? "");
+  if (!text) return false;
+  try {
+    if (process.platform === "win32") {
+      const utf16Bom = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+      const res = spawnSync("clip.exe", [], {
+        input: utf16Bom,
+        windowsHide: true,
+        timeout: 4000
+      });
+      if (res.status === 0) return true;
+    } else if (process.platform === "darwin") {
+      const res = spawnSync("pbcopy", [], {
+        input: Buffer.from(text, "utf8"),
+        timeout: 4000
+      });
+      if (res.status === 0) return true;
+    } else {
+      for (const [cmd, args] of [
+        ["wl-copy", []],
+        ["xclip", ["-selection", "clipboard"]],
+        ["xsel", ["--clipboard", "--input"]]
+      ]) {
+        const res = spawnSync(cmd, args, {
+          input: Buffer.from(text, "utf8"),
+          timeout: 4000
+        });
+        if (res.status === 0) return true;
+      }
+    }
+  } catch {
+    // Ignore clipboard helper errors
+  }
+  return false;
+}
+
 async function enrichPaperAbstractAndMetadata(paper) {
   const seedId = paper?.resolvable_seed_id || paper?.identifiers?.doi?.[0] || "";
   const titleQuery = String(paper?.title || "").trim();
@@ -2196,6 +2231,7 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
     const firstAuthor = paper.authors?.[0]?.name || "Unknown";
     const shortAuthor = firstAuthor.split(/\s+/).pop() || firstAuthor.slice(0, 8);
     const shortLabel = `${shortAuthor}${paper.year ? ` (${paper.year})` : ""}`;
+    const normalizedPaper = { ...paper, paper_key: rawKey };
 
     if (nodeMap.has(existingId)) {
       const existing = nodeMap.get(existingId);
@@ -2203,11 +2239,52 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
         existing.role = role;
         existing.priority = priority;
       }
-      if (!existing.paper?.abstract && paper.abstract) existing.paper = paper;
-      if (paper.in_basket) existing.inBasket = true;
-      if (paper.zotero_match?.matched) existing.inZotero = true;
-      if (paper.local_pdf_path) existing.hasPdf = true;
-      registerAliases(existingId, paper);
+      const existingIsStub =
+        !existing.paper?.title ||
+        String(existing.paper.title).startsWith("种子文献 (") ||
+        existing.firstAuthor === "Seed Paper" ||
+        existing.firstAuthor === "Unknown";
+      const incomingIsReal =
+        Boolean(normalizedPaper.title && !String(normalizedPaper.title).startsWith("种子文献 ("));
+
+      if (existingIsStub && incomingIsReal) {
+        existing.title = normalizedPaper.title;
+        existing.shortLabel = shortLabel;
+        existing.year = normalizedPaper.year || existing.year;
+        existing.journal = normalizedPaper.journal || normalizedPaper.venue || existing.journal;
+        existing.firstAuthor = firstAuthor;
+        existing.citationCount = normalizedPaper.citation_count ?? existing.citationCount;
+        existing.paper = {
+          ...existing.paper,
+          ...normalizedPaper,
+          in_basket: Boolean(existing.inBasket || normalizedPaper.in_basket),
+          zotero_match: normalizedPaper.zotero_match || existing.paper?.zotero_match || null,
+          local_pdf_path: normalizedPaper.local_pdf_path || existing.paper?.local_pdf_path || null
+        };
+      } else {
+        existing.paper = {
+          ...normalizedPaper,
+          ...existing.paper,
+          paper_key: existing.paper?.paper_key || rawKey,
+          abstract: existing.paper?.abstract || normalizedPaper.abstract || null,
+          abstract_available: Boolean(existing.paper?.abstract || normalizedPaper.abstract),
+          tldr: existing.paper?.tldr || normalizedPaper.tldr || null,
+          journal: existing.paper?.journal || normalizedPaper.journal || "",
+          venue: existing.paper?.venue || normalizedPaper.venue || "",
+          authors: existing.paper?.authors?.length ? existing.paper.authors : normalizedPaper.authors || [],
+          clickable_links: existing.paper?.clickable_links?.length ? existing.paper.clickable_links : normalizedPaper.clickable_links || [],
+          candidate_pdf_urls: existing.paper?.candidate_pdf_urls?.length ? existing.paper.candidate_pdf_urls : normalizedPaper.candidate_pdf_urls || [],
+          primary_pdf_url: existing.paper?.primary_pdf_url || normalizedPaper.primary_pdf_url || null,
+          oa_locations: existing.paper?.oa_locations?.length ? existing.paper.oa_locations : normalizedPaper.oa_locations || [],
+          in_basket: Boolean(existing.inBasket || normalizedPaper.in_basket),
+          zotero_match: existing.paper?.zotero_match || normalizedPaper.zotero_match || null,
+          local_pdf_path: existing.paper?.local_pdf_path || normalizedPaper.local_pdf_path || null
+        };
+      }
+      if (normalizedPaper.in_basket) existing.inBasket = true;
+      if (normalizedPaper.zotero_match?.matched) existing.inZotero = true;
+      if (normalizedPaper.local_pdf_path) existing.hasPdf = true;
+      registerAliases(existingId, existing.paper);
       return existingId;
     }
 
@@ -2216,22 +2293,22 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
     const node = {
       id: existingId,
       paperKey: rawKey,
-      seedId: paper.resolvable_seed_id || paper.identifiers?.doi?.[0] || "",
-      title: paper.title || existingId,
+      seedId: normalizedPaper.resolvable_seed_id || normalizedPaper.identifiers?.doi?.[0] || "",
+      title: normalizedPaper.title || existingId,
       shortLabel,
-      year: paper.year || null,
-      journal: paper.journal || paper.venue || "",
+      year: normalizedPaper.year || null,
+      journal: normalizedPaper.journal || normalizedPaper.venue || "",
       firstAuthor,
-      citationCount: paper.citation_count ?? 0,
+      citationCount: normalizedPaper.citation_count ?? 0,
       role,
       priority,
-      inBasket: Boolean(paper.in_basket),
-      inZotero: Boolean(paper.zotero_match?.matched || zoteroMatches[rawKey]?.matched),
-      hasPdf: Boolean(paper.local_pdf_path),
-      paper
+      inBasket: Boolean(normalizedPaper.in_basket),
+      inZotero: Boolean(normalizedPaper.zotero_match?.matched || zoteroMatches[rawKey]?.matched),
+      hasPdf: Boolean(normalizedPaper.local_pdf_path),
+      paper: normalizedPaper
     };
     nodeMap.set(existingId, node);
-    registerAliases(existingId, paper);
+    registerAliases(existingId, normalizedPaper);
     return existingId;
   };
 
@@ -2325,48 +2402,56 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
   }
 
   // 2. Also include other related runs that share the same seed (or multi-hop seeds) so references + citations + recommendations appear together!
-  for (const rMeta of (recentRuns || []).slice(0, 12)) {
-    if (rMeta.runId === activeBundle?.runId) continue;
-    if (rMeta.action !== "related") continue;
-    const qId = rMeta.query?.id;
-    if (!qId) continue;
-    const normSeed = normalizeGraphNodeId(qId);
-    const matchedSeedNodeId = aliasToNodeId.get(normSeed);
-    if (!matchedSeedNodeId && nodeMap.size > 0) continue;
+  const relatedRuns = (recentRuns || [])
+    .slice(0, 15)
+    .filter((rMeta) => rMeta.runId !== activeBundle?.runId && rMeta.action === "related" && rMeta.query?.id);
+  const integratedRunIds = new Set();
+  for (let pass = 0; pass < 3; pass++) {
+    let addedInPass = false;
+    for (const rMeta of relatedRuns) {
+      if (integratedRunIds.has(rMeta.runId)) continue;
+      const qId = rMeta.query.id;
+      const normSeed = normalizeGraphNodeId(qId);
+      const matchedSeedNodeId = aliasToNodeId.get(normSeed);
+      if (!matchedSeedNodeId && nodeMap.size > 0) continue;
 
-    const seedNid =
-      matchedSeedNodeId ||
-      upsertPaperNode(
-        knownSeedPapers.get(normSeed) || {
-          title: `种子文献 (${qId})`,
-          year: null,
-          identifiers: qId.startsWith("10.") ? { doi: [qId.toLowerCase()] } : {},
-          authors: [{ name: "Seed Paper" }],
-          resolvable_seed_id: qId,
-          paper_key: normSeed
-        },
-        "seed",
-        9
-      );
-    if (!centerNodeId) centerNodeId = seedNid;
+      integratedRunIds.add(rMeta.runId);
+      addedInPass = true;
+      const seedNid =
+        matchedSeedNodeId ||
+        upsertPaperNode(
+          knownSeedPapers.get(normSeed) || {
+            title: `种子文献 (${qId})`,
+            year: null,
+            identifiers: qId.startsWith("10.") ? { doi: [qId.toLowerCase()] } : {},
+            authors: [{ name: "Seed Paper" }],
+            resolvable_seed_id: qId,
+            paper_key: normSeed
+          },
+          "seed",
+          9
+        );
+      if (!centerNodeId) centerNodeId = seedNid;
 
-    const rPapersRaw = readJsonSafe(join(RUNS_DIR, basename(rMeta.runId), "papers.json"), []);
-    const rPapers = enrichPapersList(rPapersRaw.slice(0, 10), state, zoteroMatches);
-    for (const p of rPapers) {
-      const relType = rMeta.query?.relation || "references";
-      const role =
-        relType === "references"
-          ? "reference"
-          : relType === "citations"
-            ? "citation"
-            : "recommendation";
-      const nid = upsertPaperNode(p, role, 4);
-      if (nid && seedNid) {
-        if (relType === "references") addEdge(seedNid, nid, "cites", "引用参考文献");
-        else if (relType === "citations") addEdge(nid, seedNid, "cites", "施引");
-        else addEdge(seedNid, nid, "similar", "相似推荐");
+      const rPapersRaw = readJsonSafe(join(RUNS_DIR, basename(rMeta.runId), "papers.json"), []);
+      const rPapers = enrichPapersList(rPapersRaw.slice(0, 12), state, zoteroMatches);
+      for (const p of rPapers) {
+        const relType = rMeta.query?.relation || "references";
+        const role =
+          relType === "references"
+            ? "reference"
+            : relType === "citations"
+              ? "citation"
+              : "recommendation";
+        const nid = upsertPaperNode(p, role, 4);
+        if (nid && seedNid) {
+          if (relType === "references") addEdge(seedNid, nid, "cites", "引用参考文献");
+          else if (relType === "citations") addEdge(nid, seedNid, "cites", "施引");
+          else addEdge(seedNid, nid, "similar", "相似推荐");
+        }
       }
     }
+    if (!addedInPass) break;
   }
 
   // 3. Include basket items if space remains
@@ -2554,6 +2639,29 @@ const TOOLS = [
       return {
         text: `环境自检完成：Python 支持=${Boolean(pyRes.parsed?.python_supported)}，Zotero 本地在线=${zoteroProbe.zoteroOnline}。\n凭证通道状态：${JSON.stringify(panelState.configStatus, null, 2)}`,
         structured: { ...panelState, doctorReport: summary }
+      };
+    }
+  },
+  {
+    name: "copy_clipboard",
+    description: "将文本写入本机系统剪贴板（供面板 UI 在沙箱受限环境下直接复制参考文献、DOI 或文件内容）。",
+    visibility: ["app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        text: { type: "string", description: "要复制到系统剪贴板的文本内容" }
+      },
+      required: ["text"]
+    },
+    execute: async (input) => {
+      const ok = copyTextToSystemClipboard(input?.text || "");
+      if (!ok) {
+        throw new Error("系统剪贴板写入失败，请手动选中文本按 Ctrl+C 复制。");
+      }
+      return {
+        text: "已复制到系统剪贴板。",
+        structured: { copied: true }
       };
     }
   },
@@ -2877,6 +2985,10 @@ const TOOLS = [
         saveDir: {
           type: "string",
           description: "可选。当下载 SI 补充材料包时，同步保存到的目标文件夹路径（支持工作区相对路径或本地绝对路径）"
+        },
+        preserveActiveRun: {
+          type: "boolean",
+          description: "可选。设为 true 时保持当前主检索结果不跳转，仅在详情页按需抓取 SI 补充材料包"
         }
       }
     },
@@ -2944,15 +3056,23 @@ const TOOLS = [
       }
 
       const state = loadState();
-      recordMainRunNavigation(state, runId);
-      saveState(state);
+      if (!input.preserveActiveRun) {
+        recordMainRunNavigation(state, runId);
+        saveState(state);
+      }
 
-      const panelState = await getFullPanelState(runId);
+      const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
+      let subRun = null;
+      if (input.preserveActiveRun) {
+        const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
+        const subProbe = await probeLocalZotero(Array.isArray(subRaw) ? subRaw : []);
+        subRun = loadRunBundle(runId, subProbe.matches);
+      }
       return {
         text:
-          summarizeRunForModel(panelState.activeRun) +
+          summarizeRunForModel(subRun || panelState.activeRun) +
           (exportedSaveDir ? `\n\n✅ SI 补充材料包已自动保存至目录：\`${exportedSaveDir}\`` : ""),
-        structured: { ...panelState, exportedSaveDir }
+        structured: { ...panelState, ...(subRun ? { subRun } : {}), exportedSaveDir }
       };
     }
   },
@@ -3213,15 +3333,45 @@ const TOOLS = [
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "OA resolution failed");
       const state = loadState();
+      const resolvedRaw = readJsonSafe(join(outDir, "papers.json"), []);
+      if (Array.isArray(resolvedRaw) && resolvedRaw.length > 0) {
+        for (const rp of resolvedRaw) {
+          const pKey = input.paperKey || rp.paper_key || computePaperKey(rp);
+          if (!pKey) continue;
+          const prevEv = state.evidenceMap[pKey] || {};
+          const prevEnriched = prevEv.enriched || {};
+          const mergedOa = [...(prevEnriched.oa_locations || []), ...(rp.oa_locations || [])];
+          state.evidenceMap[pKey] = {
+            ...prevEv,
+            enriched: {
+              ...prevEnriched,
+              ...(rp.pdfUrl ? { pdfUrl: rp.pdfUrl } : {}),
+              identifiers: { ...(prevEnriched.identifiers || {}), ...(rp.identifiers || {}) },
+              oa_locations: mergedOa
+            },
+            updatedAt: new Date().toISOString()
+          };
+          if (Array.isArray(state.basket)) {
+            state.basket = state.basket.map((bp) =>
+              (bp.paper_key || computePaperKey(bp)) === pKey
+                ? {
+                    ...bp,
+                    ...(rp.pdfUrl ? { pdfUrl: rp.pdfUrl } : {}),
+                    oa_locations: [...(bp.oa_locations || []), ...(rp.oa_locations || [])]
+                  }
+                : bp
+            );
+          }
+        }
+      }
       if (!input.preserveActiveRun) {
         recordMainRunNavigation(state, runId);
-        saveState(state);
       }
+      saveState(state);
       const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
       let subRun = null;
       if (input.preserveActiveRun) {
-        const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
-        const subProbe = await probeLocalZotero(Array.isArray(subRaw) ? subRaw : []);
+        const subProbe = await probeLocalZotero(Array.isArray(resolvedRaw) ? resolvedRaw : []);
         subRun = loadRunBundle(runId, subProbe.matches);
       }
       return {
@@ -3726,6 +3876,7 @@ function validateToolInput(name, input) {
     }
   }
   if (name === "read_run_file") requiredText("relativePath");
+  if (name === "copy_clipboard") requiredText("text");
 }
 
 for (const tool of TOOLS) tool.inputSchema.additionalProperties = false;
@@ -3768,7 +3919,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.6.6"
+          version: "1.6.7"
         }
       }
     };

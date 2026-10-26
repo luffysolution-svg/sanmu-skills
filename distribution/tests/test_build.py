@@ -262,6 +262,26 @@ class DistributionTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(root), "add", "tracked.txt"], check=True)
             self.assertEqual(build.tracked_files(root), ["tracked.txt"])
 
+    def test_zcode_panel_and_server_contracts_for_graph_timeline_and_clipboard(self):
+        panel_text = (build.ROOT / build.ZCODE_SHELL_DIR / "assets/panel.html").read_text(encoding="utf-8")
+        server_text = (build.ROOT / build.ZCODE_SHELL_DIR / "scripts/mcp-server.mjs").read_text(encoding="utf-8")
+        self.assertNotIn("btnReheatGraph", panel_text)
+        self.assertNotIn("激发流动", panel_text)
+        self.assertNotIn('<div class="snippet-wrap" onclick="event.stopPropagation();">', panel_text)
+        for token in (
+            "legacyExecCopy",
+            "selectElementContents",
+            "copy_clipboard",
+            "graphTimelineChronicle",
+            "renderTimelineChronicle",
+            "btnGraphNodeOpenDetail",
+            "btnGraphTooltipInspect",
+            "drwCopySingleCite",
+        ):
+            self.assertIn(token, panel_text)
+        for token in ("copyTextToSystemClipboard", 'name: "copy_clipboard"', "integratedRunIds"):
+            self.assertIn(token, server_text)
+
 
 if __name__ == "__main__":
     unittest.main()
