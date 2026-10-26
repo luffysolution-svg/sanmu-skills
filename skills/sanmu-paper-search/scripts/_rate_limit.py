@@ -112,7 +112,7 @@ class RateLimiter:
             lock_wait = time.monotonic() - started
             now = self._now()
             delay = max(0.0, state.get("next", 0) - now, state.get("cooldown", 0) - now)
-            if delay > 0 and delay > max(0, max_wait - (time.monotonic() - started)):
+            if delay > 0 and delay > max(0.0, max_wait - (time.monotonic() - started)) + (0.05 if max_wait > 0 else 0.0):
                 raise RateLimitError("Rate-limit cooldown exceeds bounded retry wait budget")
             if delay:
                 self.sleep(delay)

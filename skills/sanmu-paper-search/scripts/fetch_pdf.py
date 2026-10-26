@@ -28,19 +28,19 @@ def public_url(value):
 
 
 def inspect_pdf(data):
-    if not data.startswith(b"%PDF-"):
+    if b"%PDF-" not in data[:1024]:
         raise ValueError("not_pdf: response does not start with a PDF header")
-    if b"%%EOF" not in data[-4096:]:
+    if b"%%EOF" not in data[-65536:]:
         raise ValueError("incomplete_pdf: PDF trailer is missing")
     return {"header": True, "trailer": True, "bytes": len(data)}
 
 
 def assess_identity_text(text, doi=None, title=None):
-    # Only the opening title block is identity evidence; reference text is not.
-    heading = re.split(r"(?im)^\s*(?:abstract|references|bibliography|参考文献)\s*[:：]?\s*$", text)[0]
-    heading = heading[:3000]
+    # Strip from reference headings only; many journals print the paper's own DOI in the first-page footer below the abstract.
+    heading = re.split(r"(?im)^\s*(?:references|bibliography|参考文献)\s*[:：]?\s*$", text)[0]
+    heading = heading[:5000]
     clean = lambda s: re.sub(r"[^\w]", "", s.casefold())
-    normalize_doi = lambda s: re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", s.strip(), flags=re.I).casefold().rstrip(".,;:)")
+    normalize_doi = lambda s: re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", s.strip(), flags=re.I).casefold().rstrip(".,;:)]>")
     observed = {normalize_doi(s) for s in re.findall(r"10\.\d{4,9}/[^\s<>\"']+", heading, flags=re.I)}
     doi_found = bool(doi and normalize_doi(doi) in observed)
     title_found = bool(title and clean(title) and clean(title) in clean(heading))

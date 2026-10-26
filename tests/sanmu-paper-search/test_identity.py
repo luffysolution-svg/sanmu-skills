@@ -99,9 +99,9 @@ class IdentityTests(unittest.TestCase):
         self.assertFalse(any("api_version" in version for version in result[0]["versions"]))
 
     def test_aligned_authors_fuse_ids_and_keep_original_evidence(self):
-        a = paper(authors=[author(openalex="A1", orcid="0000-0001-0002-0003"),
+        a = paper(authors=[author("Jane M. Doe", openalex="A1", orcid="0000-0001-0002-0003"),
                            author("John Smith", openalex="A2")])
-        b = paper(authors=[author(" Jane   Doe ", semantic_scholar="42"),
+        b = paper(authors=[author(" J. Doe ", semantic_scholar="42"),
                            author("John Smith", semantic_scholar="43")], abstract="Actual abstract")
         b["authors"][0]["affiliations"] = [{"name": "University"}]
         original = copy.deepcopy([a, b])
@@ -125,7 +125,7 @@ class IdentityTests(unittest.TestCase):
              [author("John Smith", semantic_scholar="43"), author("Jane Doe", semantic_scholar="42")]),
             ([author("Jane Doe", openalex="A1"), author("Jane Doe", openalex="A2")],
              [author("Jane Doe", semantic_scholar="42"), author("Jane Doe", semantic_scholar="43")]),
-            ([author("J. Doe", openalex="A1")], [author("J. Doe", semantic_scholar="42")]),
+            ([author("Jane Doe", openalex="A1")], [author("John Doe", semantic_scholar="42")]),
             ([author(openalex="A1", orcid="0000-0001-0002-0003")],
              [author(semantic_scholar="42", orcid="0000-0001-0002-0004")]),
             ([author(openalex="A1"), author("John Smith", openalex="A2")],

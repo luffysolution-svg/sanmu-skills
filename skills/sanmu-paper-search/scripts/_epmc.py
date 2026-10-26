@@ -147,8 +147,12 @@ def request_epmc(client, url, accept="application/json", binary=False):
                     audit["body"] = data
             if audit["status"] in (429, 502, 503, 504):
                 delay = retry_delay(resp_headers, attempt)
-                client.cooldown("europepmc", None, delay)
+                if audit["status"] == 429:
+                    client.cooldown("europepmc", None, delay)
                 if attempt < 2 and delay <= 10.0 - waited:
+                    if audit["status"] != 429:
+                        client.sleep(delay)
+                        waited += delay
                     continue
             if audit["status"] is None or not (200 <= audit["status"] < 300):
                 raise SourceError(f"HTTP {audit['status']}", audit["status"])
@@ -243,6 +247,10 @@ def normalize_epmc(row):
         target_url = f"https://europepmc.org/article/pmc/{pmcid_val}" if pmcid_val else (f"https://doi.org/{doi_val}" if doi_val else None)
         if target_url:
             oa_locations.append(location(target_url, "europepmc", is_oa=True, evidence="europepmc_open_access"))
+    pdf_url = None
+    if pmcid_val and (row.get("hasPDF") == "Y" or row.get("isOpenAccess") == "Y"):
+        pdf_url = f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={pmcid_val}&blobtype=pdf"
+        oa_locations.append(location(pdf_url, "europepmc", is_oa=True, evidence="europepmc_pdf", version="pdf"))
     fulltext_urls = (row.get("fullTextUrlList") or {}).get("fullTextUrl") or []
     if isinstance(fulltext_urls, dict):
         fulltext_urls = [fulltext_urls]
@@ -254,7 +262,15 @@ def normalize_epmc(row):
     p = record("europepmc", record_id, title, year, identifiers, authors, abstract, kind=kind,
                oa_locations=oa_locations, relations=relations)
     if venue:
-        p["venue"] = p["journal"] = venue
+        p["venue"] = venue
+        p["journal"] = venue
+    if row.get("firstPublicationDate"):
+        p["publication_date"] = row.get("firstPublicationDate")
+    target_page_url = f"https://doi.org/{doi_val}" if doi_val else (f"https://europepmc.org/article/pmc/{pmcid_val}" if pmcid_val else None)
+    if target_page_url:
+        p["url"] = target_page_url
+    if pdf_url:
+        p["pdfUrl"] = pdf_url
     p["citation_count"] = row.get("citedByCount") if isinstance(row.get("citedByCount"), int) else None
     p["extra_epmc"] = {
         "has_suppl": row.get("hasSuppl") == "Y",

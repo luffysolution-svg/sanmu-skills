@@ -16,7 +16,7 @@ class PdfTests(unittest.TestCase):
         for payload in (b"<html>login required</html>", b"%PDF-1.4\ntruncated"):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 fetch_pdf.inspect_pdf(payload)
-        self.assertTrue(fetch_pdf.inspect_pdf(b"%PDF-1.4\n%%EOF")["trailer"])
+        self.assertTrue(fetch_pdf.inspect_pdf(b"  \n%PDF-1.4\n%%EOF\n" + b"x" * 10000)["trailer"])
 
     def test_redacts_credentials_and_does_not_invent_identity(self):
         url = fetch_pdf.public_url("https://publisher.org/a.pdf?token=SECRET&email=private%40mail.org&download=1#token")
@@ -43,6 +43,7 @@ class PdfTests(unittest.TestCase):
         self.assertEqual(check('Expected title\n10.1234/wrong', '10.1234/right', 'Expected title')["status"], 'needs_review')
         self.assertEqual(check('Other paper\nReferences\nExpected title 10.1234/right', '10.1234/right', 'Expected title')["status"], 'needs_review')
         self.assertEqual(check('Expected title\nhttps://doi.org/10.1234/right\nAbstract\nBody', '10.1234/right', 'Expected title')["status"], 'matched')
+        self.assertEqual(check('Expected title\nAbstract\nBody text\nFooter DOI: 10.1234/right.', '10.1234/right', 'Expected title')["status"], 'matched')
 
     def test_signed_url_redaction_preserves_ports_and_ipv6(self):
         url = fetch_pdf.public_url("https://user:pass@[2001:db8::1]:8443/paper.pdf?api%2Dkey=SECRET&authorization=AUTH&download=1")

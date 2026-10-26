@@ -140,11 +140,18 @@ class EPMCTests(unittest.TestCase):
 
     def test_search_and_retraction_relation_normalization(self):
         row = epmc_entry(is_retracted=True)
+        row["firstPublicationDate"] = "2024-03-18"
         paper = normalize_epmc(row)
         self.assertEqual(paper["identifiers"]["pmcid"], ["PMC12710600"])
         self.assertEqual(paper["identifiers"]["pmid"], ["38639018"])
         self.assertEqual(paper["identifiers"]["doi"], ["10.1002/adma.202313513"])
         self.assertEqual(paper["year"], 2024)
+        self.assertEqual(paper["venue"], "Advanced Materials")
+        self.assertEqual(paper["journal"], "Advanced Materials")
+        self.assertEqual(paper["publication_date"], "2024-03-18")
+        self.assertEqual(paper["url"], "https://doi.org/10.1002/adma.202313513")
+        self.assertEqual(paper["pdfUrl"], "https://europepmc.org/backend/ptpmcrender.fcgi?accid=PMC12710600&blobtype=pdf")
+        self.assertTrue(any(loc["url"] == paper["pdfUrl"] for loc in paper["oa_locations"]))
         self.assertEqual(paper["citation_count"], 42)
         self.assertEqual(paper["authors"][0]["name"], "Jane Doe")
         self.assertEqual(paper["authors"][0]["identifiers"]["orcid"], ["0000-0001-2345-6789"])

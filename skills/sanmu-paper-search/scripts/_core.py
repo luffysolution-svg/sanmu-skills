@@ -92,7 +92,7 @@ def doi(value):
     if not value:
         return None
     text = unquote(str(value)).strip()
-    text = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", text, flags=re.I).lower()
+    text = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", text, flags=re.I).lower().rstrip(".,;:)]>")
     return text if re.fullmatch(r"10\.\d{4,9}/\S+", text) else None
 
 
@@ -214,17 +214,33 @@ def _groups_version_conflict(a, b):
     return any(_version_conflicts(left, right) for left in a for right in b)
 
 
+def _authors_name_aligned(left_name, right_name):
+    tokens = lambda s: [t for t in re.findall(r"[^\W\d_]+", (s or "").casefold()) if t]
+    lt, rt = tokens(left_name), tokens(right_name)
+    if not lt or not rt:
+        return False
+    if lt == rt:
+        return True
+    if lt[-1] != rt[-1] or lt[0][0] != rt[0][0]:
+        return False
+    if len(lt[0]) > 1 and len(rt[0]) > 1 and lt[0] != rt[0]:
+        return False
+    return True
+
+
 def _merge_authors(group, base):
-    """Fuse aligned, unique full names only; retain ambiguous lists in versions/conflicts."""
+    """Fuse aligned author lists (matching length, surname and first initial); retain ambiguous lists in versions/conflicts."""
     result = json.loads(json.dumps(base))
     name = lambda author: " ".join((author.get("name") or "").casefold().split())
     names = [name(author) for author in result]
-    if (not all(names) or len(set(names)) != len(names) or
-            any(re.search(r"\b[^\W\d_]\b", value) for value in names)):
+    if not all(names) or len(set(names)) != len(names):
         return result
     for paper in group:
         authors = paper.get("authors") or []
-        if [name(author) for author in authors] != names:
+        cand_names = [name(author) for author in authors]
+        if (len(authors) != len(result) or not all(cand_names) or
+                len(set(cand_names)) != len(cand_names) or
+                not all(_authors_name_aligned(a, b) for a, b in zip(names, cand_names))):
             continue
         for target, incoming in zip(result, authors):
             left, right = target.get("identifiers") or {}, incoming.get("identifiers") or {}
@@ -530,7 +546,8 @@ def write_bundle(out, command, query, papers, sources, raw, redactor, extra=None
     for relative, text in list(artifacts.items()):
         target = out / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(redactor.text(text), encoding="utf-8", newline="\n")
+        content = text if relative == "fulltext.xml" else redactor.text(text)
+        target.write_text(content, encoding="utf-8", newline="\n")
     for p in out.rglob("*"):
         if p.is_file():
             rel = p.relative_to(out).as_posix()

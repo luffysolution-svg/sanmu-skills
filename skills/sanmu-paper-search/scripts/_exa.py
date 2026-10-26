@@ -104,8 +104,12 @@ def post(client, payload):
             audit["body"] = data
             if audit["status"] in (429, 502, 503, 504):
                 delay = retry_delay(headers, attempt)
-                client.cooldown("exa", key, delay)
+                if audit["status"] == 429:
+                    client.cooldown("exa", key, delay)
                 if attempt < 2 and delay <= 10 - waited:
+                    if audit["status"] != 429:
+                        client.sleep(delay)
+                        waited += delay
                     client.raw.append(client.redactor.clean(audit))
                     continue
             if audit["status"] == 402:

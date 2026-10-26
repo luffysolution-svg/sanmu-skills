@@ -243,8 +243,23 @@ def plain_text(value):
 def normalize(source, data):
     if source == "openalex":
         all_ids = data.get("ids") or {}
-        identifiers = ids(doi=data.get("doi") or all_ids.get("doi"), openalex=data.get("id"),
-                          pmid=all_ids.get("pmid"), pmcid=all_ids.get("pmcid"))
+        raw_doi = data.get("doi") or all_ids.get("doi")
+        arxiv_cands = []
+        if all_ids.get("arxiv"):
+            arxiv_cands.append(all_ids.get("arxiv"))
+        if raw_doi:
+            m_doi_arx = re.search(r"10\.48550/arxiv\.([0-9]{4}\.[0-9]{4,5}(?:v\d+)?|[a-z-]+/[0-9]{7}(?:v\d+)?)", str(raw_doi), re.I)
+            if m_doi_arx:
+                arxiv_cands.append(m_doi_arx.group(1))
+        for loc in data.get("locations") or []:
+            for u in (loc.get("pdf_url"), loc.get("landing_page_url")):
+                if u:
+                    m_loc_arx = re.search(r"arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5}(?:v\d+)?|[a-z-]+/[0-9]{7}(?:v\d+)?)(?:\.pdf)?(?:[?#].*)?$", str(u), re.I)
+                    if m_loc_arx:
+                        arxiv_cands.append(m_loc_arx.group(1))
+        identifiers = ids(doi=raw_doi, openalex=data.get("id"),
+                          pmid=all_ids.get("pmid"), pmcid=all_ids.get("pmcid"),
+                          arxiv=arxiv_cands or None)
         authors = []
         for entry in data.get("authorships") or []:
             author = entry.get("author") or {}
@@ -263,6 +278,10 @@ def normalize(source, data):
                 if url:
                     locations.append(location(url, source, loc.get("is_oa"), loc.get("license"),
                                               "provider_location", loc.get("version")))
+        for arx_id in identifiers.get("arxiv", []):
+            arx_pdf = f"https://arxiv.org/pdf/{arx_id}.pdf"
+            if not any(loc.get("url") == arx_pdf for loc in locations):
+                locations.append(location(arx_pdf, source, True, "arxiv", "arxiv_pdf", "submittedVersion"))
         p = record(source, data.get("id"), data.get("display_name") or data.get("title"),
                    data.get("publication_year"), identifiers, authors, abstract, data.get("type"), locations)
         if data.get("is_authors_truncated"):
@@ -325,6 +344,15 @@ def normalize(source, data):
     date = data.get("published") or data.get("issued") or data.get("published-online") or {}
     parts = date.get("date-parts") or [[]]
     year = parts[0][0] if parts and parts[0] else None
+    pub_date = None
+    if parts and isinstance(parts[0], list) and parts[0] and all(isinstance(x, int) for x in parts[0]):
+        p0 = parts[0]
+        if len(p0) >= 3:
+            pub_date = f"{p0[0]:04d}-{p0[1]:02d}-{p0[2]:02d}"
+        elif len(p0) == 2:
+            pub_date = f"{p0[0]:04d}-{p0[1]:02d}"
+        elif len(p0) == 1:
+            pub_date = f"{p0[0]:04d}"
     relations = [{"type": kind, "provider": source, **relation} for kind, entries in (data.get("relation") or {}).items()
                  for relation in entries if isinstance(relation, dict)]
     # Crossref links and license URLs are metadata, not a positive OA assertion.
@@ -333,6 +361,8 @@ def normalize(source, data):
     p = record(source, data.get("DOI"), plain_text(titles[0] if isinstance(titles, list) and titles else str(titles)),
                year, ids(doi=data.get("DOI")), authors, plain_text(data.get("abstract")), data.get("type"), locations, relations)
     p["licenses"] = data.get("license") or []
+    if pub_date:
+        p["publication_date"] = pub_date
     container = data.get("container-title") or []
     cr_venue = plain_text(container[0]) if isinstance(container, list) and container else None
     if cr_venue:

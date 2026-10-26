@@ -357,6 +357,53 @@
       border-color: var(--accent);
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
     }
+    .paper-card.excluded-card {
+      opacity: 0.56;
+      background: var(--bg-secondary);
+      border-style: dashed;
+      padding: 7px 12px;
+    }
+    .paper-card.excluded-card:hover {
+      opacity: 0.92;
+    }
+    .paper-card.excluded-card .snippet-wrap,
+    .paper-card.excluded-card .author-list-row {
+      display: none;
+    }
+    .filter-toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
+      margin-bottom: 8px;
+    }
+    .filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11.5px;
+      padding: 3px 9px;
+      border-radius: 99px;
+      border: 1px solid var(--border-primary);
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s;
+    }
+    .filter-chip:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+    .filter-chip.active {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
     .paper-title {
       font-size: 13.5px;
       font-weight: 700;
@@ -689,7 +736,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.6.4</span>
+        <span class="brand-sub">v1.6.5</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -797,6 +844,13 @@
                 <label>输入英文检索词，或直接粘贴论文 DOI / arXiv / PMID（按 Enter 直接搜索）</label>
                 <input type="text" id="qSearch" placeholder="例如: single atom Ni photocatalytic hydrogen 或 10.1002/adma.202313513" />
               </div>
+              <div id="zhQueryNotice" class="notice warn hidden" style="margin-top:2px;">
+                <span style="flex:1; font-size:11.5px;">💡 检测到中文检索词：OpenAlex / S2 / Crossref 以英文题录为主，直接搜中文易漏检。建议：</span>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <button type="button" class="btn sm primary" id="btnAskAiTranslateSearch">✨ 让对话 AI 转写为精准英文检索式并搜索</button>
+                  <button type="button" class="btn sm" id="btnSwitchExaForZh">🌐 改用 Exa AI 语义直接搜中文</button>
+                </div>
+              </div>
               <div class="form-row">
                 <div class="checkbox-group">
                   <span style="font-size:11px;font-weight:600;color:var(--text-secondary);">免费学术源:</span>
@@ -823,32 +877,6 @@
                   <button class="btn primary exec-btn" id="btnExecSearch">🚀 开始检索</button>
                 </div>
               </div>
-
-              <!-- Optional Fold: Citation Network or OA by DOI -->
-              <details class="sub-fold">
-                <summary>▸ 进阶：按已知论文 DOI 直接查参考文献 / 施引 / 相似论文，或定位 OA 全文</summary>
-                <div class="form-grid" style="margin-top:8px;">
-                  <div class="form-row">
-                    <div class="field" style="flex:2;">
-                      <label>种子论文 DOI 或稳定 ID (如 10.1002/adma.202313513)</label>
-                      <input type="text" id="qSeedIdInput" placeholder="填入论文 DOI / openalex:W... / arxiv:..." />
-                    </div>
-                    <div class="field">
-                      <label>动作类型</label>
-                      <select id="qSeedActionType">
-                        <option value="lookup_oa">精确核验并定位全部 OA 全文链接 (+Unpaywall)</option>
-                        <option value="references">查参考文献 (References — 向前溯源)</option>
-                        <option value="citations">查施引文献 (Cited By — 追踪最新工作)</option>
-                        <option value="recommendations">查相似推荐论文 (Recommendations)</option>
-                      </select>
-                    </div>
-                    <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
-                      <label>&nbsp;</label>
-                      <button class="btn primary sm exec-btn" id="btnExecSeedAction">执行</button>
-                    </div>
-                  </div>
-                </div>
-              </details>
             </div>
           </div>
 
@@ -1134,8 +1162,18 @@
         { value: "metadata_checked", label: "题录已核对" },
         { value: "file_obtained", label: "已获PDF" },
         { value: "identity_checked", label: "已核全文" },
-        { value: "read", label: "已精读" }
+        { value: "read", label: "已精读" },
+        { value: "excluded", label: "已排除" }
       ];
+
+      const STAGE_LABELS_MAP = {
+        discovered: "待初筛",
+        metadata_checked: "已读摘要",
+        file_obtained: "已获PDF",
+        identity_checked: "已核全文",
+        read: "已精读",
+        excluded: "已排除"
+      };
 
       const state = {
         activeTab: "search",
@@ -1143,8 +1181,13 @@
         citeFormat: "gbt7714",
         panelData: null,
         selectedRuns: new Set(),
+        selectedPapers: new Set(),
         expandedAbstracts: new Set(),
+        collapsedAbstracts: new Set(),
         expandAllAbstracts: false,
+        resultSort: "default",
+        resultFilter: "all",
+        resultKeyword: "",
         inlineSubRuns: new Map(),
         navStack: [],
         navIndex: -1,
@@ -1154,6 +1197,27 @@
         graphZoom: { k: 1, x: 0, y: 0 },
         busy: false
       };
+
+      function isAbstractExpanded(paperKey) {
+        if (!paperKey) return false;
+        if (state.expandAllAbstracts) {
+          return !state.collapsedAbstracts.has(paperKey);
+        }
+        return state.expandedAbstracts.has(paperKey);
+      }
+
+      function toggleAbstractExpanded(paperKey) {
+        if (!paperKey) return false;
+        const currentlyExpanded = isAbstractExpanded(paperKey);
+        if (currentlyExpanded) {
+          state.expandedAbstracts.delete(paperKey);
+          if (state.expandAllAbstracts) state.collapsedAbstracts.add(paperKey);
+        } else {
+          state.collapsedAbstracts.delete(paperKey);
+          state.expandedAbstracts.add(paperKey);
+        }
+        return isAbstractExpanded(paperKey);
+      }
 
       function getChosenSaveDir() {
         const val = document.getElementById("globalSaveDirInput")?.value?.trim();
@@ -1270,7 +1334,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.6.4" },
+              appInfo: { name: "sanmu-paper-search", version: "1.6.5" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -1450,8 +1514,19 @@
 
       function canUndoZoteroImport(paper) {
         const match = paper?.zotero_match;
-        return Boolean(match?.matched && match.itemKey && (match.createdByPlugin === true ||
-          state.panelData?.lastZoteroImport?.itemKey === match.itemKey));
+        return Boolean(match?.matched && match.itemKey && match.createdByPlugin === true);
+      }
+
+      function findUpdatedPaper(paperKey, fallbackPaper = null) {
+        if (!paperKey) return fallbackPaper;
+        const allSources = [
+          ...(state.panelData?.activeRun?.papers || []),
+          ...(state.panelData?.basket || []),
+          ...[...state.inlineSubRuns.values()].flatMap((entry) => entry.bundle?.papers || []),
+          ...(state.panelData?.activeRun?.results || []).map((r) => r.candidate_paper).filter(Boolean),
+          ...(state.panelData?.graphData?.nodes || []).map((n) => n.paper).filter(Boolean)
+        ];
+        return allSources.find((p) => p?.paper_key === paperKey) || fallbackPaper;
       }
 
       async function executeUndoZoteroImport(itemKey, paperKey = null, triggerBtn = null) {
@@ -1756,7 +1831,7 @@
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success" id="drwOpenZoteroItem">📖 在 Zotero 桌面端定位打开 (${esc(zMatch.itemKey)})</button>
-                     ${canUndoZoteroImport(paper) ? '<button class="btn sm danger exec-btn" id="drwUndoZoteroItem" title="撤销由本插件创建的导入条目">↩ 撤销Zotero导入</button>' : ""}`
+                     ${zMatch?.createdByPlugin === true ? '<button class="btn sm danger exec-btn" id="drwUndoZoteroItem" title="撤销由本插件创建的导入条目">↩ 撤销Zotero导入</button>' : ""}`
                   : zOnline
                     ? `<button class="btn sm primary exec-btn" id="drwSaveToZotero">📥 一键存入本机 Zotero${paper.local_pdf_path ? " (含本地PDF)" : ""}</button>`
                     : ""
@@ -1871,6 +1946,7 @@
                   res.lastDownload.pdfPath,
                   "🖥 打开 PDF"
                 );
+                inspectPaper(findUpdatedPaper(paper.paper_key, paper));
               }
             });
           });
@@ -1885,7 +1961,7 @@
           onAction(container.querySelector("#drwUndoZoteroItem"), "click", async (e) => {
             if (!zMatch?.itemKey) return;
             await executeUndoZoteroImport(zMatch.itemKey, paper.paper_key, e.currentTarget);
-            closeDetailView();
+            inspectPaper(findUpdatedPaper(paper.paper_key, paper));
           });
           onAction(container.querySelector("#drwSaveToZotero"), "click", async (e) => {
             const colKey = getChosenZoteroCol();
@@ -1906,11 +1982,13 @@
                 "📂 打开",
                 zr.alreadyExists ? null : { itemKey: zr.itemKey, paperKey: paper.paper_key }
               );
-              closeDetailView();
+              inspectPaper(findUpdatedPaper(paper.paper_key, paper));
             }
           });
           container.querySelectorAll("#drwEnrichAbstract, #drwEnrichAbstract2").forEach((btn) => {
             onAction(btn, "click", async () => {
+              state.collapsedAbstracts.delete(paper.paper_key);
+              state.expandedAbstracts.add(paper.paper_key);
               const res = await callTool(
                 "manage_basket",
                 { action: "enrich_abstract", paper },
@@ -1922,7 +2000,7 @@
               } else {
                 showBanner("已更新题录（公开源暂未收录该文摘要文本）", "warn");
               }
-              closeDetailView();
+              inspectPaper(findUpdatedPaper(paper.paper_key, paper));
             });
           });
           onAction(container.querySelector("#drwOpenLocalPdf"), "click", async () => {
@@ -2028,7 +2106,7 @@
               paperKey: paper.paper_key
             });
             showBanner(paper.in_basket ? "已从收藏篮移出" : "⭐ 已加入收藏篮！", "success");
-            closeDetailView();
+            inspectPaper(findUpdatedPaper(paper.paper_key, paper));
           });
           onAction(container.querySelector("#drwExportSingleMd"), "click", async (e) => {
             const saveDir = getChosenSaveDir();
@@ -2063,6 +2141,7 @@
               reason
             });
             showBanner("已保存阅读进度与筛选备注！", "success");
+            inspectPaper(findUpdatedPaper(paper.paper_key, paper));
           });
         });
       }
@@ -2342,14 +2421,17 @@
         const journalStr = safeJournalStr(p);
         const tldrStr = safeTldrStr(p);
         const providers = [...new Set((p.provenance || []).map((pr) => pr.provider))].join(" + ");
+        const isExcluded = p.handoff_stage === "excluded";
         const stageCls =
-          p.handoff_stage === "read" || p.handoff_stage === "identity_checked"
-            ? "ok"
-            : p.handoff_stage === "file_obtained"
-              ? "info"
-              : p.handoff_stage === "metadata_checked"
-                ? "purple"
-                : "";
+          isExcluded
+            ? "err"
+            : p.handoff_stage === "read" || p.handoff_stage === "identity_checked"
+              ? "ok"
+              : p.handoff_stage === "file_obtained"
+                ? "info"
+                : p.handoff_stage === "metadata_checked"
+                  ? "purple"
+                  : "";
 
         const arxId = p.identifiers?.arxiv?.[0];
         const fallbackCands =
@@ -2383,8 +2465,17 @@
           )
           .join(" ");
 
-        const isAbsExpanded = state.expandedAbstracts.has(p.paper_key);
+        const isAbsExpanded = isAbstractExpanded(p.paper_key);
         const hasLongAbstract = Boolean(p.abstract && p.abstract.length > 160);
+        const isChecked = state.selectedPapers.has(p.paper_key);
+        const diffBadgeHtml =
+          p.diff_status === "added"
+            ? `<span class="pill ok static">🆕 新增文献</span>`
+            : p.diff_status === "changed"
+              ? `<span class="pill warn static" title="更新字段: ${esc((p.diff_fields || []).join(", "))}">🔄 题录更新</span>`
+              : p.diff_status === "removed"
+                ? `<span class="pill err static">➖ 旧批次独有</span>`
+                : "";
 
         const subEntry = !isInsideSubDrawer ? state.inlineSubRuns.get(p.paper_key) : null;
         let inlineSubHtml = "";
@@ -2426,12 +2517,16 @@
         }
 
         return `
-          <div class="paper-card" data-paper-key="${esc(p.paper_key)}">
+          <div class="paper-card ${isExcluded && state.resultFilter !== "excluded" ? "excluded-card" : ""}" data-paper-key="${esc(p.paper_key)}">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-              <h4 class="paper-title">${p.index ? `${esc(p.index)}. ` : ""}${esc(p.title || "Untitled")}</h4>
-              <span class="pill static ${stageCls}" style="flex-shrink:0;">${esc(p.handoff_stage_label || "待初筛")}</span>
+              <div style="display:flex; align-items:flex-start; gap:6px; flex:1;">
+                <input type="checkbox" class="paper-select-chk" data-paper-key="${esc(p.paper_key)}" ${isChecked ? "checked" : ""} onclick="event.stopPropagation();" style="margin-top:3px; cursor:pointer; flex-shrink:0;" title="勾选此文献进行批量操作" />
+                <h4 class="paper-title" style="margin:0;">${p.index ? `${esc(p.index)}. ` : ""}${esc(p.title || "Untitled")}</h4>
+              </div>
+              <span class="pill static ${stageCls}" style="flex-shrink:0;">${esc(p.handoff_stage_label || STAGE_LABELS_MAP[p.handoff_stage] || "待初筛")}</span>
             </div>
-            <div class="paper-meta">
+            <div class="paper-meta" style="margin-top:4px;">
+              ${diffBadgeHtml}
               <span class="pill static">${esc(p.year || "年份未知")}</span>
               ${journalStr ? `<span>📘 <strong>${esc(journalStr)}</strong></span>` : ""}
               ${providers ? `<span class="pill info static">${esc(providers)}</span>` : ""}
@@ -2441,7 +2536,7 @@
               ${zMatch?.matched ? `<span class="pill ok static" title="Zotero Key: ${esc(zMatch.itemKey)}">📚 Zotero已收录${esc(zColTag)}</span>` : ""}
               ${p.comment_corrections?.length ? `<span class="pill err static">⚠ 含勘误/撤稿</span>` : ""}
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px;">
+            <div class="author-list-row" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px;">
               ${authorsHtml}
               ${(p.authors || []).length > 5 ? `<span style="font-size:11px; color:var(--text-tertiary);">等 ${p.authors.length} 位作者</span>` : ""}
             </div>
@@ -2452,7 +2547,7 @@
                     <div class="snippet-box ${isAbsExpanded ? "expanded" : ""}" id="abs-box-${esc(p.paper_key)}">📖 <strong>摘要:</strong> ${esc(p.abstract)}</div>
                     ${hasLongAbstract ? `<span class="abs-toggle-link" data-abs-key="${esc(p.paper_key)}">${isAbsExpanded ? "▴ 收起摘要" : "▾ 展开完整摘要"}</span>` : ""}
                   </div>`
-                : `<div style="font-size:11.5px; color:var(--text-tertiary); margin:4px 0;" onclick="event.stopPropagation();">
+                : `<div class="snippet-wrap" style="font-size:11.5px; color:var(--text-tertiary); margin:4px 0;" onclick="event.stopPropagation();">
                     <span>当前源未含摘要文本</span>
                     <button class="btn sm enrich-abs-btn exec-btn" data-paper-key="${esc(p.paper_key)}" style="margin-left:6px; padding:1px 7px;">🔎 一键跨源补全摘要</button>
                   </div>`
@@ -2462,9 +2557,9 @@
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success zotero-open-btn" data-zkey="${esc(zMatch.itemKey)}" title="在 Zotero 桌面端直接定位此文献">📖 Zotero定位</button>
-                     ${canUndoZoteroImport(p) ? `<button class="btn sm danger zotero-undo-btn exec-btn" data-zkey="${esc(zMatch.itemKey)}" data-paper-key="${esc(p.paper_key)}" title="撤销由本插件创建的导入条目">↩ 撤销导入</button>` : ""}`
+                     ${zMatch?.createdByPlugin === true ? `<button class="btn sm danger zotero-undo-btn exec-btn" data-zkey="${esc(zMatch.itemKey)}" data-paper-key="${esc(p.paper_key)}" title="撤销由本插件创建的导入条目">↩ 撤销导入</button>` : ""}`
                   : zOnline
-                    ? `<button class="btn sm zotero-save-btn exec-btn" data-paper-key="${esc(p.paper_key)}" title="一键存入本机 Zotero 当前所选分类">📥 存入Zotero</button>`
+                    ? `<button class="btn sm zotero-save-btn exec-btn" data-paper-key="${esc(p.paper_key)}" title="一键存入本机 Zotero 当前所选分类${p.local_pdf_path ? "（并自动上传附加本地PDF）" : ""}">📥 存入Zotero${p.local_pdf_path ? "+PDF" : ""}</button>`
                     : ""
               }
               ${p.local_pdf_path ? `<button class="btn sm success card-open-local-pdf-btn" data-path="${esc(p.local_pdf_path)}">🖥 打开PDF</button>` : firstOaPdf ? `<button class="btn sm success card-dl-pdf-btn exec-btn" data-url="${esc(firstOaPdf)}" data-fallbacks="${fallbackPdfJson}" data-doi="${esc(doi)}" data-title="${esc(p.title)}" data-year="${esc(p.year || "")}" data-key="${esc(p.paper_key)}">⬇ 下载PDF</button>` : ""}
@@ -2474,6 +2569,7 @@
                 <button class="btn sm rel-quick-btn exec-btn" data-paper-key="${esc(p.paper_key)}" data-id="${esc(seedId)}" data-rel="recommendations" title="在当前卡片下方直接展开相似文献（不丢失当前页面）">✨ 相似</button>
               ` : ""}
               ${doi ? `<button class="btn sm open-doi-btn" data-url="https://doi.org/${esc(doi)}">🌐 原文</button>` : p.url ? `<button class="btn sm open-doi-btn" data-url="${esc(p.url)}">🌐 原文</button>` : ""}
+              <button class="btn sm exclude-toggle-btn ${isExcluded ? "danger" : ""}" data-paper-key="${esc(p.paper_key)}" title="${isExcluded ? "取消排除，恢复为待初筛" : "标记为不相关/排除（在主列表中沉底折叠，且不计入关系图谱）"}">${isExcluded ? "↩ 恢复" : "🚫 排除"}</button>
             </div>
             ${inlineSubHtml}
           </div>
@@ -2493,7 +2589,7 @@
         const zOnline = Boolean(state.panelData?.configStatus?.zotero_local?.online);
         const isPatent = item.serper_type === "patents" || Boolean(item.publicationNumber);
         const pKey = candPaper?.paper_key || `raw-${i}`;
-        const isAbsExpanded = state.expandedAbstracts.has(pKey);
+        const isAbsExpanded = isAbstractExpanded(pKey);
 
         return `
           <div class="paper-card raw-item-card" data-idx="${i}">
@@ -2527,7 +2623,7 @@
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success zotero-open-btn" data-zkey="${esc(zMatch.itemKey)}">📖 Zotero定位</button>
-                     ${canUndoZoteroImport(candPaper) ? `<button class="btn sm danger zotero-undo-btn exec-btn" data-zkey="${esc(zMatch.itemKey)}" data-paper-key="${esc(pKey)}" title="撤销由本插件创建的导入条目">↩ 撤销导入</button>` : ""}`
+                     ${zMatch?.createdByPlugin === true ? `<button class="btn sm danger zotero-undo-btn exec-btn" data-zkey="${esc(zMatch.itemKey)}" data-paper-key="${esc(pKey)}" title="撤销由本插件创建的导入条目">↩ 撤销导入</button>` : ""}`
                   : zOnline && candPaper
                     ? `<button class="btn sm raw-zotero-save-btn exec-btn" data-idx="${i}">📥 存入Zotero</button>`
                     : ""
@@ -2563,20 +2659,48 @@
             e.stopPropagation();
             const k = link.dataset.absKey;
             if (!k) return;
-            if (state.expandedAbstracts.has(k)) state.expandedAbstracts.delete(k);
-            else state.expandedAbstracts.add(k);
+            const nowExp = toggleAbstractExpanded(k);
             const box = link.parentElement?.querySelector(".snippet-box");
             if (box) {
-              const nowExp = state.expandedAbstracts.has(k);
               box.classList.toggle("expanded", nowExp);
               link.textContent = nowExp ? "▴ 收起摘要" : "▾ 展开完整摘要";
             }
+          });
+        });
+        container.querySelectorAll(".paper-select-chk").forEach((chk) => {
+          chk.addEventListener("change", (e) => {
+            e.stopPropagation();
+            const k = chk.dataset.paperKey;
+            if (!k) return;
+            if (chk.checked) state.selectedPapers.add(k);
+            else state.selectedPapers.delete(k);
+            updateBatchSelectionCountUi();
+          });
+        });
+        container.querySelectorAll(".exclude-toggle-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            const p = paperMap.get(btn.dataset.paperKey);
+            if (!p) return;
+            const nextStage = p.handoff_stage === "excluded" ? (p.local_pdf_path ? "file_obtained" : p.abstract ? "metadata_checked" : "discovered") : "excluded";
+            await callTool(
+              "manage_basket",
+              {
+                action: "update_evidence",
+                paperKey: p.paper_key,
+                stage: nextStage,
+                reason: nextStage === "excluded" ? (p.screening_reason || "手动标记排除/不相关") : p.screening_reason
+              },
+              nextStage === "excluded" ? "正在标记为已排除..." : "正在恢复文献状态...",
+              btn
+            );
+            showBanner(nextStage === "excluded" ? "🚫 已将该文献标记为排除（已沉底折叠且移出关系图谱）" : "↩ 已恢复该文献状态", "info");
           });
         });
         container.querySelectorAll(".enrich-abs-btn").forEach((btn) => {
           onAction(btn, "click", async () => {
             const p = paperMap.get(btn.dataset.paperKey);
             if (!p) return;
+            state.collapsedAbstracts.delete(p.paper_key);
             state.expandedAbstracts.add(p.paper_key);
             const res = await callTool(
               "manage_basket",
@@ -2787,8 +2911,7 @@
             e.stopPropagation();
             const k = link.dataset.absKey;
             if (!k) return;
-            if (state.expandedAbstracts.has(k)) state.expandedAbstracts.delete(k);
-            else state.expandedAbstracts.add(k);
+            toggleAbstractExpanded(k);
             updatePanelData(state.panelData);
           });
         });
@@ -2797,6 +2920,7 @@
             const item = rawResults[Number(btn.dataset.idx)];
             const cand = item?.candidate_paper;
             if (!cand) return;
+            state.collapsedAbstracts.delete(cand.paper_key);
             state.expandedAbstracts.add(cand.paper_key);
             const res = await callTool(
               "manage_basket",
@@ -2979,6 +3103,70 @@
         });
       }
 
+      function filterAndSortPapers(papers) {
+        const kw = (state.resultKeyword || "").trim().toLowerCase();
+        const flt = state.resultFilter || "all";
+        const srt = state.resultSort || "default";
+
+        const filtered = (papers || []).filter((p) => {
+          const isExcl = p.handoff_stage === "excluded";
+          if (flt === "excluded") {
+            if (!isExcl) return false;
+          } else if (flt === "has_pdf") {
+            if (isExcl || !(p.local_pdf_path || p.primary_pdf_url || (p.candidate_pdf_urls && p.candidate_pdf_urls.length))) return false;
+          } else if (flt === "not_in_zotero") {
+            if (isExcl || p.zotero_match?.matched) return false;
+          } else if (flt === "has_abstract") {
+            if (isExcl || !(p.abstract && String(p.abstract).trim())) return false;
+          }
+          if (kw) {
+            const hay = [
+              p.title || "",
+              p.abstract || "",
+              safeTldrStr(p),
+              safeJournalStr(p),
+              ...(p.authors || []).map((a) => a.name || ""),
+              ...(p.identifiers?.doi || []),
+              String(p.year || "")
+            ]
+              .join(" ")
+              .toLowerCase();
+            if (!hay.includes(kw)) return false;
+          }
+          return true;
+        });
+
+        return filtered.slice().sort((a, b) => {
+          if (flt !== "excluded") {
+            const aEx = a.handoff_stage === "excluded" ? 1 : 0;
+            const bEx = b.handoff_stage === "excluded" ? 1 : 0;
+            if (aEx !== bEx) return aEx - bEx;
+          }
+          if (srt === "citations_desc") {
+            const ca = a.citation_count !== undefined && a.citation_count !== null ? Number(a.citation_count) : -1;
+            const cb = b.citation_count !== undefined && b.citation_count !== null ? Number(b.citation_count) : -1;
+            if (cb !== ca) return cb - ca;
+          } else if (srt === "year_desc") {
+            const ya = Number(a.year) || 0;
+            const yb = Number(b.year) || 0;
+            if (yb !== ya) return yb - ya;
+          }
+          return (a.index || 0) - (b.index || 0);
+        });
+      }
+
+      function updateBatchSelectionCountUi() {
+        const countEl = document.getElementById("selectedPapersCount");
+        if (countEl) countEl.textContent = String(state.selectedPapers.size);
+        const chkAll = document.getElementById("chkSelectAllPapers");
+        const visibleCards = [...document.querySelectorAll("#mainPapersList > .paper-card[data-paper-key]")];
+        if (chkAll) {
+          chkAll.checked =
+            visibleCards.length > 0 &&
+            visibleCards.every((el) => state.selectedPapers.has(el.dataset.paperKey));
+        }
+      }
+
       function renderActiveRun(bundle) {
         const headerEl = document.getElementById("activeRunHeader");
         const contentEl = document.getElementById("activeRunContent");
@@ -3077,10 +3265,8 @@
 
         headerEl.querySelector("#btnToggleAllAbstracts")?.addEventListener("click", () => {
           state.expandAllAbstracts = !state.expandAllAbstracts;
-          for (const p of [...papers, ...rawResults.map((item) => item.candidate_paper).filter(Boolean)]) {
-            if (state.expandAllAbstracts) state.expandedAbstracts.add(p.paper_key);
-            else state.expandedAbstracts.delete(p.paper_key);
-          }
+          state.expandedAbstracts.clear();
+          state.collapsedAbstracts.clear();
           renderActiveRun(bundle);
         });
         headerEl.querySelector("#btnJumpToGraphFromRun")?.addEventListener("click", () => {
@@ -3180,9 +3366,50 @@
           `;
         }
 
-        // 4. Normalized Papers List
+        // 4. Normalized Papers List with Secondary Sort, Filter Chips, Live Keyword Filter & Batch Actions
         if (papers.length > 0) {
-          bodySections += `<div class="paper-list" id="mainPapersList">${papers.map((p) => renderPaperCardHtml(p)).join("")}</div>`;
+          const nonExcl = papers.filter((p) => p.handoff_stage !== "excluded");
+          const cntAll = papers.length;
+          const cntPdf = nonExcl.filter((p) => p.local_pdf_path || p.primary_pdf_url || (p.candidate_pdf_urls && p.candidate_pdf_urls.length)).length;
+          const cntNotZot = nonExcl.filter((p) => !p.zotero_match?.matched).length;
+          const cntAbs = nonExcl.filter((p) => p.abstract && String(p.abstract).trim()).length;
+          const cntExcl = papers.filter((p) => p.handoff_stage === "excluded").length;
+          const zOnline = Boolean(state.panelData?.configStatus?.zotero_local?.online);
+
+          bodySections += `
+            <div class="filter-toolbar" id="resultsFilterToolbar">
+              <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:space-between;">
+                <div style="display:flex; flex-wrap:wrap; gap:5px; align-items:center;">
+                  <span style="font-size:11px; font-weight:600; color:var(--text-secondary);">筛选:</span>
+                  <span class="filter-chip ${state.resultFilter === "all" ? "active" : ""}" data-flt="all">全部 (${cntAll})</span>
+                  <span class="filter-chip ${state.resultFilter === "has_pdf" ? "active" : ""}" data-flt="has_pdf">🔓 可下PDF (${cntPdf})</span>
+                  <span class="filter-chip ${state.resultFilter === "not_in_zotero" ? "active" : ""}" data-flt="not_in_zotero">📚 未入Zotero (${cntNotZot})</span>
+                  <span class="filter-chip ${state.resultFilter === "has_abstract" ? "active" : ""}" data-flt="has_abstract">📖 含完整摘要 (${cntAbs})</span>
+                  <span class="filter-chip ${state.resultFilter === "excluded" ? "active" : ""}" data-flt="excluded">🚫 已排除 (${cntExcl})</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:5px;">
+                  <span style="font-size:11px; font-weight:600; color:var(--text-secondary);">排序:</span>
+                  <select id="selResultSort" style="width:auto; padding:3px 7px; font-size:11.5px;">
+                    <option value="default" ${state.resultSort === "default" ? "selected" : ""}>默认顺序</option>
+                    <option value="citations_desc" ${state.resultSort === "citations_desc" ? "selected" : ""}>🔥 被引次数 (高→低)</option>
+                    <option value="year_desc" ${state.resultSort === "year_desc" ? "selected" : ""}>📅 发表年份 (新→旧)</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:space-between;">
+                <input type="text" id="resultKeywordInput" value="${esc(state.resultKeyword)}" placeholder="🔎 输入关键词实时过滤当前列表中的标题 / 摘要 / 期刊 / 作者..." style="flex:1; min-width:190px; padding:4px 8px; font-size:12px;" />
+                <div style="display:flex; flex-wrap:wrap; gap:5px; align-items:center;">
+                  <label class="checkbox-label" style="font-size:11.5px; margin-right:2px;">
+                    <input type="checkbox" id="chkSelectAllPapers" /> 全选 (<span id="selectedPapersCount">${state.selectedPapers.size}</span>)
+                  </label>
+                  <button class="btn sm primary exec-btn" id="btnBatchAddBasket" title="将勾选的文献批量加入收藏篮">⭐ 批量加收藏</button>
+                  ${zOnline ? `<button class="btn sm success exec-btn" id="btnBatchSaveZotero" title="将勾选的文献批量存入本机 Zotero">📥 批量存Zotero</button>` : ""}
+                  <button class="btn sm success exec-btn" id="btnBatchDownloadPdf" title="批量下载勾选文献中所有可用的免费 OA PDF">⬇ 批量下OA PDF</button>
+                </div>
+              </div>
+            </div>
+            <div class="paper-list" id="mainPapersList"></div>
+          `;
         }
 
         // 5. Raw Results (Serper Google Scholar / Patents / Web, or Exa raw items)
@@ -3215,7 +3442,116 @@
         });
 
         const mainPapersEl = contentEl.querySelector("#mainPapersList");
-        if (mainPapersEl) bindPaperListEvents(mainPapersEl, papers);
+        const refreshFilteredMainPapers = () => {
+          if (!mainPapersEl) return;
+          const visiblePapers = filterAndSortPapers(papers);
+          if (visiblePapers.length === 0) {
+            mainPapersEl.innerHTML = `<div class="card"><p style="margin:0;color:var(--text-secondary);">当前筛选或关键词下暂无匹配文献，可点击「全部」或清空过滤词查看。</p></div>`;
+          } else {
+            mainPapersEl.innerHTML = visiblePapers.map((p) => renderPaperCardHtml(p)).join("");
+            bindPaperListEvents(mainPapersEl, papers);
+          }
+          updateBatchSelectionCountUi();
+        };
+        if (mainPapersEl) {
+          refreshFilteredMainPapers();
+          contentEl.querySelectorAll(".filter-chip[data-flt]").forEach((chip) => {
+            chip.addEventListener("click", () => {
+              state.resultFilter = chip.dataset.flt || "all";
+              contentEl.querySelectorAll(".filter-chip[data-flt]").forEach((c) => c.classList.toggle("active", c === chip));
+              refreshFilteredMainPapers();
+            });
+          });
+          contentEl.querySelector("#selResultSort")?.addEventListener("change", (e) => {
+            state.resultSort = e.target.value || "default";
+            refreshFilteredMainPapers();
+          });
+          contentEl.querySelector("#resultKeywordInput")?.addEventListener("input", (e) => {
+            state.resultKeyword = e.target.value || "";
+            refreshFilteredMainPapers();
+          });
+          contentEl.querySelector("#chkSelectAllPapers")?.addEventListener("change", (e) => {
+            const visiblePapers = filterAndSortPapers(papers);
+            for (const vp of visiblePapers) {
+              if (e.target.checked) state.selectedPapers.add(vp.paper_key);
+              else state.selectedPapers.delete(vp.paper_key);
+            }
+            refreshFilteredMainPapers();
+          });
+          onAction(contentEl.querySelector("#btnBatchAddBasket"), "click", async (e) => {
+            const selectedList = papers.filter((p) => state.selectedPapers.has(p.paper_key));
+            if (!selectedList.length) return showBanner("请先在卡片左上角勾选要批量收藏的文献", "warn");
+            await callTool(
+              "manage_basket",
+              { action: "add", papers: selectedList },
+              `正在将选中的 ${selectedList.length} 篇文献批量加入收藏篮...`,
+              e.currentTarget
+            );
+            showBanner(`✅ 已将 ${selectedList.length} 篇文献批量加入收藏篮！`, "success");
+          });
+          onAction(contentEl.querySelector("#btnBatchSaveZotero"), "click", async (e) => {
+            const selectedList = papers.filter((p) => state.selectedPapers.has(p.paper_key));
+            if (!selectedList.length) return showBanner("请先在卡片左上角勾选要批量存入 Zotero 的文献", "warn");
+            const colKey = getChosenZoteroCol();
+            let savedCnt = 0;
+            let existCnt = 0;
+            for (let i = 0; i < selectedList.length; i++) {
+              const p = selectedList[i];
+              const res = await callTool(
+                "manage_basket",
+                { action: "save_to_zotero", paper: p, collectionKey: colKey },
+                `正在批量存入本机 Zotero (${i + 1}/${selectedList.length})：《${(p.title || "").slice(0, 24)}...》`,
+                e.currentTarget
+              );
+              if (res?.zoteroSaveResult?.alreadyExists) existCnt++;
+              else if (res?.zoteroSaveResult?.itemKey) savedCnt++;
+            }
+            showBanner(`✅ 批量存入 Zotero 完成：新建 ${savedCnt} 篇${existCnt ? `，已存在跳过 ${existCnt} 篇` : ""}。`, "success");
+          });
+          onAction(contentEl.querySelector("#btnBatchDownloadPdf"), "click", async (e) => {
+            const selectedList = papers.filter((p) => state.selectedPapers.has(p.paper_key));
+            if (!selectedList.length) return showBanner("请先在卡片左上角勾选要批量下载 PDF 的文献", "warn");
+            const downloadable = selectedList.filter(
+              (p) => !p.local_pdf_path && (p.primary_pdf_url || (p.candidate_pdf_urls && p.candidate_pdf_urls.length))
+            );
+            if (!downloadable.length) {
+              return showBanner("勾选的文献中没有待下载的公开 OA PDF 直链（或均已下载到本地）。", "warn");
+            }
+            const saveDir = getChosenSaveDir();
+            let okCnt = 0;
+            let failCnt = 0;
+            for (let i = 0; i < downloadable.length; i++) {
+              const p = downloadable[i];
+              const cands = p.candidate_pdf_urls || (p.primary_pdf_url ? [p.primary_pdf_url] : []);
+              try {
+                await callTool(
+                  "resolve_oa_and_pdf",
+                  {
+                    action: "download_pdf",
+                    pdfUrl: cands[0],
+                    fallbackUrls: cands.slice(1),
+                    doi: p.identifiers?.doi?.[0] || undefined,
+                    title: p.title || undefined,
+                    year: p.year || undefined,
+                    paperKey: p.paper_key,
+                    saveDir
+                  },
+                  `正在批量下载 OA PDF (${i + 1}/${downloadable.length})：《${(p.title || "").slice(0, 24)}...》`,
+                  e.currentTarget
+                );
+                okCnt++;
+              } catch {
+                failCnt++;
+              }
+            }
+            showBanner(
+              `✅ 批量下载 OA PDF 完成：成功保存 ${okCnt} 篇至 ${saveDir}${failCnt ? `，${failCnt} 篇因反爬或需登录跳过` : ""}。`,
+              okCnt > 0 ? "success" : "warn",
+              saveDir,
+              "📂 打开保存目录"
+            );
+          });
+        }
 
         const rawListEl = contentEl.querySelector("#rawResultsList");
         if (rawListEl) bindRawResultsEvents(rawListEl, rawResults);
@@ -3232,35 +3568,24 @@
           });
         });
 
-        // Quick preview under Search tab
-        if (papers.length > 0 || rawResults.length > 0 || authorCandidates.length > 0) {
-          let previewBodyHtml = "";
-          if (papers.length > 0) {
-            previewBodyHtml = `<div class="paper-list" id="quickPapersList">${papers.slice(0, 5).map((p) => renderPaperCardHtml(p)).join("")}</div>`;
-          } else if (rawResults.length > 0) {
-            previewBodyHtml = `<div class="paper-list" id="quickRawList">${rawResults.slice(0, 5).map(renderRawResultCardHtml).join("")}</div>`;
-          } else if (authorCandidates.length > 0) {
-            previewBodyHtml = `<p style="margin:0;font-size:12px;color:var(--text-secondary);">已找到 ${authorCandidates.length} 位候选学者，请点击右侧按钮查看。</p>`;
-          }
-
+        // Compact single-line status bar under Search tab (no duplicate 5-card rendering)
+        if (totalCount > 0) {
           quickEl.innerHTML = `
-            <div class="card" style="margin-top:10px;">
-              <div class="card-header">
-                <h3 class="card-title">✅ 当前结果：${esc(human.title || bundle.runId)}（共 ${totalCount} 条）</h3>
-                <div style="display:flex; gap:5px;">
-                  <button class="btn sm" id="btnJumpGraphQuick">🕸 关系图谱</button>
-                  <button class="btn sm primary" id="btnJumpFullResults">查看全部 ${totalCount} 条 ➔</button>
-                </div>
+            <div class="card" id="quickStatusBarCard" style="margin-top:8px; padding:7px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; cursor:pointer;" title="点击切换到检索结果标签页">
+              <div style="font-size:12px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span class="pill ok static">✅ 当前批次</span>
+                <strong>${esc(human.title || bundle.runId)}</strong>
+                <span style="color:var(--text-secondary);">（共 ${totalCount} 条结果）</span>
               </div>
-              ${previewBodyHtml}
+              <div style="display:flex; gap:6px;" onclick="event.stopPropagation();">
+                <button class="btn sm" id="btnJumpGraphQuick">🕸 关系图谱</button>
+                <button class="btn sm primary" id="btnJumpFullResults">📄 查看结果 (${totalCount}) ➔</button>
+              </div>
             </div>
           `;
+          quickEl.querySelector("#quickStatusBarCard")?.addEventListener("click", () => switchTab("results"));
           quickEl.querySelector("#btnJumpFullResults")?.addEventListener("click", () => switchTab("results"));
           quickEl.querySelector("#btnJumpGraphQuick")?.addEventListener("click", () => switchTab("graph"));
-          const qPapers = quickEl.querySelector("#quickPapersList");
-          if (qPapers) bindPaperListEvents(qPapers, papers);
-          const qRaw = quickEl.querySelector("#quickRawList");
-          if (qRaw) bindRawResultsEvents(qRaw, rawResults);
         } else {
           quickEl.innerHTML = "";
         }
@@ -3279,7 +3604,7 @@
         const q = bundle?.run?.query || {};
 
         const addNode = (p, role = "search_hit") => {
-          if (!p) return null;
+          if (!p || p.handoff_stage === "excluded") return null;
           const id = p.paper_key || p.identifiers?.doi?.[0] || p.title || `n-${nodes.length}`;
           if (nodeMap.has(id)) return id;
           const firstAuthor = p.authors?.[0]?.name || "Unknown";
@@ -4177,12 +4502,54 @@
           return showBanner("当前图谱暂无节点可导出", "warn");
         }
         const saveDir = getChosenSaveDir();
-        const cleanInner = svgEl.innerHTML
+
+        // Compute centered bounding box from actual node coordinates
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (const n of graphSim.nodes) {
+          minX = Math.min(minX, n.x - n.r - 58);
+          maxX = Math.max(maxX, n.x + n.r + 58);
+          minY = Math.min(minY, n.y - n.r - 28);
+          maxY = Math.max(maxY, n.y + n.r + 36);
+        }
+        if (state.graphLayout === "timeline") {
+          minX = Math.min(minX, 40);
+          maxX = Math.max(maxX, GRAPH_W - 40);
+          maxY = Math.max(maxY, GRAPH_H);
+        }
+        const vbX = Math.floor(Math.min(0, minX));
+        const vbY = Math.floor(Math.min(0, minY));
+        const vbW = Math.max(GRAPH_W, Math.ceil(maxX - vbX));
+        const vbH = Math.max(GRAPH_H, Math.ceil(maxY - vbY));
+
+        const clone = svgEl.cloneNode(true);
+        const vpClone = clone.querySelector("#graphViewport");
+        if (vpClone) {
+          vpClone.setAttribute("transform", "translate(0,0) scale(1)");
+        }
+        clone.querySelectorAll(".graph-edge-line").forEach((line) => {
+          const stroke = line.getAttribute("stroke") || "rgba(110,119,129,0.58)";
+          const sw = line.getAttribute("stroke-width") || "1.3";
+          const op = line.style.opacity || "0.65";
+          line.setAttribute("style", `fill:none;stroke:${stroke};stroke-width:${sw};opacity:${op};`);
+        });
+        clone.querySelectorAll(".graph-node-g").forEach((g) => {
+          g.setAttribute("style", `opacity:1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;`);
+        });
+
+        const cleanInner = clone.innerHTML
           .replace(/var\(--text-primary\)/g, "#1f2328")
           .replace(/var\(--text-secondary\)/g, "#57606a")
           .replace(/var\(--text-tertiary\)/g, "#6e7781")
           .replace(/var\(--border-primary\)/g, "#d0d7de");
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${GRAPH_W} ${GRAPH_H}" width="${GRAPH_W * 2}" height="${GRAPH_H * 2}" style="background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;">\n${cleanInner}\n</svg>\n`;
+        const embeddedStyle = `<style>
+          .graph-edge-line { fill: none; stroke-linecap: round; }
+          .graph-node-g text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+          .node-label { fill: #1f2328; font-size: 10.5px; font-weight: 500; }
+        </style>`;
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" width="${vbW * 2}" height="${vbH * 2}" style="background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;">\n${embeddedStyle}\n${cleanInner}\n</svg>\n`;
         const res = await callTool(
           "export_to_workspace",
           { exportType: "graph_svg", svgContent: xml, targetSubdir: saveDir },
@@ -4284,7 +4651,15 @@
       function updatePanelData(data) {
         if (disposed || !data) return;
         const isFirstLoad = !state.panelData;
-        if (state.panelData?.activeRun?.runId !== data.activeRun?.runId) state.expandAllAbstracts = false;
+        if (state.panelData?.activeRun?.runId !== data.activeRun?.runId) {
+          state.expandAllAbstracts = false;
+          state.expandedAbstracts.clear();
+          state.collapsedAbstracts.clear();
+          state.selectedPapers.clear();
+          state.resultKeyword = "";
+          state.resultFilter = "all";
+          state.resultSort = "default";
+        }
         state.panelData = data;
         const existingRuns = new Set((data.recentRuns || []).map((r) => r.runId));
         state.selectedRuns = new Set([...state.selectedRuns].filter((id) => existingRuns.has(id)));
@@ -4293,11 +4668,57 @@
           state.navStack = state.navStack.filter((id) => existingRuns.has(id) || id === data.activeRun?.runId);
           state.navIndex = state.navStack.indexOf(currentId);
         }
+
+        // Sync inlineSubRuns paper states with latest basket & evidenceMap
+        const basketByKey = new Map((data.basket || []).map((bp) => [bp.paper_key, bp]));
+        const evidenceMap = data.evidenceMap || {};
+        const pluginImportsSet = new Set(data.zoteroImports || []);
         for (const [key, entry] of state.inlineSubRuns) {
           if (existingRuns.size === 0 || (entry.bundle?.runId && !existingRuns.has(entry.bundle.runId))) {
             state.inlineSubRuns.delete(key);
+            continue;
+          }
+          if (Array.isArray(entry.bundle?.papers)) {
+            entry.bundle.papers = entry.bundle.papers.map((sp) => {
+              const pk = sp.paper_key;
+              const ev = evidenceMap[pk] || {};
+              const enriched = ev.enriched || {};
+              const basketHit = basketByKey.get(pk);
+              const nextAbs = enriched.abstract || basketHit?.abstract || sp.abstract || null;
+              const nextPdf = ev.pdfPath || basketHit?.local_pdf_path || sp.local_pdf_path || null;
+              const nextStage =
+                ev.stage ||
+                basketHit?.handoff_stage ||
+                (nextPdf && sp.handoff_stage !== "read" && sp.handoff_stage !== "identity_checked" && sp.handoff_stage !== "excluded"
+                  ? "file_obtained"
+                  : sp.handoff_stage || "discovered");
+              const wasUndone =
+                ev.zoteroUndoneKey &&
+                (sp.zotero_match?.itemKey === ev.zoteroUndoneKey || ev.zoteroMatch?.itemKey === ev.zoteroUndoneKey);
+              const baseZ = wasUndone ? null : ev.zoteroMatch || basketHit?.zotero_match || sp.zotero_match || null;
+              const nextZ = baseZ
+                ? {
+                    ...baseZ,
+                    createdByPlugin: Boolean(baseZ.itemKey && (pluginImportsSet.has(baseZ.itemKey) || baseZ.createdByPlugin === true))
+                  }
+                : null;
+              return {
+                ...sp,
+                ...enriched,
+                abstract: nextAbs,
+                abstract_available: Boolean(nextAbs),
+                local_pdf_path: nextPdf,
+                in_basket: basketByKey.has(pk),
+                handoff_stage: nextStage,
+                handoff_stage_label: STAGE_LABELS_MAP[nextStage] || nextStage,
+                screening_basis: ev.basis || sp.screening_basis,
+                screening_reason: ev.reason ?? sp.screening_reason ?? "",
+                zotero_match: nextZ
+              };
+            });
           }
         }
+
         renderStatusStrip(data);
         renderActiveRun(data.activeRun);
         renderRelationshipGraph(data);
@@ -4378,7 +4799,51 @@
         }
       });
 
-      // Mode 1: Smart Unified Search
+      // Mode 1: Smart Unified Search & Chinese Query Detection
+      const qSearchInput = document.getElementById("qSearch");
+      const zhQueryNotice = document.getElementById("zhQueryNotice");
+      const updateZhQueryNotice = () => {
+        const val = (qSearchInput?.value || "").trim();
+        const hasZh = /[\u4e00-\u9fff]/.test(val) && !isDirectPaperIdentifier(val);
+        zhQueryNotice?.classList.toggle("hidden", !hasZh);
+      };
+      qSearchInput?.addEventListener("input", updateZhQueryNotice);
+
+      onAction(document.getElementById("btnAskAiTranslateSearch"), "click", async () => {
+        const raw = (qSearchInput?.value || "").trim();
+        if (!raw) return showBanner("请先输入检索主题", "warn");
+        const sources = [...document.querySelectorAll(".src-chk:checked")].map((c) => c.value);
+        const yearFrom = readYearInput("qSearchYearFrom");
+        const yearTo = readYearInput("qSearchYearTo");
+        const limit = readLimitInput("qSearchLimit");
+        const prompt = `我想检索关于「${raw}」的学术文献。请将该中文检索需求转写为精准的英文学术检索式（保留化学分子式、催化剂/材料术语与核心反应名），并直接调用 sanmu-paper-search 的 search_papers 工具为我执行检索（sources: ${JSON.stringify(sources.length ? sources : ["openalex", "semantic-scholar", "crossref"])}${yearFrom ? `, yearFrom: ${yearFrom}` : ""}${yearTo ? `, yearTo: ${yearTo}` : ""}, limit: ${limit}）。`;
+        await sendToChat(prompt, { chineseQuery: raw, sources, yearFrom, yearTo, limit });
+      });
+
+      onAction(document.getElementById("btnSwitchExaForZh"), "click", async (e) => {
+        const raw = (qSearchInput?.value || "").trim();
+        if (!raw) return showBanner("请先输入检索主题", "warn");
+        const yearFrom = readYearInput("qSearchYearFrom");
+        const limit = readLimitInput("qSearchLimit");
+        switchSearchMode("serper");
+        document.getElementById("qExtChannel").value = "exa:auto";
+        document.getElementById("qExtQuery").value = raw;
+        if (yearFrom) document.getElementById("qExtYearFrom").value = String(yearFrom);
+        document.getElementById("qExtLimit").value = String(limit);
+        updateExtChannelHint();
+        if (state.panelData?.configStatus?.exa_api_key?.configured) {
+          await callTool(
+            "search_exa",
+            { query: raw, type: "auto", yearFrom, limit },
+            `正在使用 Exa AI 语义直接检索中文课题「${raw}」...`,
+            e.currentTarget
+          );
+          switchTab("results");
+        } else {
+          showBanner("已切换至 Exa AI 语义检索模式，请先配置 Exa API Key 后开始检索。", "warn");
+        }
+      });
+
       const btnExecSearch = document.getElementById("btnExecSearch");
       onAction(btnExecSearch, "click", async () => {
         const raw = document.getElementById("qSearch").value.trim();
@@ -4410,31 +4875,6 @@
       bindEnterKey(document.getElementById("qSearch"), btnExecSearch);
       bindEnterKey(document.getElementById("qSearchYearFrom"), btnExecSearch);
       bindEnterKey(document.getElementById("qSearchYearTo"), btnExecSearch);
-
-      // Mode 1 Sub-fold
-      const btnExecSeedAction = document.getElementById("btnExecSeedAction");
-      onAction(btnExecSeedAction, "click", async () => {
-        const id = normalizeDirectId(document.getElementById("qSeedIdInput").value.trim());
-        if (!id) return showBanner("请填入种子论文 DOI 或稳定 ID", "error");
-        const act = document.getElementById("qSeedActionType").value;
-        if (act === "lookup_oa") {
-          await callTool(
-            "resolve_oa_and_pdf",
-            { action: "resolve_oa", inputIdOrRun: id, unpaywall: "auto" },
-            `正在核验 ${id} 并定位全部免费 OA 链接...`,
-            btnExecSeedAction
-          );
-        } else {
-          await callTool(
-            "explore_related",
-            { id, relation: act, limit: 10 },
-            `正在追踪 ${id} 的引文网络 (${act})...`,
-            btnExecSeedAction
-          );
-        }
-        switchTab("results");
-      });
-      bindEnterKey(document.getElementById("qSeedIdInput"), btnExecSeedAction);
 
       // Mode 2: Google Scholar / Patents (Serper) & Exa AI Search
       const btnExecExtSearch = document.getElementById("btnExecExtSearch");
@@ -4637,10 +5077,19 @@
       onAction(document.getElementById("btnDiffSelectedRuns"), "click", async (e) => {
         const ids = [...state.selectedRuns];
         if (ids.length !== 2) return showBanner("请恰好勾选 2 条历史记录进行对比", "error");
+        const runMap = new Map((state.panelData?.recentRuns || []).map((r) => [r.runId, r]));
+        const getRunTime = (id) => {
+          const r = runMap.get(id);
+          if (!r) return 0;
+          if (typeof r.mtimeMs === "number") return r.mtimeMs;
+          const parsed = Date.parse(r.timestamp || "");
+          return Number.isFinite(parsed) ? parsed : 0;
+        };
+        const sortedIds = ids.slice().sort((a, b) => getRunTime(a) - getRunTime(b));
         await callTool(
           "manage_runs",
-          { operation: "diff", beforeRunId: ids[0], afterRunId: ids[1] },
-          "正在对比两条检索记录...",
+          { operation: "diff", beforeRunId: sortedIds[0], afterRunId: sortedIds[1] },
+          `正在对比两条检索记录（旧: ${sortedIds[0]} ➔ 新: ${sortedIds[1]}）...`,
           e.currentTarget
         );
         switchTab("results");

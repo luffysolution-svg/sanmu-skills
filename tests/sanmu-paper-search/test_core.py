@@ -189,10 +189,17 @@ class CoreTests(unittest.TestCase):
                         self.assertEqual(check_bundle(out)["status"], "success")
 
     def test_command_contracts_lookup_authors_relations_oa_and_private_merge(self):
-        markup = normalize("crossref", {"DOI": "10.1234/1", "title": ["Ni/NiO\n <sub>x</sub>\n &amp; H<sub>2</sub>"],
+        markup = normalize("crossref", {"DOI": "10.1234/1.", "title": ["Ni/NiO\n <sub>x</sub>\n &amp; H<sub>2</sub>"],
+                                         "published": {"date-parts": [[2024, 5, 19]]},
                                          "abstract": "<jats:p>H<sub>2</sub> &amp; CO<sub>2</sub></jats:p>"})
         self.assertEqual(markup["title"], "Ni/NiO x & H2")
         self.assertEqual(markup["abstract"], "H2 & CO2")
+        self.assertEqual(markup["identifiers"]["doi"], ["10.1234/1"])
+        self.assertEqual(markup["publication_date"], "2024-05-19")
+        oa_arx = normalize("openalex", {"id": "https://openalex.org/W42", "doi": "https://doi.org/10.48550/arXiv.2401.12345v2",
+                                         "locations": [{"landing_page_url": "https://arxiv.org/abs/2401.12345v2", "is_oa": True}]})
+        self.assertEqual(oa_arx["identifiers"]["arxiv"], ["2401.12345v2"])
+        self.assertTrue(any(loc["url"] == "https://arxiv.org/pdf/2401.12345v2.pdf" for loc in oa_arx["oa_locations"]))
         seen = []
         def opener(request, timeout):
             seen.append(request.full_url)

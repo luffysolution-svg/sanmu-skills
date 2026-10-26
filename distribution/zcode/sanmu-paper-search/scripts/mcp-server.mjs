@@ -46,7 +46,8 @@ const STAGE_LABELS = {
   metadata_checked: "已读摘要",
   file_obtained: "已获PDF",
   identity_checked: "已核全文",
-  read: "已精读"
+  read: "已精读",
+  excluded: "已排除"
 };
 
 let cachedPythonRuntime = null;
@@ -220,11 +221,20 @@ function assertReadablePath(target) {
   }
 }
 
-function uniqueDestination(dir, filename) {
+function uniqueDestination(dir, filename, shortIdHint = "") {
   const ext = extname(filename);
   const stem = basename(filename, ext);
   let candidate = join(dir, filename);
-  for (let n = 2; existsSync(candidate); n++) candidate = join(dir, `${stem} (${n})${ext}`);
+  if (!existsSync(candidate)) return candidate;
+  const cleanHint = String(shortIdHint || "")
+    .replace(/^10\.\d{4,9}\//i, "")
+    .replace(/[^A-Za-z0-9_-]+/g, "")
+    .slice(-12);
+  if (cleanHint) {
+    const hinted = join(dir, `${stem}-${cleanHint}${ext}`);
+    if (!existsSync(hinted)) return hinted;
+  }
+  for (let n = 2; existsSync(candidate); n++) candidate = join(dir, `${stem}-${n}${ext}`);
   return candidate;
 }
 
@@ -293,14 +303,73 @@ function resolveTargetSaveDir(customDir) {
   return destDir;
 }
 
-function makeSafeFileStem(year, title, fallbackId = "paper") {
+function makeSafeFileStem(year, title, fallbackId = "paper", doiOrKey = "") {
   const cleanTitle = String(title || fallbackId || "paper")
     .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 76);
   const yrPrefix = year && /^\d{4}$/.test(String(year)) ? `${year}-` : "";
-  return `${yrPrefix}${cleanTitle || "paper"}`;
+  const baseStem = `${yrPrefix}${cleanTitle || "paper"}`;
+  if (!cleanTitle && doiOrKey) {
+    const shortSuffix = String(doiOrKey).replace(/[^A-Za-z0-9_-]+/g, "").slice(-10);
+    if (shortSuffix) return `${baseStem}-${shortSuffix}`;
+  }
+  return baseStem;
+}
+
+function scanSaveDirPdfIndex(customDir = null) {
+  const byExactStem = new Map();
+  const entries = [];
+  try {
+    const saveDir = resolveTargetSaveDir(customDir);
+    if (!existsSync(saveDir)) return { byExactStem, entries };
+    for (const entry of readdirSync(saveDir, { withFileTypes: true })) {
+      if (!entry.isFile() || extname(entry.name).toLowerCase() !== ".pdf") continue;
+      const fullPath = join(saveDir, entry.name);
+      const stemLower = basename(entry.name, extname(entry.name)).toLowerCase().trim();
+      const normAlnum = stemLower.replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "");
+      byExactStem.set(stemLower, fullPath);
+      entries.push({ stemLower, normAlnum, fullPath });
+    }
+  } catch {
+    // Ignore scan errors on inaccessible directories
+  }
+  return { byExactStem, entries };
+}
+
+function matchLocalSavedPdf(paper, pdfIndex) {
+  if (!paper || !pdfIndex || !pdfIndex.entries.length) return null;
+  const stem = makeSafeFileStem(paper.year, paper.title, "paper").toLowerCase();
+  if (pdfIndex.byExactStem.has(stem)) {
+    return pdfIndex.byExactStem.get(stem);
+  }
+  const doi = paper.identifiers?.doi?.[0];
+  if (doi) {
+    const cleanDoi = normalizeDoi(doi);
+    const doiAlnum = cleanDoi.replace(/[^a-z0-9]+/g, "");
+    const doiTail = (cleanDoi.split("/").pop() || "").replace(/[^a-z0-9]+/g, "");
+    for (const item of pdfIndex.entries) {
+      if ((doiAlnum.length >= 8 && item.normAlnum.includes(doiAlnum)) ||
+          (doiTail.length >= 7 && item.normAlnum.includes(doiTail))) {
+        return item.fullPath;
+      }
+    }
+  }
+  if (paper.title && String(paper.title).trim().length >= 8) {
+    const normTitle = String(paper.title)
+      .toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "")
+      .slice(0, 48);
+    if (normTitle.length >= 8) {
+      for (const item of pdfIndex.entries) {
+        if (item.stemLower.startsWith(stem) || item.normAlnum.includes(normTitle)) {
+          return item.fullPath;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function resolveCredential(panelVal, userConfigEnvName, sysEnvNames) {
@@ -788,27 +857,77 @@ async function fetchZoteroCollectionsMap(baseUrl) {
   return { colMap, collections };
 }
 
-async function probeLocalZotero(papers) {
+const ZOTERO_CACHE_TTL_MS = 20000;
+const zoteroStatusCache = {
+  checkedAt: 0,
+  baseUrl: "",
+  zoteroOnline: false,
+  serverId: null,
+  colMap: new Map(),
+  collections: []
+};
+const zoteroPaperMatchCache = new Map();
+
+function invalidateZoteroProbeCache(paperKey = null) {
+  if (paperKey) {
+    for (const k of zoteroPaperMatchCache.keys()) {
+      if (k.endsWith(`::${paperKey}`)) zoteroPaperMatchCache.delete(k);
+    }
+  } else {
+    zoteroPaperMatchCache.clear();
+    zoteroStatusCache.checkedAt = 0;
+  }
+}
+
+async function probeLocalZotero(papers, forceRefresh = false) {
   const { settings } = getEffectiveConfig();
   const baseUrl = (settings.zoteroUrl || "http://127.0.0.1:23119").replace(/\/+$/, "");
+  const nowMs = Date.now();
   let zoteroOnline = false;
   let serverId = null;
-  try {
-    const pingResp = await fetch(`${baseUrl}/api/`, {
-      method: "GET",
-      headers: { "Zotero-Allowed-Request": "1" },
-      signal: AbortSignal.timeout(1200)
-    });
-    serverId = pingResp.headers.get("zotero-server-id") || null;
-    zoteroOnline = pingResp.ok && Boolean(serverId || pingResp.headers.get("zotero-api-version"));
-  } catch {
-    zoteroOnline = false;
+  let colMap = new Map();
+  let collections = [];
+
+  if (
+    !forceRefresh &&
+    zoteroStatusCache.baseUrl === baseUrl &&
+    nowMs - zoteroStatusCache.checkedAt < ZOTERO_CACHE_TTL_MS
+  ) {
+    zoteroOnline = zoteroStatusCache.zoteroOnline;
+    serverId = zoteroStatusCache.serverId;
+    colMap = zoteroStatusCache.colMap;
+    collections = zoteroStatusCache.collections;
+  } else {
+    try {
+      const pingResp = await fetch(`${baseUrl}/api/`, {
+        method: "GET",
+        headers: { "Zotero-Allowed-Request": "1" },
+        signal: AbortSignal.timeout(1200)
+      });
+      serverId = pingResp.headers.get("zotero-server-id") || null;
+      zoteroOnline = pingResp.ok && Boolean(serverId || pingResp.headers.get("zotero-api-version"));
+    } catch {
+      zoteroOnline = false;
+    }
+    if (zoteroOnline) {
+      const colRes = await fetchZoteroCollectionsMap(baseUrl);
+      colMap = colRes.colMap;
+      collections = colRes.collections;
+    } else {
+      zoteroPaperMatchCache.clear();
+    }
+    zoteroStatusCache.checkedAt = Date.now();
+    zoteroStatusCache.baseUrl = baseUrl;
+    zoteroStatusCache.zoteroOnline = zoteroOnline;
+    zoteroStatusCache.serverId = serverId;
+    zoteroStatusCache.colMap = colMap;
+    zoteroStatusCache.collections = collections;
   }
+
   if (!zoteroOnline) {
     return { zoteroOnline: false, serverId: null, collections: [], matches: {} };
   }
 
-  const { colMap, collections } = await fetchZoteroCollectionsMap(baseUrl);
   if (!Array.isArray(papers) || papers.length === 0) {
     return { zoteroOnline, serverId, collections, matches: {} };
   }
@@ -816,8 +935,17 @@ async function probeLocalZotero(papers) {
   const norm = (s) => String(s || "").toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, "");
   const matches = {};
 
-  for (const paper of papers.slice(0, 25)) {
+  for (const paper of papers.slice(0, 30)) {
     const key = paper.paper_key || computePaperKey(paper);
+    const cacheKey = `${baseUrl}::${key}`;
+    if (!forceRefresh) {
+      const cached = zoteroPaperMatchCache.get(cacheKey);
+      if (cached && Date.now() - cached.checkedAt < ZOTERO_CACHE_TTL_MS) {
+        if (cached.matchedObj) matches[key] = cached.matchedObj;
+        continue;
+      }
+    }
+
     const doi = paper?.identifiers?.doi?.[0];
     const cleanDoi = normalizeDoi(doi);
     const targetTitle = norm(paper.title);
@@ -828,7 +956,10 @@ async function probeLocalZotero(papers) {
     if (paper?.title && String(paper.title).trim().length >= 6) {
       queryCandidates.push({ q: String(paper.title).trim().slice(0, 80), qmode: "titleCreatorYear" });
     }
-    if (!queryCandidates.length) continue;
+    if (!queryCandidates.length) {
+      zoteroPaperMatchCache.set(cacheKey, { checkedAt: Date.now(), matchedObj: null });
+      continue;
+    }
 
     let matchedObj = null;
     for (const qc of queryCandidates) {
@@ -875,6 +1006,7 @@ async function probeLocalZotero(papers) {
         // Ignore per-item Zotero timeout
       }
     }
+    zoteroPaperMatchCache.set(cacheKey, { checkedAt: Date.now(), matchedObj });
     if (matchedObj) {
       matches[key] = matchedObj;
     }
@@ -936,12 +1068,13 @@ async function savePaperToLocalZotero(paper, collectionKey = "") {
   const { settings } = getEffectiveConfig();
   const baseUrl = (settings.zoteroUrl || "http://127.0.0.1:23119").replace(/\/+$/, "");
 
+  const pKey = paper.paper_key || computePaperKey(paper);
+  invalidateZoteroProbeCache(pKey);
   // First check if already in Zotero
-  const probe = await probeLocalZotero([paper]);
+  const probe = await probeLocalZotero([paper], true);
   if (!probe.zoteroOnline) {
     throw new Error("未检测到本机 Zotero 桌面端在线，请先启动 Zotero。");
   }
-  const pKey = paper.paper_key || computePaperKey(paper);
   if (probe.matches[pKey]?.itemKey) {
     return {
       alreadyExists: true,
@@ -1012,10 +1145,12 @@ async function savePaperToLocalZotero(paper, collectionKey = "") {
     throw new Error("Zotero 未返回新建条目的 Key。");
   }
 
-  // If paper already has a downloaded local PDF on disk, attach it to the new Zotero item!
+  // If paper already has a downloaded local PDF on disk (or auto-discovered in saveDir), attach it to the new Zotero item!
   let pdfAttached = false;
   let attachmentKey = null;
-  const localPdfPath = paper?.local_pdf_path;
+  const localPdfPath =
+    (paper?.local_pdf_path && existsSync(paper.local_pdf_path) ? paper.local_pdf_path : null) ||
+    matchLocalSavedPdf(paper, scanSaveDirPdfIndex());
   if (localPdfPath && existsSync(localPdfPath)) {
     try {
       const pdfBytes = readFileSync(localPdfPath);
@@ -1110,6 +1245,7 @@ async function savePaperToLocalZotero(paper, collectionKey = "") {
   } catch (err) {
     undoWarning = err.message;
   }
+  invalidateZoteroProbeCache(pKey);
   return {
     alreadyExists: false,
     createdByPlugin: true,
@@ -1184,6 +1320,7 @@ async function deletePaperFromLocalZotero(itemKey, record) {
 
 function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
   const basketKeys = new Set((state.basket || []).map((p) => p.paper_key || computePaperKey(p)));
+  const pdfIndex = scanSaveDirPdfIndex();
   return (papers || []).map((rawP, idx) => {
     const key = rawP.paper_key || computePaperKey(rawP);
     const savedEv = state.evidenceMap?.[key] || {};
@@ -1196,11 +1333,24 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
     };
 
     const unpacked = unpackJournalAndTldr(p);
+    const explicitLocalPdf =
+      savedEv.pdfPath && existsSync(savedEv.pdfPath)
+        ? savedEv.pdfPath
+        : p.local_pdf_path && existsSync(p.local_pdf_path)
+          ? p.local_pdf_path
+          : null;
+    const localPdf = explicitLocalPdf || matchLocalSavedPdf(p, pdfIndex) || null;
+
     let stage = savedEv.stage || p.handoff_stage || "discovered";
-    if (((savedEv.pdfPath && existsSync(savedEv.pdfPath)) || runMeta?.fetchedPaperKey === key) && stage !== "read" && stage !== "identity_checked") {
+    if (
+      (localPdf || runMeta?.fetchedPaperKey === key) &&
+      stage !== "read" &&
+      stage !== "identity_checked" &&
+      stage !== "excluded"
+    ) {
       stage = "file_obtained";
     }
-    if (p.read === true) {
+    if (p.read === true && stage !== "excluded") {
       stage = "read";
     }
     const normalizedAuthors = (p.authors || []).map((a) => ({
@@ -1222,15 +1372,15 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
         savedEv.zoteroMatch ||
         p.zotero_match ||
         (p.local_matches?.length ? { matched: true, localMatches: p.local_matches } : null);
+    const isPluginCreated = Boolean(baseZMatch?.itemKey && state.zoteroImports?.[baseZMatch.itemKey]);
     const zMatch = baseZMatch
       ? {
           ...baseZMatch,
-          createdByPlugin: Boolean(state.zoteroImports?.[baseZMatch.itemKey]),
-          undoAvailable: Boolean(state.zoteroImports?.[baseZMatch.itemKey]),
+          createdByPlugin: isPluginCreated,
+          undoAvailable: isPluginCreated,
           attachmentKey: baseZMatch.attachmentKey || savedEv.zoteroMatch?.attachmentKey || null
         }
       : null;
-    const localPdf = savedEv.pdfPath && existsSync(savedEv.pdfPath) ? savedEv.pdfPath : p.local_pdf_path || null;
     const candidatePdfUrls = extractDownloadablePdfUrls(p);
 
     return {
@@ -1569,9 +1719,34 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
   const hasFetchedFiles = existsSync(join(runDir, "fulltext.xml")) ||
     Boolean(supplManifest?.files?.some((file) => isWithin(runDir, resolve(runDir, file.path)) && existsSync(resolve(runDir, file.path))));
   const state = loadState();
-  const papers = enrichPapersList(papersRaw, state, zoteroMatches, {
+  let papers = enrichPapersList(papersRaw, state, zoteroMatches, {
     fetchedPaperKey: hasFetchedFiles && papersRaw[0] ? computePaperKey(papersRaw[0]) : null
   });
+  if (rawRunJson.diff && typeof rawRunJson.diff === "object") {
+    const addedList = Array.isArray(rawRunJson.diff.added) ? rawRunJson.diff.added : [];
+    const changedList = Array.isArray(rawRunJson.diff.changed) ? rawRunJson.diff.changed : [];
+    const removedList = Array.isArray(rawRunJson.diff.removed) ? rawRunJson.diff.removed : [];
+    papers = papers.map((p) => {
+      const isAdded = addedList.some((cand) => computePaperKey(cand) === p.paper_key || samePaperIdentity(p, cand));
+      const changedEntry = changedList.find(
+        (c) => samePaperIdentity(p, { identifiers: c.identifiers || {}, title: c.after?.title, year: c.after?.year })
+      );
+      return {
+        ...p,
+        diff_status: isAdded ? "added" : changedEntry ? "changed" : "unchanged",
+        diff_fields: changedEntry?.fields || []
+      };
+    });
+    if (removedList.length > 0) {
+      const enrichedRemoved = enrichPapersList(removedList, state, zoteroMatches).map((rp, idx) => ({
+        ...rp,
+        index: papers.length + idx + 1,
+        diff_status: "removed",
+        diff_fields: []
+      }));
+      papers = [...papers, ...enrichedRemoved];
+    }
+  }
   const enrichedResults = normalizeRawResults(resultsRaw, state);
 
   const normalizedCandidates = Array.isArray(rawRunJson.author_candidates)
@@ -2109,6 +2284,9 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
   const upsertPaperNode = (paper, role = "search_hit", priority = 1) => {
     if (!paper) return null;
     const rawKey = paper.paper_key || computePaperKey(paper);
+    if (paper.handoff_stage === "excluded" || state?.evidenceMap?.[rawKey]?.stage === "excluded") {
+      return null;
+    }
     const normKey = normalizeGraphNodeId(rawKey);
     const existingId =
       aliasToNodeId.get(normKey) ||
@@ -2418,6 +2596,8 @@ async function getFullPanelState(activeRunId = null) {
     recentRuns,
     runNavHistory: navHistory.slice(-8),
     lastZoteroImport: state.lastZoteroImport || null,
+    evidenceMap: state.evidenceMap || {},
+    zoteroImports: Object.keys(state.zoteroImports || {}),
     basket: enrichedBasket,
     citationsPreview: generateCitations(enrichedBasket),
     graphData
@@ -2500,6 +2680,7 @@ const TOOLS = [
     },
     execute: async (input) => {
       savePanelConfig(input || {});
+      invalidateZoteroProbeCache();
       const panelState = await getFullPanelState();
       return {
         text: "配置已更新并立即生效。",
@@ -2603,7 +2784,12 @@ const TOOLS = [
         saveState(state);
       }
       const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
-      const subRun = input.preserveActiveRun ? loadRunBundle(runId) : null;
+      let subRun = null;
+      if (input.preserveActiveRun) {
+        const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
+        const subProbe = await probeLocalZotero(Array.isArray(subRaw) ? subRaw : []);
+        subRun = loadRunBundle(runId, subProbe.matches);
+      }
       return {
         text: summarizeRunForModel(subRun || panelState.activeRun),
         structured: subRun ? { ...panelState, subRun } : panelState
@@ -2670,7 +2856,12 @@ const TOOLS = [
       }
 
       const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
-      const subRun = input.preserveActiveRun ? loadRunBundle(runId) : null;
+      let subRun = null;
+      if (input.preserveActiveRun) {
+        const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
+        const subProbe = await probeLocalZotero(Array.isArray(subRaw) ? subRaw : []);
+        subRun = loadRunBundle(runId, subProbe.matches);
+      }
       return {
         text: summarizeRunForModel(subRun || panelState.activeRun),
         structured: subRun ? { ...panelState, subRun } : panelState
@@ -2733,7 +2924,12 @@ const TOOLS = [
       }
 
       const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
-      const subRun = input.preserveActiveRun ? loadRunBundle(runId) : null;
+      let subRun = null;
+      if (input.preserveActiveRun) {
+        const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
+        const subProbe = await probeLocalZotero(Array.isArray(subRaw) ? subRaw : []);
+        subRun = loadRunBundle(runId, subProbe.matches);
+      }
       const targetBundle = subRun || panelState.activeRun;
       const candidates = targetBundle?.run?.author_candidates || [];
       return {
@@ -2907,32 +3103,22 @@ const TOOLS = [
       $schema: "http://json-schema.org/draft-07/schema#",
       type: "object",
       properties: {
-        query: { type: "string", description: "检索词（webpage/lens 模式下可为空并传 url）" },
+        query: { type: "string", description: "检索词（webpage 模式下可为空并传 url）" },
         type: {
           type: "string",
           enum: [
             "scholar",
             "patents",
             "search",
-            "webpage",
-            "news",
-            "images",
-            "videos",
-            "places",
-            "maps",
-            "reviews",
-            "shopping",
-            "lens",
-            "autocomplete"
+            "webpage"
           ],
           default: "scholar"
         },
-        url: { type: "string", description: "当 type 为 webpage 或 lens 时的目标公开网页 URL" },
+        url: { type: "string", description: "当 type 为 webpage 时的目标公开网页 URL" },
         params: {
           type: "object",
-          description: "路由专用参数。reviews 需 cid、fid 或 placeId；支持共享 CLI 对当前 type 允许的参数。不要与 query/url/year/page 重复。",
+          description: "路由专用参数。支持共享 CLI 对当前学术/专利/网页 type 允许的参数。不要与 query/url/year/page 重复。",
           properties: {
-            cid: { type: "string" }, fid: { type: "string" }, placeId: { type: "string" },
             gl: { type: "string" }, hl: { type: "string" },
             sortBy: { type: "string", enum: ["mostRelevant", "newest", "highestRating", "lowestRating"] },
             topicId: { type: "string" }, nextPageToken: { type: "string" }
@@ -3052,8 +3238,8 @@ const TOOLS = [
 
         // Copy verified PDF to user's chosen saveDir with a clean, readable filename!
         const destDir = resolveTargetSaveDir(input.saveDir);
-        const fileStem = makeSafeFileStem(input.year, input.title, input.doi || runId);
-        const savedPdfPath = uniqueDestination(destDir, `${fileStem}.pdf`);
+        const fileStem = makeSafeFileStem(input.year, input.title, input.doi || runId, input.doi || input.paperKey || "");
+        const savedPdfPath = uniqueDestination(destDir, `${fileStem}.pdf`, input.doi || input.paperKey || runId);
         copyFileSync(join(outDir, "paper.pdf"), savedPdfPath, fsConstants.COPYFILE_EXCL);
 
         const acqPath = join(outDir, "acquisition.json");
@@ -3121,7 +3307,12 @@ const TOOLS = [
         saveState(state);
       }
       const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
-      const subRun = input.preserveActiveRun ? loadRunBundle(runId) : null;
+      let subRun = null;
+      if (input.preserveActiveRun) {
+        const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
+        const subProbe = await probeLocalZotero(Array.isArray(subRaw) ? subRaw : []);
+        subRun = loadRunBundle(runId, subProbe.matches);
+      }
       return {
         text: summarizeRunForModel(subRun || panelState.activeRun),
         structured: subRun ? { ...panelState, subRun } : panelState
@@ -3131,7 +3322,7 @@ const TOOLS = [
   {
     name: "manage_runs",
     description:
-      "管理与操作历史检索批次：支持切换查看指定批次（load）、删除指定历史记录（delete）、一键清空全部历史记录（clear_all）、多批次合并去重（merge）、前后批次增量对比（diff）以及 SHA-256 校验（check）。",
+      "管理与操作历史检索批次：支持切换查看指定批次（load）、删除指定历史记录（delete）、一键清空全部历史记录（clear_all）、多批次合并去重（merge）以及前后批次增量对比（diff）。",
     visibility: ["model", "app"],
     inputSchema: {
       $schema: "http://json-schema.org/draft-07/schema#",
@@ -3139,10 +3330,10 @@ const TOOLS = [
       properties: {
         operation: {
           type: "string",
-          enum: ["load", "delete", "clear_all", "merge", "diff", "check"],
+          enum: ["load", "delete", "clear_all", "merge", "diff"],
           default: "load"
         },
-        runId: { type: "string", description: "当 operation=load / delete / check 时的批次 ID" },
+        runId: { type: "string", description: "当 operation=load / delete 时的批次 ID" },
         runIds: {
           type: "array",
           items: { type: "string" },
@@ -3214,16 +3405,6 @@ const TOOLS = [
         return {
           text: `已清空全部 ${deletedCount} 条搜索历史记录（收藏篮中的文献已保留）。`,
           structured: { ...panelState, deletedCount }
-        };
-      }
-      if (op === "check") {
-        const targetDir = resolveRunDir(input.runId);
-        const pyRes = await runPython(PAPER_SEARCH_PY, ["check", targetDir, "--include-metadata"]);
-        const panelState = await getFullPanelState(input.runId);
-        return {
-          isError: pyRes.exitCode !== 0 || pyRes.parsed?.status === "failed",
-          text: `批次 \`${input.runId}\` 哈希完整性校验结果：\`${pyRes.parsed?.status || "failed"}\``,
-          structured: { ...panelState, checkResult: pyRes.parsed }
         };
       }
       if (op === "merge") {
@@ -3391,6 +3572,11 @@ const TOOLS = [
           default: "add"
         },
         paper: { type: "object", description: "当 action=add / enrich_abstract / save_to_zotero 时传入的论文对象" },
+        papers: {
+          type: "array",
+          items: { type: "object" },
+          description: "可选。当 action=add 批量加入收藏篮时传入的多篇论文数组"
+        },
         paperKey: { type: "string", description: "当 action=remove / update_evidence / undo_zotero_save 时的 paper_key" },
         collectionKey: { type: "string", description: "可选。当 action=save_to_zotero 时指定存入的 Zotero 分类 Key" },
         zoteroItemKey: {
@@ -3399,7 +3585,7 @@ const TOOLS = [
         },
         stage: {
           type: "string",
-          enum: ["discovered", "metadata_checked", "file_obtained", "identity_checked", "read"]
+          enum: ["discovered", "metadata_checked", "file_obtained", "identity_checked", "read", "excluded"]
         },
         basis: { type: "string", description: "筛选依据层级，如 metadata_only、abstract、fulltext" },
         reason: { type: "string", description: "入选/排除理由或阅读备注" }
@@ -3475,6 +3661,7 @@ const TOOLS = [
           throw new Error("未找到可撤销的 Zotero 导入记录（请传入 zoteroItemKey 或先执行一次存入 Zotero）。");
         }
         const delRes = await deletePaperFromLocalZotero(targetKey, importRecord);
+        invalidateZoteroProbeCache(pKey);
         state = loadState();
         delete state.zoteroImports[targetKey];
         if (pKey && state.evidenceMap[pKey]) {
@@ -3532,11 +3719,15 @@ const TOOLS = [
           structured: { ...panelState, enrichedPaperKey: key, enrichedData: enriched }
         };
       }
-      if (act === "add" && input.paper) {
-        const key = input.paper.paper_key || computePaperKey(input.paper);
-        const exists = state.basket.some((p) => (p.paper_key || computePaperKey(p)) === key);
-        if (!exists) {
-          state.basket.push({ ...input.paper, paper_key: key });
+      if (act === "add" && (input.paper || (Array.isArray(input.papers) && input.papers.length))) {
+        const itemsToAdd = Array.isArray(input.papers) && input.papers.length ? input.papers : [input.paper];
+        for (const pItem of itemsToAdd) {
+          if (!pItem || typeof pItem !== "object") continue;
+          const key = pItem.paper_key || computePaperKey(pItem);
+          const exists = state.basket.some((p) => (p.paper_key || computePaperKey(p)) === key);
+          if (!exists) {
+            state.basket.push({ ...pItem, paper_key: key });
+          }
         }
       } else if (act === "remove" && input.paperKey) {
         state.basket = state.basket.filter(
@@ -3625,8 +3816,9 @@ const TOOLS = [
         }
         if (input.exportType === "markdown_cards") {
           for (const p of targetPapers) {
-            const stem = makeSafeFileStem(p.year, p.title, "paper");
-            const fullPath = uniqueDestination(destRoot, `${stem}.md`);
+            const doiHint = p.identifiers?.doi?.[0] || p.paper_key || "paper";
+            const stem = makeSafeFileStem(p.year, p.title, "paper", doiHint);
+            const fullPath = uniqueDestination(destRoot, `${stem}.md`, doiHint);
             writeFileSync(fullPath, generateMarkdownCard(p), { encoding: "utf8", flag: "wx" });
             writtenFiles.push(fullPath);
           }
@@ -3697,12 +3889,11 @@ function validateToolInput(name, input) {
   if (name === "search_epmc" && ![input.query, input.id].some((v) => v?.trim())) throw new Error("请提供 Europe PMC 检索词或标识符。");
   if (name === "search_serper") {
     const mode = input.type || "scholar";
-    if (["webpage", "lens"].includes(mode)) {
-      if (!input.url && !input.params?.url) throw new Error(`${mode} 需要 url。`);
-    } else if (mode === "reviews") {
-      if (!["cid", "fid", "placeId"].some((key) => input.params?.[key])) throw new Error("reviews 需要 params.cid、fid 或 placeId。");
-      if (input.query) throw new Error("reviews 不接受 query；请使用 params 指定地点。");
-    } else if (!(input.query?.trim() || input.params?.q || (mode === "maps" && (input.params?.cid || input.params?.placeId)) || (mode === "scholar" && (input.params?.cites || input.params?.cluster)))) requiredText("query");
+    if (mode === "webpage") {
+      if (!input.url && !input.params?.url) throw new Error("webpage 需要 url。");
+    } else if (!(input.query?.trim() || input.params?.q || (mode === "scholar" && (input.params?.cites || input.params?.cluster)))) {
+      requiredText("query");
+    }
   }
   if (name === "save_config") {
     if (input.zoteroUrl?.trim()) validateZoteroUrl(input.zoteroUrl.trim());
@@ -3711,7 +3902,8 @@ function validateToolInput(name, input) {
     if (input.defaultSources?.some((source) => !["openalex", "semantic-scholar", "crossref"].includes(source))) throw new Error("defaultSources 含无效来源。");
   }
   if (name === "manage_basket") {
-    if (["add", "save_to_zotero", "enrich_abstract"].includes(input.action) && (!input.paper || typeof input.paper.title !== "string" || !input.paper.title.trim())) throw new Error("请提供有标题的论文数据。");
+    const isBatchAdd = input.action === "add" && Array.isArray(input.papers) && input.papers.length > 0;
+    if (!isBatchAdd && ["add", "save_to_zotero", "enrich_abstract"].includes(input.action) && (!input.paper || typeof input.paper.title !== "string" || !input.paper.title.trim())) throw new Error("请提供有标题的论文数据。");
     if (["remove", "update_evidence"].includes(input.action)) requiredText("paperKey");
     for (const key of ["paperKey", "zoteroItemKey", "collectionKey"]) if (["__proto__", "prototype", "constructor"].includes(input[key])) throw new Error(`${key} 无效。`);
     if (["zoteroItemKey", "collectionKey"].some((key) => input[key] && !/^[23456789A-Z]{8}$/.test(input[key]))) throw new Error("Zotero 条目或分类 Key 格式无效。");
@@ -3764,7 +3956,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.6.4"
+          version: "1.6.5"
         }
       }
     };
