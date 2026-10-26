@@ -88,6 +88,16 @@ class PdfTests(unittest.TestCase):
             self.assertEqual(record["identity"]["status"], "needs_review")
             self.assertTrue((Path(tmp) / "run/paper.pdf").exists())
 
+    def test_doi_resolution_uses_only_configured_unpaywall_contact(self):
+        for env, expected in (({}, False), ({"UNPAYWALL_EMAIL": "reader@example.org"}, True)):
+            with self.subTest(configured=expected), patch.object(fetch_pdf, "urlopen", side_effect=OSError("offline")) as network:
+                fetch_pdf.resolve_doi_pdf_candidates("10.1234/example", env=env)
+                requests = [call.args[0].full_url for call in network.call_args_list]
+                unpaywall = [url for url in requests if "api.unpaywall.org/" in url]
+                self.assertEqual(bool(unpaywall), expected)
+                if expected:
+                    self.assertIn("email=reader%40example.org", unpaywall[0])
+
     def test_non_https_and_embedded_password_rejected(self):
         for url in ("http://publisher.org/a.pdf", "https://user:pass@publisher.org/a.pdf"):
             with self.subTest(url=url), self.assertRaises(ValueError):

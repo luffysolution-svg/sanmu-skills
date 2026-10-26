@@ -43,7 +43,8 @@ The three skills can be used separately or chained: **search** → get the PDF /
 
 ### sanmu-paper-search
 
-- **Multi-source search**: OpenAlex, Semantic Scholar, Crossref, with optional Google Scholar (Serper) and Exa semantic search as supplements.
+- **Multi-source search**: OpenAlex, Semantic Scholar and Crossref, with optional AI4Scholar (S2, Google Scholar, patents and PubMed), Serper and Exa semantic search.
+- **Venue ranks and research tools**: easyScholar journal ranks, impact factors, CCF and warning labels; AI4Scholar scientific drawing, vectorization and automatic citations.
 - **Citation expansion and author disambiguation**: references, citing papers and similar papers are recorded separately; authors with the same name are pinned with stable IDs.
 - **Full text and SI**: Europe PMC provides JATS full text and supplementary original-figure bundles without a key, and checks retractions and errata.
 - **Honest reporting**: success, zero results, truncation and failure are recorded separately; "nothing found" is never reported as "does not exist".

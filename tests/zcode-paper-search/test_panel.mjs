@@ -339,7 +339,80 @@ test('pagehide releases observer, pointer handlers, frames and pending RPC', asy
 
 test('clipboard rejection shows an error instead of a false copied success', async () => {
   const p = makePanel({ clipboard: { writeText: async () => { throw new Error('denied'); } } });
+  p.document.getElementById('citationPreviewBox').textContent = '[1] Test citation.';
   await click(p, 'btnCopyCitation');
   assert.match(p.document.getElementById('bannerText').textContent, /复制失败/);
   assert.ok(p.document.getElementById('bannerBox').classList.contains('error'));
+});
+
+test('graph docked tooltip prevents hover flicker, caches DOM key, and easyScholar / AI4Scholar modes work', async () => {
+  const p = makePanel();
+  await initialize(p);
+  const p1 = { ...paper('p1'), title: 'First Paper Title', venue_rank: { is_top_tier: true, if: 29.1, badges: ['🏆 材料科学1区 TOP', 'IF 29.1'], summary: '中科院1区' } };
+  const p2 = { ...paper('p2'), title: 'Second Paper With A Much Longer Title That Previously Wrapped Multiple Lines', venue_rank: { is_top_tier: false, if: 3.5, badges: ['📊 化学4区'] } };
+  p.updatePanelData({
+    ...emptyState(),
+    configStatus: { ai4scholar_api_key: { configured: true, source: 'panel' }, easyscholar_secret_key: { configured: true, source: 'panel' } },
+    activeRun: { runId: 'main', papers: [p1, p2] },
+    graphData: {
+      centerNodeId: 'doi:10.1234/p1',
+      nodes: [
+        { id: 'doi:10.1234/p1', paperKey: 'doi:10.1234/p1', title: p1.title, shortLabel: 'Lee (2025)', year: 2025, firstAuthor: 'Alice Lee', citationCount: 50, role: 'seed', paper: p1 },
+        { id: 'doi:10.1234/p2', paperKey: 'doi:10.1234/p2', title: p2.title, shortLabel: 'Smith (2024)', year: 2024, firstAuthor: 'Bob Smith', citationCount: 10, role: 'citation', paper: p2 }
+      ],
+      edges: [{ source: 'doi:10.1234/p2', target: 'doi:10.1234/p1', type: 'cites', label: '施引' }]
+    }
+  });
+
+  // Verify easyScholar badge rendering and top_tier / if_desc filtering & sorting via DOM controls
+  assert.match(p.document.getElementById('mainPapersList').innerHTML, /材料科学1区 TOP/);
+  p.document.querySelector('.filter-chip[data-flt="top_tier"]').click();
+  assert.match(p.document.getElementById('mainPapersList').innerHTML, /First Paper Title/);
+  assert.ok(!p.document.getElementById('mainPapersList').innerHTML.includes('Second Paper With A Much Longer Title'));
+  p.document.querySelector('.filter-chip[data-flt="all"]').click();
+  const sortSel = p.document.getElementById('selResultSort');
+  sortSel.value = 'if_desc';
+  sortSel.dispatchEvent({ type: 'change', target: sortSel });
+  const listHtml = p.document.getElementById('mainPapersList').innerHTML;
+  assert.ok(listHtml.indexOf('First Paper Title') < listHtml.indexOf('Second Paper With A Much Longer Title'));
+
+  // Verify graph hover tooltip is docked outside #graphStageContainer and uses solid node-hit circle + debounce timer
+  const stage = p.document.getElementById('graphStageContainer');
+  const tooltip = p.document.getElementById('graphHoverTooltip');
+  assert.equal(stage.querySelector('#graphHoverTooltip'), null);
+  assert.match(p.document.getElementById('graphSvg').innerHTML, /class="node-hit"/);
+  const firstKey = p.graphSim.lastTooltipKey;
+  assert.ok(firstKey.includes('doi:10.1234/p1'));
+
+  // Simulate pointerenter on node 2 -> pointerleave (grace timer active, no immediate snap back) -> pointerenter on node 1
+  const n2El = p.graphSim.nodeElMap.get('doi:10.1234/p2');
+  const n1El = p.graphSim.nodeElMap.get('doi:10.1234/p1');
+  n2El.dispatchEvent({ type: 'pointerenter' });
+  assert.equal(p.graphSim.hoveredNodeId, 'doi:10.1234/p2');
+  n2El.dispatchEvent({ type: 'pointerleave' });
+  assert.equal(p.graphSim.hoveredNodeId, 'doi:10.1234/p2'); // Still p2 during 70ms grace window!
+  assert.ok(p.graphSim.hoverLeaveTimer !== null);
+  n1El.dispatchEvent({ type: 'pointerenter' });
+  assert.equal(p.graphSim.hoveredNodeId, 'doi:10.1234/p1');
+  assert.equal(p.graphSim.hoverLeaveTimer, null);
+  p.switchTab('search');
+  assert.equal(p.timers.size, 0);
+
+  // Verify AI4Scholar search & studio modes dispatch the right MCP tools
+  set(p, 'qExtChannel', 'ai4s:patents');
+  set(p, 'qExtQuery', 'single atom photocatalyst');
+  set(p, 'qExtPatentCountry', 'CN,US');
+  await click(p, 'btnExecExtSearch');
+  assert.equal(tools(p).at(-1).params.name, 'search_ai4scholar');
+  assert.equal(tools(p).at(-1).params.arguments.mode, 'patents');
+  assert.equal(tools(p).at(-1).params.arguments.country, 'CN,US');
+  answer(p); await flush();
+
+  set(p, 'qStudioToolMode', 'draw:smart');
+  set(p, 'qStudioPrompt', 'Single-atom Ni/NiOx photocatalytic H2 evolution schematic');
+  await click(p, 'btnExecStudio');
+  assert.equal(tools(p).at(-1).params.name, 'ai4scholar_draw_and_cite');
+  assert.equal(tools(p).at(-1).params.arguments.mode, 'draw');
+  assert.equal(tools(p).at(-1).params.arguments.drawAction, 'smart');
+  answer(p); await flush();
 });

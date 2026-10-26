@@ -43,7 +43,8 @@
 
 ### sanmu-paper-search
 
-- **多源检索**：OpenAlex、Semantic Scholar、Crossref，可选 Google Scholar（Serper）和 Exa 语义补搜。
+- **多源检索**：OpenAlex、Semantic Scholar、Crossref，可选 AI4Scholar（S2、Google Scholar、专利、PubMed）、Serper 和 Exa 语义补搜。
+- **期刊分区与科研辅助**：easyScholar 分区、IF、CCF 与预警标注；AI4Scholar 科研绘图、矢量化和自动引文。
 - **引文扩展与作者消歧**：参考文献、施引文献、相似论文分开记录；同名作者用稳定 ID 锚定。
 - **全文与 SI**：Europe PMC 免 Key 获取 JATS 全文和补充材料原图包，并核验撤稿与勘误。
 - **如实报告**：成功、零结果、截断、失败分开记录，不把“没查到”说成“不存在”。

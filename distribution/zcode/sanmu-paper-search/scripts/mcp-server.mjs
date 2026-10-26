@@ -30,6 +30,7 @@ const PLUGIN_DATA =
 const RUNS_DIR = join(PLUGIN_DATA, "runs");
 const CONFIG_PATH = join(PLUGIN_DATA, "config.json");
 const STATE_PATH = join(PLUGIN_DATA, "state.json");
+const EASYSCHOLAR_CACHE_PATH = join(PLUGIN_DATA, "easyscholar-cache.json");
 const ZOTERO_KEYS_PATH = join(PLUGIN_DATA, "zotero-local-keys.json");
 const OFFICIAL_ZOTERO_KEYS_PATH = join(dirname(PLUGIN_DATA), "zotero@zcode-plugins-official", "local-api-keys.json");
 const PANEL_URI = "ui://sanmu-paper-search/panel.html";
@@ -136,12 +137,20 @@ function loadPanelConfig() {
 function savePanelConfig(patch) {
   const current = loadPanelConfig();
   const next = { ...current };
-  const secretKeys = new Set(["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey"]);
+  const secretKeys = new Set([
+    "openalexApiKey",
+    "s2ApiKey",
+    "exaApiKey",
+    "serperApiKey",
+    "easyscholarSecretKey",
+    "ai4scholarApiKey"
+  ]);
   for (const [k, v] of Object.entries(patch || {})) {
     if (k === "clearKeys" || v === undefined || v === null) continue;
     if (typeof v === "string") {
       if (secretKeys.has(k)) {
-        if (v.trim() !== "") next[k] = v.trim();
+        const cleaned = k === "easyscholarSecretKey" ? v.replace(/\s+/g, "").trim() : v.trim();
+        if (cleaned !== "") next[k] = cleaned;
       } else if (v.trim() !== "" || k === "politeEmail") {
         next[k] = v.trim();
       }
@@ -241,11 +250,17 @@ function uniqueDestination(dir, filename, shortIdHint = "") {
 function redactSecrets(value) {
   const cfg = readJsonSafe(CONFIG_PATH, {}) || {};
   const secrets = new Set();
-  for (const key of ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey"]) {
-    if (typeof cfg[key] === "string" && cfg[key].trim()) secrets.add(cfg[key].trim());
+  for (const key of ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey"]) {
+    if (typeof cfg[key] === "string" && cfg[key].trim()) {
+      secrets.add(cfg[key].trim());
+      secrets.add(cfg[key].replace(/\s+/g, "").trim());
+    }
   }
   for (const [key, val] of Object.entries(process.env)) {
-    if (/(?:API_KEY|TOKEN|SECRET|PASSWORD)$/i.test(key) && val && !val.startsWith("${")) secrets.add(val);
+    if (/(?:API_KEY|TOKEN|SECRET|SECRET_KEY|PASSWORD)$/i.test(key) && val && !val.startsWith("${")) {
+      secrets.add(val);
+      secrets.add(val.replace(/\s+/g, "").trim());
+    }
   }
   for (const keyFile of [ZOTERO_KEYS_PATH, OFFICIAL_ZOTERO_KEYS_PATH]) {
     for (const key of Object.values(readJsonSafe(keyFile, {}) || {})) {
@@ -254,8 +269,8 @@ function redactSecrets(value) {
   }
   const visit = (item) => {
     if (typeof item === "string") {
-      for (const secret of [...secrets].sort((a, b) => b.length - a.length)) item = item.split(secret).join("[REDACTED]");
-      return item.replace(/([?&](?:api[_-]?key|key|token|access_token|secret|password)=)[^&#\s"<>]+/gi, "$1[REDACTED]");
+      for (const secret of [...secrets].filter(Boolean).sort((a, b) => b.length - a.length)) item = item.split(secret).join("[REDACTED]");
+      return item.replace(/([?&](?:api[_-]?key|secret[_-]?key|key|token|access_token|secret|password)=)[^&#\s"<>]+/gi, "$1[REDACTED]");
     }
     if (Array.isArray(item)) return item.map(visit);
     if (item && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, val]) => [key, visit(val)]));
@@ -388,6 +403,20 @@ function getEffectiveConfig() {
   const serper = resolveCredential(cfg.serperApiKey, "USER_CONFIG_SERPER_API_KEY", [
     "SERPER_API_KEY"
   ]);
+  const rawEasyScholar = resolveCredential(
+    cfg.easyscholarSecretKey,
+    "USER_CONFIG_EASYSCHOLAR_SECRET_KEY",
+    ["EASYSCHOLAR_SECRET_KEY"]
+  );
+  const easyscholar = {
+    value: rawEasyScholar.value ? rawEasyScholar.value.replace(/\s+/g, "").trim() : "",
+    source: rawEasyScholar.value ? rawEasyScholar.source : "none"
+  };
+  const ai4scholar = resolveCredential(
+    cfg.ai4scholarApiKey,
+    "USER_CONFIG_AI4SCHOLAR_API_KEY",
+    ["AI4SCHOLAR_API_KEY"]
+  );
   const zoteroUrl = validateZoteroUrl(resolveCredential(cfg.zoteroUrl, "USER_CONFIG_ZOTERO_URL", []).value || "http://127.0.0.1:23119");
   const exportSubdir = resolveCredential(cfg.exportSubdir, "USER_CONFIG_EXPORT_SUBDIR", []).value || "00-收件箱-待整理/文献检索";
 
@@ -395,7 +424,8 @@ function getEffectiveConfig() {
     ...process.env,
     PYTHONIOENCODING: "utf-8",
     PYTHONUTF8: "1",
-    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONDONTWRITEBYTECODE: "1",
+    EASYSCHOLAR_CACHE_PATH
   };
   if (polite.value) {
     childEnv.POLITE_EMAIL = polite.value;
@@ -410,6 +440,11 @@ function getEffectiveConfig() {
   }
   if (exa.value) childEnv.EXA_API_KEY = exa.value;
   if (serper.value) childEnv.SERPER_API_KEY = serper.value;
+  if (easyscholar.value) childEnv.EASYSCHOLAR_SECRET_KEY = easyscholar.value;
+  if (ai4scholar.value) {
+    childEnv.AI4SCHOLAR_API_KEY = ai4scholar.value;
+    if (!s2.value) childEnv.AI4SCHOLAR_S2_PROXY = "1";
+  }
 
   const pyRt = resolvePythonRuntime();
 
@@ -419,9 +454,14 @@ function getEffectiveConfig() {
       python_runtime: { configured: pyRt.supported, source: pyRt.version ? `Python ${pyRt.version}` : "missing" },
       polite_email: { configured: Boolean(polite.value), source: polite.source },
       openalex_api_key: { configured: Boolean(openalex.value), source: openalex.source },
-      semantic_scholar_api_key: { configured: Boolean(s2.value), source: s2.source },
+      semantic_scholar_api_key: {
+        configured: Boolean(s2.value || ai4scholar.value),
+        source: s2.value ? s2.source : ai4scholar.value ? `ai4scholar (${ai4scholar.source})` : "none"
+      },
       exa_api_key: { configured: Boolean(exa.value), source: exa.source },
       serper_api_key: { configured: Boolean(serper.value), source: serper.source },
+      easyscholar_secret_key: { configured: Boolean(easyscholar.value), source: easyscholar.source },
+      ai4scholar_api_key: { configured: Boolean(ai4scholar.value), source: ai4scholar.source },
       europepmc_public_access: { configured: true, source: "public" }
     },
     settings: {
@@ -1083,6 +1123,12 @@ async function savePaperToLocalZotero(paper, collectionKey = "") {
     })
     .filter(Boolean);
 
+  const rankSummary = paper?.venue_rank?.summary ? String(paper.venue_rank.summary).trim() : "";
+  const extraTags = [{ tag: "sanmu-paper-search" }];
+  if (paper?.venue_rank?.jcr) extraTags.push({ tag: `JCR:${paper.venue_rank.jcr}` });
+  if (paper?.venue_rank?.cas_up) extraTags.push({ tag: paper.venue_rank.cas_up });
+  if (paper?.venue_rank?.ccf) extraTags.push({ tag: `CCF-${paper.venue_rank.ccf}` });
+
   const itemPayload = {
     itemType: paper?.type === "preprint" || paper?.type === "posted-content" ? "preprint" : "journalArticle",
     title: paper?.title || "Untitled",
@@ -1094,8 +1140,9 @@ async function savePaperToLocalZotero(paper, collectionKey = "") {
     ...(doi ? { DOI: doi } : {}),
     url: doi ? `https://doi.org/${doi}` : paper?.url || "",
     abstractNote: paper?.abstract || unpacked.tldr || "",
+    ...(rankSummary ? { extra: rankSummary } : {}),
     collections: collectionKey ? [collectionKey] : [],
-    tags: [{ tag: "sanmu-paper-search" }]
+    tags: extraTags
   };
 
   const createResp = await fetch(`${baseUrl}/api/users/0/items`, {
@@ -1298,9 +1345,19 @@ async function deletePaperFromLocalZotero(itemKey, record) {
   return { deleted: true, itemKey };
 }
 
+function normalizeVenueCacheKey(name) {
+  return String(name || "")
+    .replace(/\s*\((?:online|print|electronic|issn[^)]*)\)\s*$/i, "")
+    .replace(/\s*\[[A-Z]\]\s*$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, " ")
+    .trim();
+}
+
 function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
   const basketKeys = new Set((state.basket || []).map((p) => p.paper_key || computePaperKey(p)));
   const pdfIndex = scanSaveDirPdfIndex();
+  const rankCache = readJsonSafe(EASYSCHOLAR_CACHE_PATH, {}) || {};
   return (papers || []).map((rawP, idx) => {
     const key = rawP.paper_key || computePaperKey(rawP);
     const savedEv = state.evidenceMap?.[key] || {};
@@ -1313,6 +1370,13 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
     };
 
     const unpacked = unpackJournalAndTldr(p);
+    let venueRank = p.venue_rank || null;
+    if (!venueRank && unpacked.journal) {
+      const vKey = normalizeVenueCacheKey(unpacked.journal);
+      if (vKey && rankCache[vKey]?.rank) {
+        venueRank = rankCache[vKey].rank;
+      }
+    }
     const explicitLocalPdf =
       savedEv.pdfPath && existsSync(savedEv.pdfPath)
         ? savedEv.pdfPath
@@ -1368,6 +1432,7 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
       journal: unpacked.journal,
       venue: unpacked.venue,
       journal_info: unpacked.journal_info,
+      venue_rank: venueRank,
       tldr: unpacked.tldr,
       abstract_available: Boolean(p.abstract),
       authors: normalizedAuthors,
@@ -1414,7 +1479,8 @@ function parseRawItemToCandidatePaper(flatItem, idx, state) {
       .filter((s) => s && !/^et al\.?$/i.test(s))
       .map((name) => ({ name, identifiers: {}, affiliations: [] }));
   } else if (flatItem.publicationInfo) {
-    const authorPart = String(flatItem.publicationInfo).split(" - ")[0] || "";
+    const cleanInfo = String(flatItem.publicationInfo).replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+    const authorPart = cleanInfo.split(/\s+-\s+/)[0] || "";
     authors = authorPart
       .replace(/…/g, "")
       .split(",")
@@ -1427,8 +1493,10 @@ function parseRawItemToCandidatePaper(flatItem, idx, state) {
   if (flatItem.publicationNumber) {
     venue = `Patent ${flatItem.publicationNumber}${flatItem.assignee ? ` (${flatItem.assignee})` : ""}`;
   } else if (flatItem.publicationInfo) {
-    const parts = String(flatItem.publicationInfo).split(" - ");
-    venue = parts[1] || parts[0] || "Google Scholar";
+    const cleanInfo = String(flatItem.publicationInfo).replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+    const parts = cleanInfo.split(/\s+-\s+/);
+    const rawVenue = (parts[1] || parts[0] || "Google Scholar").replace(/,?\s*\b(19|20)\d{2}\b\s*$/, "").trim();
+    venue = rawVenue || "Google Scholar";
   } else if (flatItem.serper_type) {
     venue = `Serper (${flatItem.serper_type})`;
   }
@@ -1621,6 +1689,52 @@ function formatRunHumanSummary(runJson, acqJson, paperCount, resultCount) {
       subtitle: `共 ${paperCount} 篇当前文献`
     };
   }
+  if (cmd === "rank") {
+    const vList = Array.isArray(q.venues) ? q.venues.join(", ") : "";
+    return {
+      modeLabel: "期刊等级查询 (easyScholar)",
+      title: vList ? `期刊等级：${vList.slice(0, 48)}` : "期刊等级与分区批量标注",
+      subtitle: `已核验 ${resultCount || paperCount} 条期刊/论文记录`
+    };
+  }
+  if (cmd === "ai4scholar") {
+    const m = q.mode || runJson?.ai4scholar_mode || "s2-search";
+    const modeNames = {
+      "s2-search": "Semantic Scholar 相关性检索 (AI4Scholar)",
+      "s2-bulk": "Semantic Scholar 批量布尔检索 (AI4Scholar)",
+      "s2-match": "Semantic Scholar 标题精确匹配",
+      "s2-detail": "Semantic Scholar 论文详情",
+      "s2-batch": "Semantic Scholar 批量查询",
+      "s2-citations": "Semantic Scholar 施引追踪",
+      "s2-references": "Semantic Scholar 参考文献溯源",
+      "s2-recommendations": "Semantic Scholar 相似论文推荐",
+      "s2-snippets": "Semantic Scholar 全文片段搜索 (500词摘录)",
+      "s2-authors": "Semantic Scholar 学者搜索",
+      "s2-author-papers": "Semantic Scholar 学者代表作",
+      "gs-search": "Google Scholar 谷歌学术 (AI4Scholar)",
+      "gs-cite": "Google Scholar 标准引用获取",
+      "gs-profiles": "Google Scholar 学者主页搜索",
+      "gs-author": "Google Scholar 学者主页与论文",
+      patents: "Google Patents 全球专利检索 (AI4Scholar)",
+      "pubmed-search": "PubMed 生物医学文献检索 (AI4Scholar)",
+      "pubmed-detail": "PubMed 论文详情 (PMID)",
+      "pubmed-batch": "PubMed 批量查询",
+      "pubmed-citations": "PubMed 施引文献追踪",
+      "pubmed-related": "PubMed 相似相关文献",
+      draw: "AI 科研绘图与矢量化 (Nano Draw)",
+      "auto-cite": "学术段落自动配参考文献 (Auto-Cite)",
+      credits: "AI4Scholar 账户积分查询"
+    };
+    const kw = q.query || q.id || (Array.isArray(q.ids) ? q.ids.join(", ") : "") || "";
+    const credInfo = runJson?.credits?.remaining_latest !== undefined && runJson?.credits?.remaining_latest !== null
+      ? ` · 剩余积分 ${runJson.credits.remaining_latest}`
+      : "";
+    return {
+      modeLabel: modeNames[m] || `AI4Scholar (${m})`,
+      title: kw ? `${modeNames[m] || m}：「${String(kw).slice(0, 42)}」` : modeNames[m] || `AI4Scholar (${m})`,
+      subtitle: `${paperCount ? `共 ${paperCount} 篇文献` : `${resultCount} 条结果`}${credInfo}`
+    };
+  }
   return {
     modeLabel: cmd,
     title: `检索记录 (${cmd})`,
@@ -1677,9 +1791,13 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
             ext === ".zip" ||
             ext === ".docx" ||
             ext === ".xlsx" ||
+            ext === ".pptx" ||
             ext === ".png" ||
             ext === ".jpg" ||
+            ext === ".svg" ||
+            ext === ".bib" ||
             rel.startsWith("supplementary/") ||
+            entry.name === "annotated_text.md" ||
             entry.name === "report.md");
         files.push({
           path: rel,
@@ -1919,10 +2037,38 @@ function summarizeRunForModel(bundle) {
         .slice(0, 3)
         .map((a) => a.name)
         .join(", ");
+      const rankBadges = p.venue_rank?.badges?.length ? ` | 等级: ${p.venue_rank.badges.join(" · ")}` : "";
       lines.push(
-        `${p.index}. **${titleMd}** (${p.year || "n.d."}) — ${authorsStr || "Unknown"} | 进度: ${p.handoff_stage_label || p.handoff_stage}${doi ? ` | DOI: [${doi}](https://doi.org/${doi})` : ""}`
+        `${p.index}. **${titleMd}** (${p.year || "n.d."}) — ${authorsStr || "Unknown"}${p.journal ? ` | *${p.journal}*` : ""}${rankBadges} | 进度: ${p.handoff_stage_label || p.handoff_stage}${doi ? ` | DOI: [${doi}](https://doi.org/${doi})` : ""}`
       );
     }
+  }
+  if (r.draw_result) {
+    const dr = r.draw_result;
+    lines.push("", `#### 🎨 AI4Scholar 科研绘图结果 (${dr.action})：`);
+    if (dr.imageUrl) lines.push(`- **图片链接**：${dr.imageUrl}`, "", `![科研配图](${dr.imageUrl})`);
+    if (dr.svgUrl) lines.push(`- **SVG 矢量链接**：${dr.svgUrl}`);
+    if (dr.pdfUrl) lines.push(`- **矢量 PDF 链接**：${dr.pdfUrl}`);
+    if (dr.pptxUrl) lines.push(`- **可编辑 PPTX 链接**：${dr.pptxUrl}`);
+    if (dr.savedFiles && Object.keys(dr.savedFiles).length) {
+      lines.push(`- **已下载本地文件**：\`${JSON.stringify(dr.savedFiles)}\``);
+    }
+    if (dr.optimizedPrompt) lines.push(`- **优化后 Prompt**：${dr.optimizedPrompt}`);
+    if (dr.critique) lines.push("", "#### 专家审稿意见：", dr.critique);
+  }
+  if (r.auto_cite_result) {
+    const ac = r.auto_cite_result;
+    lines.push("", "#### 📝 Auto-Cite 自动引文标注结果：", "", ac.annotatedText || "");
+    if (Array.isArray(ac.references) && ac.references.length) {
+      lines.push("", "#### 匹配参考文献：", ...ac.references.map((ref, idx) => `[${ref.number || idx + 1}] ${ref.formatted || ref.title}`));
+    }
+  }
+  if (r.credits_balance) {
+    const cb = r.credits_balance;
+    lines.push(
+      "",
+      `#### 💰 AI4Scholar 积分余额：可用 **${cb.total_available ?? 0}**（永久积分: ${cb.permanent ?? 0}，会员月度剩余: ${cb.member_monthly_remaining ?? 0}，当前 Key 累计消耗: ${cb.key_credits_used ?? 0}）`
+    );
   }
   if (bundle.results?.length && (!bundle.papers || bundle.papers.length === 0)) {
     lines.push("", `#### 检索结果条目（共 ${bundle.results.length} 条）：`);
@@ -2679,6 +2825,8 @@ const TOOLS = [
         s2ApiKey: { type: "string" },
         exaApiKey: { type: "string" },
         serperApiKey: { type: "string" },
+        easyscholarSecretKey: { type: "string" },
+        ai4scholarApiKey: { type: "string" },
         zoteroUrl: { type: "string" },
         exportSubdir: { type: "string" },
         defaultSources: { type: "array", items: { type: "string" } },
@@ -2736,6 +2884,9 @@ const TOOLS = [
       ];
       if (input.yearFrom) args.push("--year-from", String(input.yearFrom));
       if (input.yearTo) args.push("--year-to", String(input.yearTo));
+      if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+        args.push("--with-ranks");
+      }
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Search failed");
@@ -2783,6 +2934,9 @@ const TOOLS = [
       const args = ["lookup", cleanId, "--sources", srcs, "--out", outDir];
       if (input.title && String(input.title).trim()) {
         args.push("--title", String(input.title).trim());
+      }
+      if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+        args.push("--with-ranks");
       }
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Lookup failed");
@@ -2855,6 +3009,9 @@ const TOOLS = [
         "--out",
         outDir
       ];
+      if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+        args.push("--with-ranks");
+      }
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Related exploration failed");
       const latestState = loadState();
@@ -2921,6 +3078,9 @@ const TOOLS = [
       }
       if (input.yearFrom && (hasAuthorId || hasFromPaper)) args.push("--year-from", String(input.yearFrom));
       if (input.yearTo && (hasAuthorId || hasFromPaper)) args.push("--year-to", String(input.yearTo));
+      if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+        args.push("--with-ranks");
+      }
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       // A confirmed S2 author ID must never silently become an OpenAlex name search.
@@ -3016,6 +3176,9 @@ const TOOLS = [
       if (input.hasData) args.push("--has-data");
       if (input.preprints) args.push("--preprints");
       if (input.hasFulltext) args.push("--has-fulltext");
+      if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+        args.push("--with-ranks");
+      }
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args, 240000);
       requirePythonBundle(pyRes, outDir, "Europe PMC query failed");
@@ -3245,15 +3408,20 @@ const TOOLS = [
     },
     execute: async (input) => {
       if (input.action === "download_pdf") {
-        if (!input.pdfUrl) throw new Error("pdfUrl is required for download_pdf");
+        const cleanUrl = input.pdfUrl ? String(input.pdfUrl).trim() : "";
+        const cleanDoi = input.doi ? String(input.doi).trim() : "";
+        if (!cleanUrl && !cleanDoi) throw new Error("pdfUrl or doi is required for download_pdf");
         const runId = makeRunId("pdf");
         const outDir = join(RUNS_DIR, runId);
-        const args = [String(input.pdfUrl).trim(), "--out", outDir];
-        if (input.doi) args.push("--doi", String(input.doi).trim());
+        const args = [];
+        if (cleanUrl) args.push(cleanUrl);
+        args.push("--out", outDir);
+        if (cleanDoi) args.push("--doi", cleanDoi);
+        if (!cleanUrl && cleanDoi) args.push("--resolve-doi");
         if (input.title) args.push("--title", String(input.title).trim());
         if (Array.isArray(input.fallbackUrls)) {
           for (const fb of input.fallbackUrls) {
-            if (fb && String(fb).trim() && String(fb).trim() !== String(input.pdfUrl).trim()) {
+            if (fb && String(fb).trim() && String(fb).trim() !== cleanUrl) {
               args.push("--fallback-url", String(fb).trim());
             }
           }
@@ -3813,6 +3981,410 @@ const TOOLS = [
         structured: panelState
       };
     }
+  },
+  {
+    name: "lookup_venue_rank",
+    description:
+      "调用 easyScholar 接口查询学术期刊或会议的等级分区（中科院升级版分区、TOP标记、JCR Q1-Q4、SCI 影响因子、5年IF、CCF A-C、EI、CSSCI、北大核心及中科院预警名单），或为当前检索批次自动补全期刊分区。需配置 EASYSCHOLAR_SECRET_KEY。",
+    visibility: ["model", "app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        venues: {
+          type: "array",
+          items: { type: "string" },
+          description: "要查询的期刊或会议名称列表（如 ['Advanced Materials', 'ACS Catalysis', 'CVPR']）"
+        },
+        runId: {
+          type: "string",
+          description: "可选。传入历史批次 ID，自动为该批次内所有论文补全期刊等级与分区"
+        },
+        preserveActiveRun: {
+          type: "boolean",
+          description: "设为 true 时仅更新缓存和卡片分区徽章，不切换当前主检索结果视图"
+        }
+      }
+    },
+    execute: async (input) => {
+      const state = loadState();
+      const targetRun = input?.runId || (!input?.venues?.length ? state.lastRunId : null);
+      const venuesList = Array.isArray(input?.venues)
+        ? input.venues.map((v) => String(v || "").trim()).filter(Boolean)
+        : [];
+      if (!venuesList.length && !targetRun) {
+        throw new Error("请提供至少一个期刊/会议名称（venues）或指定要补全分区的批次 ID（runId）。");
+      }
+      const runId = makeRunId("rank");
+      const outDir = join(RUNS_DIR, runId);
+      const args = ["rank", ...venuesList.slice(0, 20)];
+      if (targetRun) {
+        args.push("--run", resolveRunDir(targetRun));
+      }
+      args.push("--out", outDir);
+      const pyRes = await runPython(PAPER_SEARCH_PY, args, 90000);
+      requirePythonBundle(pyRes, outDir, "easyScholar rank lookup failed");
+
+      // If targetRun was enriched, also update its papers.json in place so activeRun reflects the new venue_rank immediately
+      if (targetRun) {
+        const enrichedPapers = readJsonSafe(join(outDir, "papers.json"), []);
+        const origDir = resolveRunDir(targetRun);
+        if (Array.isArray(enrichedPapers) && enrichedPapers.length > 0 && existsSync(join(origDir, "papers.json"))) {
+          const manifestPath = join(origDir, "manifest.json");
+          const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+          const paperEntry = manifest?.files?.find((entry) => entry.path === "papers.json");
+          if (manifest.algorithm !== "sha256" || !paperEntry) {
+            throw new Error("原批次缺少有效的 papers.json 哈希清单，已保留原批次。");
+          }
+          writeJsonSafe(join(origDir, "papers.json"), enrichedPapers);
+          const paperBytes = readFileSync(join(origDir, "papers.json"));
+          paperEntry.sha256 = createHash("sha256").update(paperBytes).digest("hex");
+          paperEntry.size = paperBytes.length;
+          writeJsonSafe(manifestPath, manifest);
+        }
+      }
+      const preserve = input?.preserveActiveRun !== undefined ? Boolean(input.preserveActiveRun) : Boolean(targetRun);
+      if (!preserve) {
+        recordMainRunNavigation(state, runId);
+        saveState(state);
+      }
+      const panelState = await getFullPanelState(preserve ? state.lastRunId : runId);
+      const rankResults = readJsonSafe(join(outDir, "results.json"), []);
+      const lines = ["### 🏆 easyScholar 期刊/会议等级查询结果："];
+      for (const r of Array.isArray(rankResults) ? rankResults : []) {
+        if (r?.found && r?.venue_rank) {
+          lines.push(`- **${r.venue}**：${(r.venue_rank.badges || []).join(" · ")} — ${r.venue_rank.summary || ""}`);
+        } else if (r?.venue) {
+          lines.push(`- **${r.venue}**：未匹配到等级记录${r.error ? ` (${r.error})` : ""}`);
+        }
+      }
+      if (targetRun) {
+        lines.push(`- 已同步更新批次 \`${targetRun}\` 及本地期刊等级缓存。`);
+      }
+      return {
+        text: lines.join("\n"),
+        structured: { ...panelState, venueRanks: rankResults }
+      };
+    }
+  },
+  {
+    name: "search_ai4scholar",
+    description:
+      "使用 AI4Scholar 开放平台接口执行全源学术检索与引文分析：支持 Semantic Scholar（相关性搜索 s2-search、布尔批量搜索 s2-bulk、标题匹配 s2-match、详情 s2-detail、批量 s2-batch、施引 s2-citations、参考文献 s2-references、多正负样本推荐 s2-recommendations、500词全文片段搜索 s2-snippets、学者搜索 s2-authors、学者论文 s2-author-papers）、Google Scholar（学术检索 gs-search、标准引用格式 gs-cite、学者主页 gs-profiles / gs-author）、Google Patents（多维全球专利检索 patents）、PubMed（检索 pubmed-search、详情 pubmed-detail、批量 pubmed-batch、施引 pubmed-citations、相似文献 pubmed-related）及账户积分查询（credits）。需配置 AI4SCHOLAR_API_KEY。",
+    visibility: ["model", "app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        mode: {
+          type: "string",
+          enum: [
+            "s2-search",
+            "s2-bulk",
+            "s2-match",
+            "s2-detail",
+            "s2-batch",
+            "s2-citations",
+            "s2-references",
+            "s2-recommendations",
+            "s2-snippets",
+            "s2-authors",
+            "s2-author-papers",
+            "gs-search",
+            "gs-cite",
+            "gs-profiles",
+            "gs-author",
+            "patents",
+            "pubmed-search",
+            "pubmed-detail",
+            "pubmed-batch",
+            "pubmed-citations",
+            "pubmed-related",
+            "credits"
+          ],
+          default: "s2-search"
+        },
+        query: { type: "string", description: "检索关键词、学者姓名或论文标题" },
+        id: { type: "string", description: "单篇论文 ID（DOI、PMID、S2 paperId、Google Scholar paperId/authorId）" },
+        ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "批量查询或推荐正样本论文 ID 列表"
+        },
+        negativeIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "s2-recommendations 模式的负样本论文 ID 列表"
+        },
+        pool: { type: "string", enum: ["recent", "all-cs"], default: "recent" },
+        limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+        offset: { type: "integer", minimum: 0, default: 0 },
+        page: { type: "integer", minimum: 1, maximum: 50, default: 1 },
+        year: { type: "string", description: "S2 年份范围表达式，如 2023、2021-2026、2022-" },
+        yearFrom: { type: "integer" },
+        yearTo: { type: "integer" },
+        minDate: { type: "string", description: "PubMed 最早日期 YYYY/MM/DD" },
+        maxDate: { type: "string", description: "PubMed 最晚日期 YYYY/MM/DD" },
+        sort: { type: "string", description: "排序方式（relevance, date, citationCount:desc, new, old）" },
+        venue: { type: "string", description: "s2-snippets 期刊过滤" },
+        reviewOnly: { type: "boolean", description: "gs-search 仅看综述论文" },
+        sortByDate: { type: "boolean", description: "gs-search 按最新日期排序" },
+        cites: { type: "string", description: "gs-search Cited-By 施引簇 ID" },
+        language: { type: "string", description: "语言过滤（如 en, zh-CN, ENGLISH, CHINESE）" },
+        patentStatus: { type: "string", enum: ["GRANT", "APPLICATION"], description: "专利状态（已授权 GRANT / 申请中 APPLICATION）" },
+        patentType: { type: "string", enum: ["PATENT", "DESIGN"], description: "专利类型（发明专利 PATENT / 外观设计 DESIGN）" },
+        country: { type: "string", description: "专利国家/地区代码，逗号分隔，如 CN,US,EP,WO,JP" },
+        inventor: { type: "string", description: "专利发明人过滤" },
+        assignee: { type: "string", description: "专利申请人/机构过滤" },
+        preserveActiveRun: { type: "boolean" }
+      }
+    },
+    execute: async (input) => {
+      const mode = input?.mode || "s2-search";
+      const runId = makeRunId(`ai4s-${mode}`);
+      const outDir = join(RUNS_DIR, runId);
+      const args = ["ai4scholar"];
+      if (input?.query && String(input.query).trim()) args.push(String(input.query).trim());
+      args.push("--mode", mode, "--limit", String(input?.limit || 10), "--out", outDir);
+      if (input?.id && String(input.id).trim()) args.push("--id", String(input.id).trim());
+      for (const item of input?.ids || []) {
+        if (item && String(item).trim()) args.push("--ids", String(item).trim());
+      }
+      for (const neg of input?.negativeIds || []) {
+        if (neg && String(neg).trim()) args.push("--negative-ids", String(neg).trim());
+      }
+      if (input?.pool) args.push("--pool", input.pool);
+      if (input?.offset) args.push("--offset", String(input.offset));
+      if (input?.page) args.push("--page", String(input.page));
+      if (input?.year) args.push("--year", String(input.year).trim());
+      if (input?.yearFrom) args.push("--year-from", String(input.yearFrom));
+      if (input?.yearTo) args.push("--year-to", String(input.yearTo));
+      if (input?.minDate) args.push("--min-date", String(input.minDate).trim());
+      if (input?.maxDate) args.push("--max-date", String(input.maxDate).trim());
+      if (input?.sort) args.push("--sort", String(input.sort).trim());
+      if (input?.venue) args.push("--venue", String(input.venue).trim());
+      if (input?.reviewOnly) args.push("--review-only");
+      if (input?.sortByDate) args.push("--sort-by-date");
+      if (input?.cites) args.push("--cites", String(input.cites).trim());
+      if (input?.language) args.push("--language", String(input.language).trim());
+      if (input?.patentStatus) args.push("--patent-status", input.patentStatus);
+      if (input?.patentType) args.push("--patent-type", input.patentType);
+      if (input?.country) args.push("--country", String(input.country).trim());
+      if (input?.inventor) args.push("--inventor", String(input.inventor).trim());
+      if (input?.assignee) args.push("--assignee", String(input.assignee).trim());
+      if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+        args.push("--with-ranks");
+      }
+
+      const pyRes = await runPython(PAPER_SEARCH_PY, args, 180000);
+      requirePythonBundle(pyRes, outDir, `AI4Scholar (${mode}) failed`);
+
+      const state = loadState();
+      if (!input?.preserveActiveRun && mode !== "credits") {
+        recordMainRunNavigation(state, runId);
+        saveState(state);
+      }
+      const panelState = await getFullPanelState(
+        input?.preserveActiveRun || mode === "credits" ? state.lastRunId : runId
+      );
+      const bundle = loadRunBundle(runId);
+      return {
+        text: summarizeRunForModel(bundle),
+        structured:
+          input?.preserveActiveRun || mode === "credits"
+            ? { ...panelState, subRun: bundle, creditsBalance: bundle.run?.credits_balance || null }
+            : panelState
+      };
+    }
+  },
+  {
+    name: "ai4scholar_draw_and_cite",
+    description:
+      "调用 AI4Scholar 科研绘图与矢量化（mode='draw'，支持 smart 智能优化提示词绘图、generate 直接文生图、style 科研风格迁移、edit 编辑修改、compose 多图合成、svg 矢量生成、vectorize 位图转矢量 PDF + 可编辑 PPTX、critic 专家审图）或自动引文标注（mode='auto-cite'，为 100-10000 字学术段落自动检索匹配真实文献并插入 [1] 引用标记与格式化参考文献）。生成的图片/PDF/PPTX 自动同步保存到用户的默认下载目录。",
+    visibility: ["model", "app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        mode: {
+          type: "string",
+          enum: ["draw", "auto-cite"],
+          default: "draw"
+        },
+        drawAction: {
+          type: "string",
+          enum: ["smart", "generate", "edit", "style", "compose", "iterate", "critic", "svg", "vectorize"],
+          default: "smart",
+          description: "当 mode=draw 时的操作类型（smart 自动优化中文/英文提示词并绘图；vectorize 将位图转为 PDF 和可编辑 PPTX）"
+        },
+        prompt: {
+          type: "string",
+          description: "当 mode=draw 时的图片描述或修改指令；当 mode=auto-cite 时的待标注学术文本（100-10000字符）"
+        },
+        model: {
+          type: "string",
+          enum: ["flash", "flash31", "pro", "gptimage"],
+          default: "flash"
+        },
+        aspectRatio: {
+          type: "string",
+          default: "16:9",
+          description: "宽高比：16:9, 1:1, 4:3, 3:2, 3:4, 9:16"
+        },
+        imageSize: {
+          type: "string",
+          enum: ["512px", "1K", "2K", "4K"],
+          default: "2K"
+        },
+        stylePreset: {
+          type: "string",
+          description: "style 模式风格预设：biorender, nature, schematic, textbook, threed, infograph, electron, sketch 等"
+        },
+        lang: {
+          type: "string",
+          enum: ["zh", "en"],
+          default: "zh"
+        },
+        vectorizeMode: {
+          type: "string",
+          enum: ["fast", "standard", "premium"],
+          default: "standard"
+        },
+        images: {
+          type: "array",
+          items: { type: "string" },
+          description: "参考图片 URL 列表或本地图片文件路径列表（用于 edit / style / compose / critic / vectorize）"
+        },
+        citeMode: {
+          type: "string",
+          enum: ["auto", "manual"],
+          default: "auto"
+        },
+        minCitations: {
+          type: "integer",
+          minimum: 1,
+          maximum: 50,
+          default: 10
+        },
+        citationStyle: {
+          type: "string",
+          default: "gbt7714",
+          description: "参考文献格式：gbt7714, ieee, apa, nature, acs, vancouver 等"
+        },
+        field: { type: "string", description: "学科领域提示（如 catalysis, materials science, computer science）" },
+        yearPreference: { type: "integer", description: "优先引用年份（如 2024）" },
+        preferredVenues: { type: "string", description: "优先匹配期刊名，逗号分隔" },
+        excludePreprints: { type: "boolean" },
+        excludeConferences: { type: "boolean" },
+        saveDir: { type: "string", description: "可选。生成的科研图片/矢量 PDF/PPTX 保存目录" }
+      },
+      required: ["mode"]
+    },
+    execute: async (input) => {
+      const mode = input?.mode || "draw";
+      const runId = makeRunId(mode === "draw" ? `draw-${input?.drawAction || "smart"}` : "autocite");
+      const outDir = join(RUNS_DIR, runId);
+      const args = ["ai4scholar"];
+      if (input?.prompt && String(input.prompt).trim()) {
+        args.push(String(input.prompt).trim());
+      }
+      args.push("--mode", mode, "--out", outDir);
+      if (mode === "draw") {
+        args.push(
+          "--draw-action",
+          input?.drawAction || "smart",
+          "--model",
+          input?.model || "flash",
+          "--aspect-ratio",
+          input?.aspectRatio || "16:9",
+          "--image-size",
+          input?.imageSize || "2K"
+        );
+        if (input?.stylePreset) args.push("--style-preset", String(input.stylePreset).trim());
+        if (input?.lang) args.push("--lang", input.lang);
+        if (input?.vectorizeMode) args.push("--vectorize-mode", input.vectorizeMode);
+        for (const img of input?.images || []) {
+          if (img && String(img).trim()) {
+            const rawImg = String(img).trim();
+            const resolvedImg =
+              !rawImg.startsWith("http") && !rawImg.startsWith("data:") && !isAbsolutePath(rawImg)
+                ? resolve(WORKSPACE_ROOT, rawImg)
+                : rawImg;
+            args.push("--image", resolvedImg);
+          }
+        }
+      } else {
+        args.push(
+          "--cite-mode",
+          input?.citeMode || "auto",
+          "--min-citations",
+          String(input?.minCitations || 10),
+          "--citation-style",
+          input?.citationStyle || "gbt7714"
+        );
+        if (input?.field) args.push("--field", String(input.field).trim());
+        if (input?.yearPreference) args.push("--year-preference", String(input.yearPreference));
+        if (input?.preferredVenues) args.push("--preferred-venues", String(input.preferredVenues).trim());
+        if (input?.excludePreprints) args.push("--exclude-preprints");
+        if (input?.excludeConferences) args.push("--exclude-conferences");
+        if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+          args.push("--with-ranks");
+        }
+      }
+
+      const pyRes = await runPython(PAPER_SEARCH_PY, args, 280000);
+      requirePythonBundle(pyRes, outDir, `AI4Scholar ${mode} failed`);
+
+      // Copy generated figure files (PNG, SVG, PDF, PPTX) to user's saveDir
+      const destDir = resolveTargetSaveDir(input?.saveDir);
+      const copiedPaths = {};
+      const runJson = readJsonSafe(join(outDir, "run.json"), {});
+      const drawRes = runJson?.draw_result || {};
+      const savedMap = drawRes?.savedFiles || {};
+      const stem = makeSafeFileStem(new Date().getFullYear(), input?.prompt || mode, runId, runId);
+      for (const [k, relName] of Object.entries(savedMap)) {
+        const srcPath = join(outDir, relName);
+        if (existsSync(srcPath) && statSync(srcPath).isFile()) {
+          const ext = extname(relName);
+          const suffix = k === "pdf_file" ? "-vector" : k === "pptx_file" ? "-editable" : "";
+          const dstPath = uniqueDestination(destDir, `${stem}${suffix}${ext}`, runId);
+          copyFileSync(srcPath, dstPath, fsConstants.COPYFILE_EXCL);
+          copiedPaths[k] = dstPath;
+        }
+      }
+      if (Object.keys(copiedPaths).length > 0) {
+        runJson.exported_save_dir = destDir;
+        runJson.draw_result = {
+          ...drawRes,
+          exportedFiles: copiedPaths
+        };
+        writeJsonSafe(join(outDir, "run.json"), runJson);
+      }
+
+      const state = loadState();
+      if (Object.keys(copiedPaths).length > 0) {
+        state.runExports = { ...(state.runExports || {}), [runId]: destDir };
+      }
+      recordMainRunNavigation(state, runId);
+      saveState(state);
+
+      const panelState = await getFullPanelState(runId);
+      return {
+        text:
+          summarizeRunForModel(panelState.activeRun) +
+          (Object.keys(copiedPaths).length
+            ? `\n\n✅ 已自动将生成文件保存至本地目录：\`${destDir}\`\n` +
+              Object.entries(copiedPaths)
+                .map(([k, p]) => `- ${k}: \`${p}\``)
+                .join("\n")
+            : ""),
+        structured: {
+          ...panelState,
+          drawResult: panelState.activeRun?.run?.draw_result || null,
+          autoCiteResult: panelState.activeRun?.run?.auto_cite_result || null
+        }
+      };
+    }
   }
 ];
 
@@ -3859,7 +4431,15 @@ function validateToolInput(name, input) {
   }
   if (name === "save_config") {
     if (input.zoteroUrl?.trim()) validateZoteroUrl(input.zoteroUrl.trim());
-    const allowed = ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "politeEmail"];
+    const allowed = [
+      "openalexApiKey",
+      "s2ApiKey",
+      "exaApiKey",
+      "serperApiKey",
+      "easyscholarSecretKey",
+      "ai4scholarApiKey",
+      "politeEmail"
+    ];
     if (input.clearKeys?.some((key) => !allowed.includes(key))) throw new Error("clearKeys 只允许清空 API Key 或联系邮箱。");
     if (input.defaultSources?.some((source) => !["openalex", "semantic-scholar", "crossref"].includes(source))) throw new Error("defaultSources 含无效来源。");
   }
@@ -3877,6 +4457,35 @@ function validateToolInput(name, input) {
   }
   if (name === "read_run_file") requiredText("relativePath");
   if (name === "copy_clipboard") requiredText("text");
+  if (name === "search_ai4scholar") {
+    const m = input.mode || "s2-search";
+    if (["s2-search", "s2-bulk", "s2-match", "s2-snippets", "s2-authors", "gs-search", "gs-profiles", "patents", "pubmed-search"].includes(m)) {
+      if (!input.query?.trim() && !(m === "gs-search" && input.cites?.trim())) {
+        requiredText("query");
+      }
+    } else if (["s2-detail", "s2-citations", "s2-references", "s2-author-papers", "gs-cite", "gs-author", "pubmed-detail", "pubmed-citations", "pubmed-related"].includes(m)) {
+      if (!input.id?.trim() && !input.query?.trim()) {
+        throw new Error(`模式 ${m} 需要提供 id 或 query 参数。`);
+      }
+    }
+  }
+  if (name === "ai4scholar_draw_and_cite") {
+    const m = input.mode || "draw";
+    if (m === "auto-cite") {
+      requiredText("prompt");
+      if (input.prompt.trim().length < 100 || input.prompt.trim().length > 10000) {
+        throw new Error("Auto-Cite 待标注学术文本长度需在 100 至 10000 字符之间。");
+      }
+    } else {
+      const act = input.drawAction || "smart";
+      if (!["critic", "vectorize"].includes(act)) {
+        requiredText("prompt");
+      }
+      if (["edit", "style", "compose", "iterate", "critic", "vectorize"].includes(act) && (!Array.isArray(input.images) || !input.images.some((x) => String(x || "").trim()))) {
+        throw new Error(`绘图操作 ${act} 需要至少提供一张参考图片（images）。`);
+      }
+    }
+  }
 }
 
 for (const tool of TOOLS) tool.inputSchema.additionalProperties = false;
@@ -3919,7 +4528,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.6.7"
+          version: "1.6.8"
         }
       }
     };

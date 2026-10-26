@@ -1,4 +1,5 @@
 import importlib.util
+from fnmatch import fnmatchcase
 import json
 from pathlib import Path
 import shutil
@@ -14,6 +15,21 @@ SPEC.loader.exec_module(build)
 
 
 class DistributionTests(unittest.TestCase):
+    def test_ci_artifact_includes_every_checksummed_distribution(self):
+        workflow = (build.ROOT / ".github/workflows/distribution.yml").read_text(encoding="utf-8")
+        upload = workflow.split("uses: actions/upload-artifact@", 1)[1]
+        patterns = [line.strip() for line in upload.split("path: |", 1)[1].splitlines() if line.strip()]
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "dist"
+            archives = build.build(output)
+            self.assertTrue(any("workbuddy" in path.parts for path in archives))
+            self.assertTrue(any("zcode" in path.parts for path in archives))
+            paths = ["dist/" + path.relative_to(output).as_posix() for path in archives]
+            paths.append("dist/SHA256SUMS")
+            for path in paths:
+                self.assertTrue(any(len(path.split("/")) == len(pattern.split("/")) and fnmatchcase(path, pattern)
+                                    for pattern in patterns), f"CI omits {path}")
+
     def test_skillhub_keeps_body_and_portable_name(self):
         release, _ = build.validate()
         for skill in release["skills"]:

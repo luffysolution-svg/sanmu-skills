@@ -78,6 +78,146 @@ def _normalize_candidate_pdf_url(url):
     return u
 
 
+def publisher_pdf_candidates(landing_url):
+    candidates = []
+    parts = urlsplit(str(landing_url or "").strip())
+    if parts.scheme != "https" or not parts.hostname:
+        return candidates
+    host = parts.hostname.lower()
+    path = parts.path or ""
+    origin = f"https://{parts.netloc}"
+    if "sciencedirect.com" in host and "/article/pii/" in path:
+        candidates.append(f"{origin}{path}/pdfft?isDTMRedir=true&download=true")
+    if "springer.com" in host or "nature.com" in host:
+        m = re.search(r"/articles?/(10\.\d+/[^\s?#]+)", path)
+        if m:
+            candidates.append(f"https://{host}/content/pdf/{m.group(1)}.pdf")
+        elif not path.endswith(".pdf"):
+            candidates.append(f"{origin}{path}.pdf")
+    if "wiley.com" in host and "/doi/" in path:
+        candidates.append(re.sub(r"/doi/(?:abs|full|epdf)/", "/doi/pdfdirect/", f"{origin}{path}") + "?download=true")
+    if "tandfonline.com" in host and "/doi/" in path:
+        candidates.append(re.sub(r"/doi/(?:abs|full)/", "/doi/pdf/", f"{origin}{path}"))
+    if "mdpi.com" in host:
+        candidates.append(f"{origin}{path.removesuffix('/htm').rstrip('/')}/pdf")
+    if "ieeexplore.ieee.org" in host:
+        m = re.search(r"/document/(\d+)", path)
+        if m:
+            candidates.append(f"https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber={m.group(1)}")
+    if "dl.acm.org" in host or "pubs.acs.org" in host or "pnas.org" in host:
+        candidates.append(re.sub(r"/doi/(?:abs|full)/", "/doi/pdf/", f"{origin}{path}").replace("/doi/10.", "/doi/pdf/10."))
+    if "rsc.org" in host and "/articlelanding/" in path:
+        candidates.append(f"{origin}{path.replace('/articlelanding/', '/articlepdf/')}")
+    if "frontiersin.org" in host and "/articles/10." in path:
+        candidates.append(f"{origin}{path.removesuffix('/full').rstrip('/')}/pdf")
+    if ("biorxiv.org" in host or "medrxiv.org" in host) and path.startswith("/content/"):
+        base_p = re.sub(r"(?:\.full)?(?:\.pdf)?$", "", path)
+        candidates.append(f"{origin}{base_p}.full.pdf")
+    if "arxiv.org" in host and path.startswith("/abs/"):
+        candidates.append(f"https://arxiv.org/pdf/{path[len('/abs/'):].removesuffix('.pdf')}.pdf")
+    return list(dict.fromkeys(candidates))
+
+
+def resolve_doi_pdf_candidates(doi_str, env=None):
+    import os
+    from urllib.parse import quote, urljoin
+    env = os.environ if env is None else env
+    clean_doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", str(doi_str or "").strip(), flags=re.I).rstrip(".,;:)]>")
+    if not clean_doi:
+        return []
+    found = []
+    # 1. Known preprint DOIs (arXiv, bioRxiv, medRxiv)
+    m_arx = re.match(r"^10\.48550/arXiv\.(.+)$", clean_doi, flags=re.I)
+    if m_arx:
+        found.append(f"https://arxiv.org/pdf/{m_arx.group(1).removesuffix('.pdf')}.pdf")
+    if clean_doi.lower().startswith("10.1101/"):
+        found.append(f"https://www.biorxiv.org/content/{clean_doi}v1.full.pdf")
+        found.append(f"https://www.medrxiv.org/content/{clean_doi}v1.full.pdf")
+
+    # 2. Unpaywall OA API
+    email = (env.get("UNPAYWALL_EMAIL") or env.get("POLITE_EMAIL") or env.get("OPENALEX_EMAIL") or "").strip()
+    if email:
+        try:
+            upw_url = f"https://api.unpaywall.org/v2/{quote(clean_doi, safe='/')}?email={quote(email)}"
+            with urlopen(Request(upw_url, headers={"User-Agent": "sanmu-paper-search/1.7"}), timeout=10) as r:
+                upw_data = json.loads(r.read(1024 * 1024).decode("utf-8", errors="replace"))
+            best = upw_data.get("best_oa_location") or {}
+            if best.get("url_for_pdf"):
+                found.append(best["url_for_pdf"])
+            for loc in upw_data.get("oa_locations") or []:
+                if isinstance(loc, dict) and loc.get("url_for_pdf"):
+                    found.append(loc["url_for_pdf"])
+        except Exception:
+            pass
+
+    # 3. AI4Scholar / Semantic Scholar Graph openAccessPdf
+    ai4s_key = (env.get("AI4SCHOLAR_API_KEY") or "").strip()
+    s2_url = (
+        f"https://ai4scholar.net/graph/v1/paper/DOI:{quote(clean_doi, safe='')}?fields=openAccessPdf,externalIds"
+        if ai4s_key
+        else f"https://api.semanticscholar.org/graph/v1/paper/DOI:{quote(clean_doi, safe='')}?fields=openAccessPdf,externalIds"
+    )
+    s2_headers = {"User-Agent": "sanmu-paper-search/1.7", "Accept": "application/json"}
+    if ai4s_key:
+        s2_headers["Authorization"] = f"Bearer {ai4s_key}"
+    elif env.get("S2_API_KEY"):
+        s2_headers["x-api-key"] = env["S2_API_KEY"].strip()
+    try:
+        with urlopen(Request(s2_url, headers=s2_headers), timeout=12) as r:
+            s2_data = json.loads(r.read(1024 * 1024).decode("utf-8", errors="replace"))
+        ext_ids = s2_data.get("externalIds") or {}
+        if ext_ids.get("ArXiv"):
+            found.append(f"https://arxiv.org/pdf/{str(ext_ids['ArXiv']).removesuffix('.pdf')}.pdf")
+        if ext_ids.get("PubMedCentral"):
+            pmc = str(ext_ids["PubMedCentral"]).upper()
+            if not pmc.startswith("PMC"):
+                pmc = "PMC" + pmc
+            found.append(f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={pmc}&blobtype=pdf")
+        oa_pdf = s2_data.get("openAccessPdf") or {}
+        if oa_pdf.get("url"):
+            found.append(oa_pdf["url"])
+        elif oa_pdf.get("disclaimer"):
+            for m_u in re.findall(r"https?://[^\s,)]+", str(oa_pdf["disclaimer"])):
+                u_clean = m_u.rstrip(".,;:)]>")
+                if "unpaywall.org" not in u_clean and "doi.org" not in u_clean:
+                    found.append(_normalize_candidate_pdf_url(u_clean))
+    except Exception:
+        pass
+
+    # 4. DOI landing page resolution + publisher PDF patterns + meta citation_pdf_url
+    try:
+        doi_req = Request(
+            f"https://doi.org/{quote(clean_doi, safe='/')}",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
+            },
+        )
+        with urlopen(doi_req, timeout=15) as r:
+            landing = r.url
+            ct = r.headers.get_content_type()
+            if "pdf" in ct.lower():
+                found.insert(0, landing)
+            else:
+                found.extend(publisher_pdf_candidates(landing))
+                html_snippet = r.read(256 * 1024).decode("utf-8", errors="replace")
+                m_meta = re.search(
+                    r'<meta[^>]+name=["\']citation_pdf_url["\'][^>]+content=["\']([^"\']+)["\']',
+                    html_snippet,
+                    flags=re.I,
+                ) or re.search(
+                    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']citation_pdf_url["\']',
+                    html_snippet,
+                    flags=re.I,
+                )
+                if m_meta:
+                    found.append(urljoin(landing, m_meta.group(1).strip()))
+    except Exception:
+        pass
+
+    return [u for u in dict.fromkeys(found) if isinstance(u, str) and u.startswith("https://")]
+
+
 def _download_pdf_bytes(url, max_bytes=80 * 1024 * 1024):
     url = _normalize_candidate_pdf_url(url)
     parts = urlsplit(url)
@@ -119,11 +259,15 @@ def _download_pdf_bytes(url, max_bytes=80 * 1024 * 1024):
     raise last_exc
 
 
-def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_urls=None):
+def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_urls=None, resolve_doi=False):
     candidates = []
-    for u in [url] + list(fallback_urls or []):
+    for u in ([url] if url else []) + list(fallback_urls or []):
         if u and u not in candidates:
             candidates.append(u)
+    if resolve_doi and doi:
+        for resolved_u in resolve_doi_pdf_candidates(doi):
+            if resolved_u not in candidates:
+                candidates.append(resolved_u)
     if not candidates:
         raise ValueError("A public HTTPS URL without embedded credentials is required")
     out = Path(out)
@@ -176,14 +320,25 @@ def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_u
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("url")
+    parser.add_argument("url", nargs="?", default="")
     parser.add_argument("--out", required=True, help="New acquisition directory")
     parser.add_argument("--doi")
     parser.add_argument("--title")
     parser.add_argument("--fallback-url", action="append", default=[], help="Optional fallback OA PDF URLs to try if primary fails")
+    parser.add_argument("--resolve-doi", action="store_true", help="Automatically resolve DOI to OA/publisher PDF URLs")
     args = parser.parse_args()
+    primary_url = (args.url or "").strip()
+    target_doi = (args.doi or "").strip() or None
+    auto_resolve = args.resolve_doi
+    if primary_url and re.match(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?10\.\d{4,9}/\S+$", primary_url, flags=re.I):
+        if not target_doi:
+            target_doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", primary_url, flags=re.I)
+        primary_url = ""
+        auto_resolve = True
+    elif not primary_url and target_doi:
+        auto_resolve = True
     try:
-        result = fetch(args.url, args.out, args.doi, args.title, fallback_urls=args.fallback_url)
+        result = fetch(primary_url, args.out, target_doi, args.title, fallback_urls=args.fallback_url, resolve_doi=auto_resolve)
         code = 0
     except HTTPError as exc:
         result, code = {"ok": False, "error": "http_error", "http_status": exc.code}, 2

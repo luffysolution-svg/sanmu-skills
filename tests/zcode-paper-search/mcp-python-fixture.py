@@ -43,7 +43,13 @@ run = {"command": mode, "status": status, "query": {"text": args[1] if len(args)
 if status == "failed":
     run["source_status"]["fixture"]["error"] += " " + os.environ.get("EXA_API_KEY", "")
 write(out / "run.json", run)
-write(out / "papers.json", [] if status == "failed" else [paper])
+papers = [] if status == "failed" else [paper]
+if mode == "rank" and option("--run"):
+    papers = json.loads((Path(option("--run")) / "papers.json").read_text(encoding="utf-8"))
+    for item in papers:
+        item["venue_rank"] = {"if": 20, "badges": ["IF 20"]}
+    write(out / "results.json", [])
+write(out / "papers.json", papers)
 (out / "report.md").write_text("fixture report", encoding="utf-8")
 if mode == "epmc" and option("--fetch") != "none":
     (out / "fulltext.xml").write_text("<article>fixture</article>", encoding="utf-8")

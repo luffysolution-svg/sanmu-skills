@@ -487,6 +487,9 @@ def execute(args, client):
                 "reason": "Target paper does not have a PMCID in Europe PMC (XML/SI download requires PMCID)"
             }
     audits = client.raw[start_audit_len:]
+    if getattr(args, "with_ranks", False) and papers:
+        from _easyscholar import enrich_papers_with_ranks
+        enrich_papers_with_ranks(client, papers, max_lookups=15)
     epmc_data["results"] = raw_results
     epmc_data["responses"] = audits
     if xml_content:

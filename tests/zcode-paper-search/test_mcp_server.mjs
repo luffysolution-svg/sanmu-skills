@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { after, test } from "node:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -137,6 +138,33 @@ test("MCP offline regressions", async (t) => {
     const author = await call("search_author", { provider: "semantic-scholar", authorId: "42", query: "Alice Lee", fromPaper: "10.1234/fixture" });
     expectError(author);
     assert.equal(readdirSync(join(data, "runs")).some((name) => name.startsWith("author-oa")), false);
+  });
+
+  await t.test("rank enrichment updates papers without invalidating original manifest or navigation", async () => {
+    reset();
+    const dir = makeRun();
+    const entries = ["run.json", "papers.json"].map((path) => {
+      const bytes = readFileSync(join(dir, path));
+      return { path, sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length };
+    });
+    json(join(dir, "manifest.json"), { algorithm: "sha256", files: entries });
+    await call("open_panel", { runId: "fixture-run" });
+    const result = await call("lookup_venue_rank", { runId: "fixture-run", preserveActiveRun: true });
+    assert.equal(result.isError, undefined);
+    assert.equal(result.structuredContent.activeRun.runId, "fixture-run");
+    assert.equal(JSON.parse(readFileSync(join(dir, "papers.json"), "utf8"))[0].venue_rank.if, 20);
+    const updated = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    for (const entry of updated.files) {
+      const bytes = readFileSync(join(dir, entry.path));
+      assert.equal(entry.sha256, createHash("sha256").update(bytes).digest("hex"));
+      assert.equal(entry.size, bytes.length);
+    }
+    assert.deepEqual(updated.files.find((entry) => entry.path === "run.json"), entries[0]);
+    // A damaged manifest must be rejected before touching original papers.
+    json(join(dir, "manifest.json"), { algorithm: "sha256", files: [] });
+    const original = readFileSync(join(dir, "papers.json"), "utf8");
+    expectError(await call("lookup_venue_rank", { runId: "fixture-run" }), /哈希清单/);
+    assert.equal(readFileSync(join(dir, "papers.json"), "utf8"), original);
   });
 
   await t.test("concurrent operations preserve baskets and evidence across awaited Python/network work", async () => {

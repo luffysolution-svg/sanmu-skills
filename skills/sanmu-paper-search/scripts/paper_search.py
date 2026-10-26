@@ -93,12 +93,67 @@ def parser():
     cmd.add_argument("--has-fulltext", action="store_true", help="Only papers with full text in Europe PMC (HAS_FT:y)")
     cmd.add_argument("--fetch", choices=("none", "all", "xml", "suppl"), default="none",
                      help="Fetch JATS XML and/or supplementary ZIP files into output")
+    cmd.add_argument("--with-ranks", action="store_true", help="Enrich papers with easyScholar journal ranks when configured")
+    cmd.add_argument("--out", required=True)
+    cmd = commands.add_parser("rank", help="Query easyScholar journal/conference rankings (SCI IF, JCR, CAS quartile, CCF, warning list)")
+    cmd.add_argument("venues", nargs="*", help="Journal or conference names to query (1..20)")
+    cmd.add_argument("--run", help="Optional existing run directory or papers.json to enrich with venue_rank")
+    cmd.add_argument("--no-cache", action="store_true", help="Bypass local easyScholar rank cache")
+    cmd.add_argument("--out", required=True)
+    from _ai4scholar import AI4SCHOLAR_MODES, DRAW_ACTIONS, DRAW_MODELS, DRAW_SIZES, VECTORIZE_MODES
+    cmd = commands.add_parser("ai4scholar", help="AI4Scholar multi-source academic search, PubMed, Google Scholar/Patents, Nano Draw & Auto-Cite")
+    cmd.add_argument("query", nargs="?", help="Search query, paper ID/PMID, drawing prompt, or academic text")
+    cmd.add_argument("--mode", choices=AI4SCHOLAR_MODES, default="s2-search")
+    cmd.add_argument("--id", help="Explicit paper ID, DOI, PMID, or Google Scholar paper/author ID")
+    cmd.add_argument("--ids", action="append", default=[], help="Multiple paper IDs or PMIDs for batch/recommendations")
+    cmd.add_argument("--negative-ids", action="append", default=[], help="Negative example paper IDs for s2-recommendations")
+    cmd.add_argument("--pool", choices=("recent", "all-cs"), default="recent", help="Recommendation pool for s2-recommendations")
+    cmd.add_argument("--limit", type=int, default=10, help="Result limit (1..50)")
+    cmd.add_argument("--offset", type=int, default=0, help="Pagination offset")
+    cmd.add_argument("--page", type=int, default=1, help="Page number for gs-search / patents")
+    cmd.add_argument("--year", help="Semantic Scholar year filter (e.g. 2023, 2020-2025, 2022-)")
+    cmd.add_argument("--year-from", type=int)
+    cmd.add_argument("--year-to", type=int)
+    cmd.add_argument("--min-date", help="PubMed minimum date YYYY/MM/DD")
+    cmd.add_argument("--max-date", help="PubMed maximum date YYYY/MM/DD")
+    cmd.add_argument("--sort", help="Sort order (e.g. relevance, date, citationCount:desc, new, old)")
+    cmd.add_argument("--token", help="Continuation token for s2-bulk")
+    cmd.add_argument("--venue", help="Venue filter for s2-snippets")
+    cmd.add_argument("--review-only", action="store_true", help="Google Scholar review articles only")
+    cmd.add_argument("--sort-by-date", action="store_true", help="Google Scholar sort by date")
+    cmd.add_argument("--cites", help="Google Scholar Cited-By cluster ID")
+    cmd.add_argument("--language", help="Language filter (e.g. en, zh-CN, ENGLISH, CHINESE)")
+    cmd.add_argument("--patent-status", choices=("GRANT", "APPLICATION"), help="Google Patents status filter")
+    cmd.add_argument("--patent-type", choices=("PATENT", "DESIGN"), help="Google Patents type filter")
+    cmd.add_argument("--country", help="Google Patents country codes (e.g. CN,US,EP,WO,JP)")
+    cmd.add_argument("--inventor", help="Google Patents inventor filter")
+    cmd.add_argument("--assignee", help="Google Patents assignee / organization filter")
+    cmd.add_argument("--before", help="Google Patents before date (e.g. publication:20251231)")
+    cmd.add_argument("--after", help="Google Patents after date (e.g. filing:20200101)")
+    cmd.add_argument("--draw-action", choices=DRAW_ACTIONS, default="smart", help="Nano Draw action")
+    cmd.add_argument("--model", choices=DRAW_MODELS, default="flash", help="Nano Draw model")
+    cmd.add_argument("--aspect-ratio", default="16:9", help="Nano Draw aspect ratio (1:1, 16:9, 4:3, 3:2, 3:4, 9:16)")
+    cmd.add_argument("--image-size", choices=DRAW_SIZES, default="2K", help="Nano Draw resolution")
+    cmd.add_argument("--style-preset", help="Nano Draw style preset (e.g. biorender, nature, schematic)")
+    cmd.add_argument("--lang", choices=("zh", "en"), help="Language preference for smart prompt / critique")
+    cmd.add_argument("--vectorize-mode", choices=VECTORIZE_MODES, default="standard", help="Vectorize quality mode")
+    cmd.add_argument("--image", action="append", default=[], help="Input image URL or local file path for edit/style/compose/critic/vectorize")
+    cmd.add_argument("--cite-mode", choices=("auto", "manual"), default="auto", help="Auto-Cite mode")
+    cmd.add_argument("--min-citations", type=int, default=10, help="Minimum citations for Auto-Cite")
+    cmd.add_argument("--citation-style", default="gbt7714", help="Citation style for Auto-Cite (gbt7714, ieee, apa, nature, acs, etc.)")
+    cmd.add_argument("--field", help="Academic field hint for Auto-Cite")
+    cmd.add_argument("--year-preference", type=int, help="Preferred year for Auto-Cite")
+    cmd.add_argument("--preferred-venues", help="Comma-separated preferred journals for Auto-Cite")
+    cmd.add_argument("--exclude-preprints", action="store_true", help="Exclude preprints in Auto-Cite")
+    cmd.add_argument("--exclude-conferences", action="store_true", help="Exclude conferences in Auto-Cite")
+    cmd.add_argument("--with-ranks", action="store_true", help="Enrich papers with easyScholar journal ranks when configured")
     cmd.add_argument("--out", required=True)
     for name in ("search", "lookup", "related"):
         cmd = commands.add_parser(name)
         cmd.add_argument("query" if name == "search" else "id")
         cmd.add_argument("--sources", type=sources, default=list(PROVIDERS) if name != "related" else list(PROVIDERS[:2]))
         cmd.add_argument("--limit", type=bounded, default=10, help="Per-source candidate budget (1..20); keep all deduplicated results")
+        cmd.add_argument("--with-ranks", action="store_true", help="Enrich papers with easyScholar journal ranks when configured")
         cmd.add_argument("--out", required=True)
         if name == "search":
             cmd.add_argument("--year-from", type=int)
@@ -115,6 +170,7 @@ def parser():
     cmd.add_argument("--year-from", type=int, help="Paper years; requires --author-id or --from-paper")
     cmd.add_argument("--year-to", type=int, help="Paper years; requires --author-id or --from-paper")
     cmd.add_argument("--limit", type=bounded, default=10, help="Per-source candidate budget (1..20); keep all deduplicated results")
+    cmd.add_argument("--with-ranks", action="store_true", help="Enrich papers with easyScholar journal ranks when configured")
     cmd.add_argument("--out", required=True)
     cmd = commands.add_parser("oa")
     cmd.add_argument("input", help="Normalized run/papers.json or DOI/stable paper ID")
@@ -196,6 +252,8 @@ def execute(args, client):
                                   "openalex_api_key": bool(env.get("OPENALEX_API_KEY")),
                                   "serper_api_key": bool(env.get("SERPER_API_KEY")),
                                   "exa_api_key": bool(env.get("EXA_API_KEY", "").strip()),
+                                  "easyscholar_secret_key": bool(re.sub(r"\s+", "", env.get("EASYSCHOLAR_SECRET_KEY", ""))),
+                                  "ai4scholar_api_key": bool(env.get("AI4SCHOLAR_API_KEY", "").strip()),
                                   "openalex_email": bool(env.get("OPENALEX_EMAIL")),
                                   "unpaywall_email": bool(env.get("UNPAYWALL_EMAIL")),
                                   "crossref_email": bool(env.get("CROSSREF_EMAIL")),
@@ -212,6 +270,12 @@ def execute(args, client):
     if args.command == "epmc":
         from _epmc import execute as execute_epmc
         return execute_epmc(args, client)
+    if args.command == "rank":
+        from _easyscholar import execute as execute_rank
+        return execute_rank(args, client)
+    if args.command == "ai4scholar":
+        from _ai4scholar import execute as execute_ai4scholar
+        return execute_ai4scholar(args, client)
     # Input errors are diagnosed before reserving a directory or issuing a request.
     command = args.command
     year_from, year_to = getattr(args, "year_from", None), getattr(args, "year_to", None)
@@ -410,6 +474,9 @@ def execute(args, client):
             "mode": "provider_and_local"}
         papers = filtered
     papers = deduplicate(papers)
+    if getattr(args, "with_ranks", False) and papers:
+        from _easyscholar import enrich_papers_with_ranks
+        enrich_papers_with_ranks(client, papers, max_lookups=15)
     limit = getattr(args, "limit", None)
     extra["result_truncated"] = any(s.get("truncated") is True for s in statuses.values())
     extra["pre_dedup_count"] = input_count

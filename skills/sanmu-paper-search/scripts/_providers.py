@@ -91,10 +91,19 @@ class Client:
         params = dict(params or {})
         headers = {"User-Agent": "sanmu-paper-search/1.0 (metadata; Python stdlib)", "Accept": "application/json"}
         key = self.env.get("OPENALEX_API_KEY", "").strip() if source == "openalex" else None
+        use_ai4s_s2 = False
         if source == "semantic-scholar":
             key = self.env.get("S2_API_KEY", "").strip() or self.env.get("SEMANTIC_SCHOLAR_API_KEY", "").strip()
-            if key:
+            ai4s_key = self.env.get("AI4SCHOLAR_API_KEY", "").strip()
+            if key.startswith("sk-user-"):
+                use_ai4s_s2 = True
+                headers["Authorization"] = f"Bearer {key}"
+            elif key:
                 headers["x-api-key"] = key
+            elif ai4s_key and self.env.get("AI4SCHOLAR_S2_PROXY") == "1":
+                use_ai4s_s2 = True
+                key = ai4s_key
+                headers["Authorization"] = f"Bearer {ai4s_key}"
         polite_email = self.contact_email(source)
         if source == "openalex":
             if key:
@@ -108,7 +117,10 @@ class Client:
             if not polite_email:
                 raise SourceError("UNPAYWALL_EMAIL or a fallback contact email is not configured")
             params["email"] = polite_email
-        base = "https://api.semanticscholar.org" if source == "semantic-scholar" and path.startswith("/recommendations/") else BASE[source]
+        if source == "semantic-scholar" and use_ai4s_s2:
+            base = "https://ai4scholar.net" if path.startswith("/recommendations/") else "https://ai4scholar.net/graph/v1"
+        else:
+            base = "https://api.semanticscholar.org" if source == "semantic-scholar" and path.startswith("/recommendations/") else BASE[source]
         url = base + path + (("?" + urlencode(params)) if params else "")
         waited = 0.0
         for attempt in range(3):
@@ -240,7 +252,7 @@ def plain_text(value):
     return " ".join(html.unescape("".join(parser.parts)).split())
 
 
-def normalize(source, data):
+def normalize(source, data, relation=None):
     if source == "openalex":
         all_ids = data.get("ids") or {}
         raw_doi = data.get("doi") or all_ids.get("doi")
@@ -315,14 +327,27 @@ def normalize(source, data):
                     orcid=(a.get("externalIds") or {}).get("ORCID")),
                     "affiliations": a.get("affiliations") or []} for a in data.get("authors") or []]
         pdf = data.get("openAccessPdf") or {}
-        locations = [location(pdf["url"], source, data.get("isOpenAccess"), pdf.get("license"),
-                              "openAccessPdf", pdf.get("status"))] if pdf.get("url") else []
+        pdf_url = pdf.get("url") or ""
+        if not pdf_url and pdf.get("disclaimer"):
+            disc_urls = [u.rstrip(".,;:)]>") for u in re.findall(r"https?://[^\s,)]+", str(pdf.get("disclaimer")))]
+            non_upw = [u for u in disc_urls if "unpaywall.org" not in u and "doi.org" not in u]
+            if non_upw:
+                cand_u = non_upw[0]
+                if "arxiv.org/abs/" in cand_u:
+                    cand_u = cand_u.replace("/abs/", "/pdf/")
+                    if not cand_u.endswith(".pdf"):
+                        cand_u += ".pdf"
+                if cand_u.endswith(".pdf") or "/pdf/" in cand_u:
+                    pdf_url = cand_u
+        locations = [location(pdf_url, source, data.get("isOpenAccess"), pdf.get("license"),
+                              "openAccessPdf", pdf.get("status"))] if pdf_url else []
         for arx_id in identifiers.get("arxiv", []):
             arx_pdf = f"https://arxiv.org/pdf/{arx_id}.pdf"
             if not any(loc.get("url") == arx_pdf for loc in locations):
                 locations.append(location(arx_pdf, source, True, "arxiv", "arxiv_pdf", "submittedVersion"))
         p = record(source, data.get("paperId"), data.get("title"), data.get("year"), identifiers,
-                   authors, data.get("abstract"), ",".join(data.get("publicationTypes") or []) or None, locations)
+                   authors, data.get("abstract"), ",".join(data.get("publicationTypes") or []) or None, locations,
+                   [relation] if relation else [])
         p["oa_status"] = {"is_oa": data.get("isOpenAccess")}
         for field, remote in (("url", "url"), ("venue", "venue"), ("journal", "journal"),
                               ("citation_count", "citationCount"), ("reference_count", "referenceCount"),

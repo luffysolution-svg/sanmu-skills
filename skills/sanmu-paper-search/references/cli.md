@@ -89,9 +89,31 @@ python scripts/paper_search.py epmc PMC12710600 --fetch all --out "/path/to/work
 
 `papers.json` 保存对齐题录（保留 PMCID、PMID、DOI 与 `commentCorrectionList` 撤稿/勘误关系）；`results.json` 与 `response.json` 保存脱敏响应。当包含 `--fetch` 时，产物另包含 `fulltext.xml`、`fulltext_summary.json`（分节/图表/公式统计）、`supplementary_manifest.json` 与解压目录 `supplementary/`（含 SI 正文 PDF 与高清原图）。所有文件均由 `manifest.json` 计算 SHA-256 哈希防篡改。
 
+## easyScholar 期刊等级与分区（可选）
+
+配置 `EASYSCHOLAR_SECRET_KEY` 后，可通过 `rank` 子命令查询期刊或会议的中科院升级版分区（含 TOP 标记与小类）、JCR Q1–Q4、SCI 影响因子（含 5 年 IF）、JCI、CCF 推荐等级、EI/CSSCI/北大核心及中科院预警状态，或在 `search` / `lookup` / `related` / `author` / `epmc` / `ai4scholar` 时加 `--with-ranks` 自动写入每篇论文的 `venue_rank` 字段（自带本地缓存复用）。
+
+```bash
+python scripts/paper_search.py rank "Advanced Materials" "ACS Catalysis" --out "/path/to/work/runs/ranks"
+python scripts/paper_search.py rank --run "/path/to/work/runs/topic" --out "/path/to/work/runs/topic-ranked"
+```
+
+## AI4Scholar 全源检索、科研绘图与自动引文（可选）
+
+配置 `AI4SCHOLAR_API_KEY`（Bearer 鉴权）后，可通过 `ai4scholar` 子命令调用 Semantic Scholar（`s2-search`、`s2-bulk`、`s2-match`、`s2-detail`、`s2-batch`、`s2-citations`、`s2-references`、`s2-recommendations`、`s2-snippets`、`s2-authors`、`s2-author-papers`）、Google Scholar（`gs-search`、`gs-cite`、`gs-profiles`、`gs-author`）、Google Patents（`patents`）、PubMed（`pubmed-search`、`pubmed-detail`、`pubmed-batch`、`pubmed-citations`、`pubmed-related`）、科研绘图与矢量化（`draw`：支持 `smart`、`generate`、`style`、`edit`、`compose`、`svg`、`vectorize` 转 PDF+PPTX、`critic`）、自动引文标注（`auto-cite`）及积分查询（`credits`）。
+
+```bash
+python scripts/paper_search.py ai4scholar "single atom Ni photocatalyst" --mode gs-search --year-from 2023 --limit 10 --with-ranks --out "/path/to/work/runs/ai4s-gs"
+python scripts/paper_search.py ai4scholar "single atom catalyst photocatalyst" --mode patents --country CN,US --limit 10 --out "/path/to/work/runs/ai4s-patents"
+python scripts/paper_search.py ai4scholar "single atom nanozyme" --mode pubmed-search --limit 10 --with-ranks --out "/path/to/work/runs/ai4s-pubmed"
+python scripts/paper_search.py ai4scholar "Single-atom Ni/NiOx on g-C3N4 H2 evolution schematic" --mode draw --draw-action smart --model flash --aspect-ratio 16:9 --image-size 2K --out "/path/to/work/runs/ai4s-draw"
+```
+
 ## 配置（仅环境变量，不写入记录）
 
 - Europe PMC：公共免凭证开放访问，`doctor` 显示 `europepmc_public_access: true`。
+- `AI4SCHOLAR_API_KEY`：可选 AI4Scholar 开放平台密钥（解锁高速 S2、Google Scholar、Google Patents、PubMed、Nano Draw 科研绘图与 Auto-Cite 自动引文）。
+- `EASYSCHOLAR_SECRET_KEY`：可选 easyScholar 开放接口密钥（自动标注中科院升级版分区、JCR 分区、影响因子、CCF 与预警状态）。
 - `SERPER_API_KEY`：可选 Serper 接口，缺失时不执行该服务；安全设置方法见 [Serper 指南](serper.md)。
 - `EXA_API_KEY`：可选 Exa publication 检索；安全设置方法见 [Exa 指南](exa.md)。
 - `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`：Semantic Scholar 配额。

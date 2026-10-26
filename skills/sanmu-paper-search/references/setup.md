@@ -28,6 +28,8 @@ python scripts/paper_search.py doctor
 | `OPENALEX_EMAIL` / `CROSSREF_EMAIL` / `UNPAYWALL_EMAIL` | 分别指定各来源的邮箱，优先于 `POLITE_EMAIL` | 免费 | 一般不需要 |
 | `SERPER_API_KEY` | Google Scholar、网页、专利等补搜 | 按请求计费 | 需要 Google Scholar 时再配 |
 | `EXA_API_KEY` | 用自然语言描述找论文 | 按请求计费 | 需要时再配 |
+| `EASYSCHOLAR_SECRET_KEY` | 期刊/会议分区、影响因子、CCF 与预警信息 | 以平台配额为准 | 需要分区标注时再配 |
+| `AI4SCHOLAR_API_KEY` | S2、Google Scholar、专利、PubMed、科研绘图与自动引文 | 按平台积分计费 | 需要对应功能时再配 |
 
 Europe PMC 不需要任何配置。
 
@@ -39,6 +41,8 @@ Europe PMC 不需要任何配置。
 - **Semantic Scholar**：在 <https://www.semanticscholar.org/product/api#api-key-form> 填表申请，key 审核后通过邮件发送，可能要等一段时间。等待期间匿名访问照常可用。
 - **Serper**：在 <https://serper.dev> 注册，控制台里复制 API key。按请求计费，配置前先告诉用户这一点。
 - **Exa**：在 <https://dashboard.exa.ai> 注册并创建 API key。同样按请求计费。
+- **easyScholar**：在 <https://www.easyscholar.cc> 登录后进入开放接口设置，获取 SecretKey；使用 `EASYSCHOLAR_SECRET_KEY` 保存。
+- **AI4Scholar**：在 <https://ai4scholar.net> 登录控制台创建 API key，保存为 `AI4SCHOLAR_API_KEY`；检索、绘图和自动引文按平台积分计费。
 - **邮箱**：用用户自己的常用邮箱即可，不需要注册。
 
 ## 保存到本机

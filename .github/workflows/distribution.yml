@@ -23,3 +23,5 @@ jobs:
             dist/*.zip
             dist/SHA256SUMS
             dist/skillhub/*.zip
+            dist/workbuddy/*.zip
+            dist/zcode/*.zip

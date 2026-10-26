@@ -17,7 +17,9 @@ description: 从研究课题、种子论文或作者出发查找学术文献，�
 | 从一篇论文往外扩展 | 先核对种子身份，再分别查参考文献、施引文献和推荐 | [检索策略](references/retrieval.md) |
 | 查某位作者或团队的其他研究 | 先列候选作者，用稳定 ID、机构和已知作品确认是同一人，再查作品；同名或译名难区分时用 `--from-paper` 从种子论文锚定 | [检索策略](references/retrieval.md) |
 | 开题、范围综述、尽量查全、定期更新 | 先定检索协议，记录分页和筛选，逐项检查已知文献有没有漏 | [检索协议](references/protocol.md) |
-| Google Scholar 补搜、专利、公开网页 | 配置 Serper 后按需选接口 | [Serper](references/serper.md) |
+| Google Scholar 补搜、专利、公开网页 | 配置 AI4Scholar 或 Serper 后按需选接口 | [Serper](references/serper.md) |
+| AI4Scholar 全源检索（S2/GS/专利/PubMed）、科研绘图与自动引文 | `ai4scholar` 子命令（支持 `--mode gs-search|patents|pubmed-search|s2-snippets|draw|auto-cite`） | [CLI 指南](references/cli.md) |
+| 查询期刊中科院分区、JCR 分区、影响因子、CCF 与预警状态 | `rank` 子命令（或检索时加 `--with-ranks`），配置 `EASYSCHOLAR_SECRET_KEY` | [CLI 指南](references/cli.md) |
 | 用一段自然语言描述找论文 | 配置 Exa，保留 publication 类结果，再用学术源核验身份 | [Exa](references/exa.md) |
 | 预印本、关联数据集、撤稿核验、全文 XML 和 SI 原图包 | `epmc` 子命令，需要文件时加 `--fetch` | [Europe PMC](references/epmc.md) |
 | 已有题录，要找全文和 SI、核对 Zotero 里有没有 | 先查本地已有的，再找可访问的版本和附件 | [获取与交接](references/handoff.md) |

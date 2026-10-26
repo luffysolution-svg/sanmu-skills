@@ -506,29 +506,43 @@
       color: var(--accent);
     }
     .graph-tooltip {
-      position: absolute;
-      left: 12px;
-      top: 10px;
-      max-width: 390px;
+      height: 62px;
+      min-height: 62px;
+      max-height: 62px;
+      box-sizing: border-box;
+      overflow: hidden;
+      margin-bottom: 8px;
       background: var(--bg-primary);
       border: 1px solid var(--accent);
+      border-left: 4px solid var(--accent);
       border-radius: var(--radius-sm);
-      padding: 7px 10px;
+      padding: 6px 10px;
       font-size: 11.5px;
-      line-height: 1.45;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+      line-height: 1.4;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
       pointer-events: auto;
-      z-index: 12;
-      transition: opacity 0.15s ease;
     }
     .graph-tooltip-title {
       font-weight: 700;
       color: var(--accent);
       cursor: pointer;
-      display: inline;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .graph-tooltip-title:hover {
       text-decoration: underline;
+    }
+    .graph-tooltip-meta {
+      color: var(--text-secondary);
+      margin-top: 2px;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .timeline-stage-grid {
       display: grid;
@@ -849,7 +863,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.6.7</span>
+        <span class="brand-sub">v1.6.8</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -887,11 +901,21 @@
       <div class="form-grid">
         <div class="form-row">
           <div class="field">
+            <label>AI4Scholar API Key (S2 / 谷歌学术 / 专利 / PubMed / 科研绘图) <span id="badgeAi4scholarKey" class="pill static"></span></label>
+            <input type="password" id="cfgAi4scholarKey" placeholder="填入 sk-user-... 覆盖，留空保持原配置" />
+          </div>
+          <div class="field">
+            <label>easyScholar Secret Key (期刊分区 / IF / CCF / 预警) <span id="badgeEasyscholarKey" class="pill static"></span></label>
+            <input type="password" id="cfgEasyscholarKey" placeholder="填入开放接口 SecretKey 覆盖，留空保持原配置" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
             <label>联系邮箱 (Polite Pool 加速 + Unpaywall) <span id="badgePoliteEmail" class="pill static"></span></label>
             <input type="text" id="cfgPoliteEmail" placeholder="例如 researcher@university.edu" />
           </div>
           <div class="field">
-            <label>Serper API Key (Google Scholar / 专利) <span id="badgeSerperKey" class="pill static"></span></label>
+            <label>Serper API Key (Google Scholar / 专利备选) <span id="badgeSerperKey" class="pill static"></span></label>
             <input type="password" id="cfgSerperKey" placeholder="填入新 Key 覆盖，留空保持原配置" />
           </div>
         </div>
@@ -925,6 +949,7 @@
           <span style="font-size:11px; color:var(--text-secondary);">💡 提示：OpenAlex / Crossref / Europe PMC 免 Key 即可直连；修改后点击右侧「💾 保存设置」立即生效。</span>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button class="btn primary sm" id="btnSaveConfig">💾 保存设置</button>
+            <button class="btn sm" id="btnCheckAi4sCredits" title="免费查询 AI4Scholar 账户剩余积分">💰 查AI4Scholar积分</button>
             <button class="btn sm" id="btnRunDoctorInCfg" title="检查 Python 与各接口连通配置">🩺 环境自检</button>
             <button class="btn sm" id="btnClearSavedKeys" title="清空在面板中手动填入的 Key，回退使用系统环境变量">重置覆盖Key</button>
           </div>
@@ -948,9 +973,10 @@
         <div class="card">
           <div class="mode-bar" id="searchModeBar">
             <button class="mode-chip active" data-mode="search">🔍 1. 主题与 DOI 检索</button>
-            <button class="mode-chip" data-mode="serper">🌐 2. 谷歌学术 / 专利 / AI语义</button>
+            <button class="mode-chip" data-mode="serper">🌐 2. 谷歌学术 / 专利 / PubMed / AI语义</button>
             <button class="mode-chip" data-mode="author">👤 3. 学者查代表作</button>
             <button class="mode-chip" data-mode="epmc">🧬 4. 全文与 SI 抓包 (EPMC)</button>
+            <button class="mode-chip" data-mode="ai4s-studio">🎨 5. 科研绘图与自动引文</button>
           </div>
 
           <!-- Mode 1: Smart Unified Topic Search & DOI/ID Lookup -->
@@ -996,7 +1022,7 @@
             </div>
           </div>
 
-          <!-- Mode 2: Google Scholar / Patents (Serper) & Exa AI Neural Search -->
+          <!-- Mode 2: Google Scholar / Patents / PubMed / Snippets (AI4Scholar & Serper) & Exa AI Neural Search -->
           <div class="mode-form hidden" id="form-serper">
             <div class="form-grid">
               <div id="serperKeyHint" class="notice warn hidden">
@@ -1007,16 +1033,39 @@
                 <div class="field">
                   <label>选择扩展检索通道</label>
                   <select id="qExtChannel">
-                    <option value="serper:scholar">🎓 Google Scholar (谷歌学术文献 · Serper)</option>
-                    <option value="serper:patents">📜 Google Patents (全球专利检索 · Serper)</option>
+                    <option value="ai4s:gs-search">🎓 Google Scholar (谷歌学术 · AI4Scholar)</option>
+                    <option value="ai4s:patents">📜 Google Patents (全球专利检索 · AI4Scholar)</option>
+                    <option value="ai4s:pubmed-search">🏥 PubMed 生物医学文献库 (AI4Scholar · 含 MeSH 与摘要)</option>
+                    <option value="ai4s:s2-snippets">📑 Semantic Scholar 全文片段检索 (AI4Scholar · 500词正文摘录)</option>
+                    <option value="ai4s:s2-bulk">📚 Semantic Scholar 批量布尔检索 (AI4Scholar · 支持被引排序)</option>
                     <option value="exa:auto">✨ Exa AI 语义搜论文 (支持自然语言/中文描述课题)</option>
-                    <option value="serper:search">🌐 Google 网页搜索 (定位补充材料 SI / 机构仓储)</option>
+                    <option value="serper:scholar">🎓 Google Scholar (谷歌学术 · Serper)</option>
+                    <option value="serper:patents">📜 Google Patents (全球专利 · Serper)</option>
+                    <option value="serper:search">🌐 Google 网页搜索 (定位补充材料 SI / 机构仓储 · Serper)</option>
                   </select>
                 </div>
               </div>
               <div class="field">
                 <label id="qExtQueryLabel">检索关键词（按 Enter 直接搜索）</label>
                 <input type="text" id="qExtQuery" placeholder="例如: single atom NiO carbon nitride photocatalytic hydrogen" />
+              </div>
+              <div class="form-row" id="extPatentExtraRow" style="display:none;">
+                <div class="field">
+                  <label>国家/地区代码 (可选)</label>
+                  <input type="text" id="qExtPatentCountry" placeholder="如 CN,US,EP,WO,JP" />
+                </div>
+                <div class="field">
+                  <label>专利状态</label>
+                  <select id="qExtPatentStatus">
+                    <option value="">全部状态</option>
+                    <option value="GRANT">已授权 (GRANT)</option>
+                    <option value="APPLICATION">申请公开 (APPLICATION)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>申请人/机构 (Assignee)</label>
+                  <input type="text" id="qExtPatentAssignee" placeholder="如 中国科学院 或 MIT" />
+                </div>
               </div>
               <div class="form-row">
                 <div class="field">
@@ -1118,6 +1167,100 @@
               </div>
             </div>
           </div>
+
+          <!-- Mode 5: AI4Scholar Scientific Drawing (Nano Draw) & Auto-Cite -->
+          <div class="mode-form hidden" id="form-ai4s-studio">
+            <div class="form-grid">
+              <div class="form-row">
+                <div class="field">
+                  <label>选择 AI4Scholar 科研工具模式</label>
+                  <select id="qStudioToolMode">
+                    <option value="draw:smart">🎨 智能科研绘图 (Nano Draw Smart · 自动优化中文/英文提示词)</option>
+                    <option value="draw:generate">🖼 直接文生科研配图 (Nano Draw Generate)</option>
+                    <option value="draw:style">🎭 科研图表风格迁移 (BioRender / Nature / 示意图 / 电镜等)</option>
+                    <option value="draw:edit">✏ 指令修改现有科研图 (Edit · 增改标注/配色/布局)</option>
+                    <option value="draw:vectorize">📊 位图转矢量 PDF + 可编辑 PPTX (Vectorize · 3积分)</option>
+                    <option value="draw:svg">📐 生成纯矢量 SVG 代码与图形 (SVG)</option>
+                    <option value="draw:critic">🧐 专家级科研配图审稿点评 (Critic)</option>
+                    <option value="auto-cite">📝 学术段落自动检索配参考文献 (Auto-Cite · 支持 GB/T 7714 / IEEE / Nature)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label id="qStudioPromptLabel">科研配图描述（支持中文或英文，如：单原子 Ni/NiOx@C 负载 g-C3N4 光热协同催化析氢机理示意图）</label>
+                <textarea id="qStudioPrompt" rows="3" style="width:100%; padding:7px 9px; border:1px solid var(--border-primary); border-radius:var(--radius-sm); background:var(--bg-primary); color:var(--text-primary); font-family:inherit; font-size:12px; resize:vertical;" placeholder="在此输入科研示意图/机理图/流程图描述，或粘贴 100~10000 字的学术段落（Auto-Cite 模式）..."></textarea>
+              </div>
+              <div class="form-row" id="studioDrawOptionsRow">
+                <div class="field">
+                  <label>绘图模型</label>
+                  <select id="qStudioModel">
+                    <option value="flash">⚡ Flash (快速 · 推荐)</option>
+                    <option value="flash31">⚖ Flash 3.1 (均衡)</option>
+                    <option value="pro">💎 Pro (最高画质)</option>
+                    <option value="gptimage">🎨 GPT Image 2 (精细插画)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>宽高比</label>
+                  <select id="qStudioAspect">
+                    <option value="16:9">16:9 (宽屏机理图)</option>
+                    <option value="1:1">1:1 (正方形)</option>
+                    <option value="4:3">4:3 (标准横版)</option>
+                    <option value="3:2">3:2 (期刊双栏)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>分辨率</label>
+                  <select id="qStudioSize">
+                    <option value="2K">2K 高清 (默认)</option>
+                    <option value="1K">1K 标准</option>
+                    <option value="4K">4K 超清印刷级</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>风格预设 (Style可选)</label>
+                  <select id="qStudioStylePreset">
+                    <option value="">默认科研风</option>
+                    <option value="nature">Nature 顶刊风</option>
+                    <option value="biorender">BioRender 生物医学风</option>
+                    <option value="schematic">工程/催化机理示意图</option>
+                    <option value="threed">3D 纳米材料渲染</option>
+                    <option value="textbook">经典教科书插图</option>
+                    <option value="infograph">科研信息图</option>
+                    <option value="electron">电子显微伪彩风</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field" id="studioImageInputWrap">
+                <label>参考图片 URL 或本地文件路径（用于风格迁移 / 编辑修改 / 位图转 PPTX+PDF / 专家审图，留空则直接文生图）</label>
+                <input type="text" id="qStudioRefImage" placeholder="例如 https://.../figure.png 或 F:\个人知识库\...\fig1.png" />
+              </div>
+              <div class="form-row hidden" id="studioAutoCiteOptionsRow">
+                <div class="field">
+                  <label>参考文献格式</label>
+                  <select id="qStudioCiteStyle">
+                    <option value="gbt7714">GB/T 7714 (中国国标)</option>
+                    <option value="nature">Nature</option>
+                    <option value="acs">ACS (美国化学会)</option>
+                    <option value="ieee">IEEE</option>
+                    <option value="apa">APA</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>最少匹配引用数 (1-50)</label>
+                  <input type="number" id="qStudioMinCitations" value="8" min="1" max="50" />
+                </div>
+                <div class="field">
+                  <label>学科领域提示 (可选)</label>
+                  <input type="text" id="qStudioCiteField" placeholder="如 photocatalysis, materials science" />
+                </div>
+              </div>
+              <div class="form-row" style="justify-content:space-between; align-items:center;">
+                <span style="font-size:11px; color:var(--text-secondary);">💡 生成的高清 PNG / SVG / 矢量 PDF / 可编辑 PPTX 会自动同步保存到你的默认下载目录。</span>
+                <button class="btn primary exec-btn" id="btnExecStudio">🎨 立即执行</button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Quick Preview of Current Active Run inside Search Tab -->
@@ -1158,8 +1301,8 @@
               <input type="checkbox" id="chkPinDraggedNode" /> 📌 拖拽后钉住节点
             </label>
           </div>
+          <div id="graphHoverTooltip" class="graph-tooltip hidden"></div>
           <div class="graph-stage" id="graphStageContainer">
-            <div id="graphHoverTooltip" class="graph-tooltip hidden"></div>
             <div class="graph-floating-controls">
               <button type="button" id="btnGraphZoomIn" title="放大画布">➕</button>
               <button type="button" id="btnGraphZoomOut" title="缩小画布">➖</button>
@@ -1433,7 +1576,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.6.7" },
+              appInfo: { name: "sanmu-paper-search", version: "1.6.8" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -1476,8 +1619,12 @@
             await ensureInitialized();
             const toolArgs = { ...args };
             if (name === "resolve_oa_and_pdf" && toolArgs.action === "download_pdf") {
-              toolArgs.pdfUrl = safeWebUrl(toolArgs.pdfUrl, true);
-              if (!toolArgs.pdfUrl) throw new Error("下载需要有效的 HTTPS PDF 链接。");
+              if (toolArgs.pdfUrl !== undefined && String(toolArgs.pdfUrl).trim() !== "") {
+                toolArgs.pdfUrl = safeWebUrl(toolArgs.pdfUrl, true);
+                if (!toolArgs.pdfUrl) throw new Error("下载需要有效的 HTTPS PDF 链接。");
+              } else if (!toolArgs.doi) {
+                throw new Error("下载需要有效的 HTTPS PDF 链接或论文 DOI。");
+              }
               toolArgs.fallbackUrls = (Array.isArray(toolArgs.fallbackUrls) ? toolArgs.fallbackUrls : [])
                 .map((url) => safeWebUrl(url, true)).filter(Boolean);
             }
@@ -1597,24 +1744,25 @@
             copied = true;
           } catch {}
         }
-        // 3. Native host OS clipboard fallback via MCP server (clip.exe / pbcopy / xclip)
-        try {
-          await ensureInitialized();
-          const rpcRes = await sendRpcRequest(
-            "tools/call",
-            { name: "copy_clipboard", arguments: { text: cleanText } },
-            5000
-          );
-          if (!rpcRes?.isError && rpcRes?.structuredContent?.copied) {
-            copied = true;
-          }
-        } catch {}
+        // 3. Native host OS clipboard fallback via MCP server (clip.exe / pbcopy / xclip) when host is initialized
+        if (!copied && hostInitialized) {
+          try {
+            const rpcRes = await sendRpcRequest(
+              "tools/call",
+              { name: "copy_clipboard", arguments: { text: cleanText } },
+              4000
+            );
+            if (!rpcRes?.isError && rpcRes?.structuredContent?.copied) {
+              copied = true;
+            }
+          } catch {}
+        }
 
         if (sourceEl) {
           selectElementContents(sourceEl);
         }
         if (!copied) {
-          throw new Error("已为您自动全选文本，请直接按 Ctrl+C (或 Cmd+C) 复制。");
+          throw new Error("复制失败：已为您自动全选文本，请直接按 Ctrl+C (或 Cmd+C) 复制。");
         }
       }
 
@@ -1982,6 +2130,37 @@
           .join("");
 
         const zColBadge = zMatch?.collections?.length ? ` · 分类: ${zMatch.collections.join(", ")}` : "";
+        const vr = paper.venue_rank || null;
+        const vrBadgesHtml = (vr?.badges || [])
+          .map((b) => {
+            const cls = b.includes("预警") ? "err" : b.includes("🏆") || b.includes("CCF A") ? "purple" : b.includes("Q1") || b.includes("1区") ? "ok" : "info";
+            return `<span class="pill static ${cls}">${esc(b)}</span>`;
+          })
+          .join(" ");
+
+        const venueRankSectionHtml = journalStr
+          ? `<div class="section-box">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                <h4 style="margin:0;">🏆 期刊/会议等级与分区详情 (easyScholar)</h4>
+                <button class="btn sm exec-btn" id="drwLookupVenueRank">🔄 查询/刷新该刊分区等级</button>
+              </div>
+              ${
+                vr
+                  ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">${vrBadgesHtml}</div>
+                     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:6px; font-size:12px;">
+                       <div><strong>中科院升级版：</strong>${esc(vr.cas_up || "未收录")}${vr.cas_top ? ` <span class="pill purple static">${esc(vr.cas_top)}</span>` : ""}</div>
+                       <div><strong>JCR 分区：</strong>${esc(vr.jcr || "未收录")}</div>
+                       <div><strong>SCI 影响因子 (IF)：</strong>${esc(vr.if_str || "未收录")}${vr.if5_str ? ` (5年IF: ${esc(vr.if5_str)})` : ""}</div>
+                       <div><strong>JCI 指数：</strong>${esc(vr.jci || "未收录")}</div>
+                       ${vr.ccf ? `<div><strong>CCF 推荐等级：</strong><span class="pill purple static">CCF ${esc(vr.ccf)}</span></div>` : ""}
+                       ${vr.esi ? `<div><strong>ESI 学科：</strong>${esc(vr.esi)}</div>` : ""}
+                       ${vr.warning ? `<div><strong>中科院预警：</strong><span class="pill err static">⚠ ${esc(vr.warning)}</span></div>` : ""}
+                     </div>
+                     ${vr.cas_small ? `<div style="font-size:11.5px; color:var(--text-secondary); margin-top:4px;"><strong>小类分区：</strong>${esc(vr.cas_small)}</div>` : ""}`
+                  : `<div style="font-size:12px; color:var(--text-secondary);">尚未获取「${esc(journalStr)}」的等级数据，可点击右上角「🔄 查询/刷新该刊分区等级」立即查询。</div>`
+              }
+            </div>`
+          : "";
 
         const html = `
           ${correctionsHtml}
@@ -1989,7 +2168,7 @@
             <h4>核心出版信息</h4>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap:6px; font-size:12px;">
               <div><strong>发表年份：</strong>${esc(paper.year ?? "未知")}</div>
-              <div><strong>期刊/来源：</strong>${esc(journalStr || "未标注")}</div>
+              <div><strong>期刊/来源：</strong>${esc(journalStr || "未标注")} ${vrBadgesHtml}</div>
               <div><strong>被引次数：</strong><span class="pill info static">${esc(paper.citation_count ?? "未统计")}</span></div>
               <div><strong>参考文献数：</strong><span class="pill static">${esc(paper.reference_count ?? "未统计")}</span></div>
               <div><strong>DOI：</strong>${doi ? `<code>${esc(doi)}</code> <button class="btn sm" id="drwCopyDoiBtn" style="padding:1px 6px; font-size:10.5px;">📋 复制</button>` : "无"}</div>
@@ -1997,10 +2176,13 @@
             </div>
           </div>
 
+          ${venueRankSectionHtml}
+
           <div class="section-box">
             <h4>🔗 直达链接、Zotero 联动与全文/SI 下载</h4>
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
               ${linksHtml || '<span style="color:var(--text-secondary);">暂无直达外链</span>'}
+              ${!paper.local_pdf_path && doi ? `<button class="btn sm success exec-btn" id="drwTryDoiPdf" title="自动通过 Unpaywall、AI4Scholar S2 与出版商 PDF 规则解析下载全文">⬇ 尝试下载PDF (DOI智能解析)</button>` : ""}
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:6px; padding-top:8px; border-top:1px dashed var(--border-primary);">
               <button class="btn sm ${paper.in_basket ? "success" : "primary"}" id="drwToggleBasket">${paper.in_basket ? "⭐ 已在收藏篮 (点击移出)" : "⭐ 加入收藏篮"}</button>
@@ -2103,6 +2285,44 @@
               zoteroItemKey: zMatch.itemKey
             });
             showBanner(`📖 已唤起本机 Zotero 并定位到条目 ${zMatch.itemKey}`, "success");
+          });
+          onAction(container.querySelector("#drwLookupVenueRank"), "click", async (e) => {
+            if (!journalStr) return;
+            const res = await callTool(
+              "lookup_venue_rank",
+              { venues: [journalStr], runId: state.panelData?.activeRun?.runId, preserveActiveRun: true },
+              `正在通过 easyScholar 查询《${journalStr}》的中科院分区与影响因子...`,
+              e.currentTarget
+            );
+            const firstHit = (res?.venueRanks || [])[0];
+            if (firstHit?.found) {
+              showBanner(`🏆 已获取《${journalStr}》等级：${firstHit.venue_rank?.summary || ""}`, "success");
+            } else {
+              showBanner(`easyScholar 未匹配到《${journalStr}》的等级记录`, "warn");
+            }
+            inspectPaper(findUpdatedPaper(paper.paper_key, paper));
+          });
+          onAction(container.querySelector("#drwTryDoiPdf"), "click", async (e) => {
+            if (!doi) return;
+            const saveDir = getChosenSaveDir();
+            const res = await callTool(
+              "resolve_oa_and_pdf",
+              {
+                action: "download_pdf",
+                doi,
+                title: paper.title || undefined,
+                year: paper.year || undefined,
+                paperKey: paper.paper_key,
+                fallbackUrls: paper.candidate_pdf_urls || [],
+                saveDir
+              },
+              `正在通过 Unpaywall / AI4Scholar / 出版商规则智能解析 DOI (${doi}) 并下载 PDF...`,
+              e.currentTarget
+            );
+            if (res?.lastDownload?.pdfPath) {
+              showBanner(`✅ PDF 已保存至：${res.lastDownload.pdfPath}`, "success", res.lastDownload.pdfPath, "🖥 打开 PDF");
+              inspectPaper(findUpdatedPaper(paper.paper_key, paper));
+            }
           });
           onAction(container.querySelector("#drwUndoZoteroItem"), "click", async (e) => {
             if (!zMatch?.itemKey) return;
@@ -2453,15 +2673,35 @@
         const hintBox = document.getElementById("serperKeyHint");
         const hintText = document.getElementById("serperKeyHintText");
         const queryInput = document.getElementById("qExtQuery");
+        const patentRow = document.getElementById("extPatentExtraRow");
+        if (patentRow) {
+          patentRow.style.display = val === "ai4s:patents" ? "flex" : "none";
+        }
 
-        if (val.startsWith("serper:")) {
+        if (val.startsWith("ai4s:")) {
+          if (val === "ai4s:patents") {
+            queryInput.placeholder = "例如: single atom catalyst photocatalyst hydrogen";
+          } else if (val === "ai4s:pubmed-search") {
+            queryInput.placeholder = "例如: single atom nanozyme antibacterial therapy";
+          } else if (val === "ai4s:s2-snippets") {
+            queryInput.placeholder = "输入正文概念或实验细节短语，在论文全文 500 词摘录中检索...";
+          } else {
+            queryInput.placeholder = "例如: single atom NiO carbon nitride photocatalytic hydrogen";
+          }
+          if (!cs.ai4scholar_api_key?.configured) {
+            hintText.textContent = "使用 AI4Scholar 通道需先配置 AI4Scholar API Key。";
+            hintBox.classList.remove("hidden");
+          } else {
+            hintBox.classList.add("hidden");
+          }
+        } else if (val.startsWith("serper:")) {
           if (val === "serper:patents") {
             queryInput.placeholder = "例如: nickel oxide single atom photocatalyst hydrogen";
           } else {
             queryInput.placeholder = "例如: single atom NiO carbon nitride photocatalytic hydrogen";
           }
           if (!cs.serper_api_key?.configured) {
-            hintText.textContent = "使用 Google Scholar / 专利检索需先配置 Serper API Key。";
+            hintText.textContent = "使用 Serper 通道需先配置 Serper API Key（或切换上方 AI4Scholar 通道）。";
             hintBox.classList.remove("hidden");
           } else {
             hintBox.classList.add("hidden");
@@ -2481,7 +2721,8 @@
       document.getElementById("btnJumpConfigFromSerper").addEventListener("click", () => {
         document.getElementById("configPanel").classList.remove("hidden");
         const val = document.getElementById("qExtChannel").value;
-        if (val.startsWith("exa:")) document.getElementById("cfgExaKey").focus();
+        if (val.startsWith("ai4s:")) document.getElementById("cfgAi4scholarKey").focus();
+        else if (val.startsWith("exa:")) document.getElementById("cfgExaKey").focus();
         else document.getElementById("cfgSerperKey").focus();
       });
 
@@ -2491,6 +2732,8 @@
         const pyOk = cs.python_runtime?.configured !== false;
 
         const keyItems = [
+          { key: "ai4scholar_api_key", label: "AI4Scholar", badgeId: "badgeAi4scholarKey", inputId: "cfgAi4scholarKey" },
+          { key: "easyscholar_secret_key", label: "easyScholar", badgeId: "badgeEasyscholarKey", inputId: "cfgEasyscholarKey" },
           { key: "polite_email", label: "礼貌邮箱", badgeId: "badgePoliteEmail", inputId: "cfgPoliteEmail" },
           { key: "serper_api_key", label: "Serper", badgeId: "badgeSerperKey", inputId: "cfgSerperKey" },
           { key: "exa_api_key", label: "Exa", badgeId: "badgeExaKey", inputId: "cfgExaKey" },
@@ -2502,7 +2745,7 @@
         const zOnline = Boolean(cs.zotero_local?.online);
         strip.innerHTML = `
           ${!pyOk ? `<span class="pill err" data-cfg-pill="1" title="未检测到 Python 3.10+">⚠ 缺少Python</span>` : ""}
-          <span class="pill ok" data-cfg-pill="1" title="点击查看各数据源 API 状态">🟢 检索源就绪 (${configuredCount}/5 Key)</span>
+          <span class="pill ok" data-cfg-pill="1" title="点击查看各数据源 API 状态">🟢 检索源就绪 (${configuredCount}/${keyItems.length} Key)</span>
           <span class="pill ${zOnline ? "ok" : ""}" data-cfg-pill="1" title="本机 Zotero 桌面端连接状态">📚 Zotero: ${zOnline ? "已连接" : "未启动"}</span>
           <span class="pill info" id="btnToggleConfig">⚙ 设置</span>
         `;
@@ -2673,6 +2916,12 @@
               ${diffBadgeHtml}
               <span class="pill static">${esc(p.year || "年份未知")}</span>
               ${journalStr ? `<span>📘 <strong>${esc(journalStr)}</strong></span>` : ""}
+              ${(p.venue_rank?.badges || [])
+                .map((b) => {
+                  const cls = b.includes("预警") ? "err" : b.includes("🏆") || b.includes("CCF A") ? "purple" : b.includes("Q1") || b.includes("1区") ? "ok" : "info";
+                  return `<span class="pill static ${cls}" title="${esc(p.venue_rank?.summary || b)}">${esc(b)}</span>`;
+                })
+                .join("")}
               ${providers ? `<span class="pill info static">${esc(providers)}</span>` : ""}
               ${p.citation_count !== undefined && p.citation_count !== null ? `<span class="pill static">🔥 被引 ${esc(p.citation_count)}</span>` : ""}
               ${firstOaPdf ? `<span class="pill ok static">🔓 可下PDF</span>` : p.oa_locations?.length ? `<span class="pill static">🔗 含OA页</span>` : ""}
@@ -3262,6 +3511,8 @@
             if (isExcl || p.zotero_match?.matched) return false;
           } else if (flt === "has_abstract") {
             if (isExcl || !(p.abstract && String(p.abstract).trim())) return false;
+          } else if (flt === "top_tier") {
+            if (isExcl || !p.venue_rank?.is_top_tier) return false;
           }
           if (kw) {
             const hay = [
@@ -3269,6 +3520,8 @@
               p.abstract || "",
               safeTldrStr(p),
               safeJournalStr(p),
+              p.venue_rank?.summary || "",
+              ...(p.venue_rank?.badges || []),
               ...(p.authors || []).map((a) => a.name || ""),
               ...(p.identifiers?.doi || []),
               String(p.year || "")
@@ -3290,6 +3543,10 @@
             const ca = a.citation_count !== undefined && a.citation_count !== null ? Number(a.citation_count) : -1;
             const cb = b.citation_count !== undefined && b.citation_count !== null ? Number(b.citation_count) : -1;
             if (cb !== ca) return cb - ca;
+          } else if (srt === "if_desc") {
+            const ia = a.venue_rank?.if !== undefined && a.venue_rank?.if !== null ? Number(a.venue_rank.if) : -1;
+            const ib = b.venue_rank?.if !== undefined && b.venue_rank?.if !== null ? Number(b.venue_rank.if) : -1;
+            if (ib !== ia) return ib - ia;
           } else if (srt === "year_desc") {
             const ya = Number(a.year) || 0;
             const yb = Number(b.year) || 0;
@@ -3492,15 +3749,82 @@
           `;
         }
 
+        // 3.5 AI4Scholar Nano Draw / Vectorize Result Card
+        if (r.draw_result) {
+          const dr = r.draw_result;
+          const expFiles = dr.exportedFiles || {};
+          bodySections += `
+            <div class="card" style="margin-bottom:8px;">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">🎨 AI4Scholar 科研绘图与矢量化结果 (${esc(dr.action)})</h3>
+                  <div style="font-size:11.5px; color:var(--text-secondary); margin-top:2px;">
+                    模型: ${esc(dr.model || "flash")} · 比例: ${esc(dr.aspectRatio || "16:9")} · 分辨率: ${esc(dr.imageSize || "2K")}${dr.creditCost ? ` · 消耗积分: ${esc(dr.creditCost)}` : ""}
+                  </div>
+                </div>
+                <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                  ${expFiles.image_file ? `<button class="btn sm primary open-exp-file-btn" data-path="${esc(expFiles.image_file)}">🖥 打开本地图片</button>` : ""}
+                  ${expFiles.pdf_file ? `<button class="btn sm success open-exp-file-btn" data-path="${esc(expFiles.pdf_file)}">📄 打开矢量PDF</button>` : ""}
+                  ${expFiles.pptx_file ? `<button class="btn sm success open-exp-file-btn" data-path="${esc(expFiles.pptx_file)}">📊 打开可编辑PPTX</button>` : ""}
+                  ${dr.imageUrl && dr.action !== "vectorize" ? `<button class="btn sm primary exec-btn" id="btnVectorizeThisImg" data-img="${esc(dr.imageUrl)}">📊 转为矢量 PDF + 可编辑 PPTX</button>` : ""}
+                </div>
+              </div>
+              ${
+                dr.imageUrl
+                  ? `<div style="margin:8px 0; text-align:center; background:var(--bg-secondary); padding:8px; border-radius:6px; border:1px solid var(--border-primary);">
+                      <img src="${esc(safeWebUrl(dr.imageUrl))}" alt="Scientific Figure" style="max-width:100%; max-height:380px; border-radius:4px; object-fit:contain;" />
+                      <div style="margin-top:6px; display:flex; justify-content:center; gap:6px; flex-wrap:wrap;">
+                        <button class="btn sm ext-url-direct-btn" data-url="${esc(safeWebUrl(dr.imageUrl))}">🌐 浏览器打开原图</button>
+                        ${dr.pdfUrl ? `<button class="btn sm ext-url-direct-btn" data-url="${esc(safeWebUrl(dr.pdfUrl))}">📥 下载矢量 PDF</button>` : ""}
+                        ${dr.pptxUrl ? `<button class="btn sm ext-url-direct-btn" data-url="${esc(safeWebUrl(dr.pptxUrl))}">📥 下载可编辑 PPTX</button>` : ""}
+                      </div>
+                    </div>`
+                  : ""
+              }
+              ${dr.optimizedPrompt ? `<div class="section-box" style="margin-top:6px;"><h4>✨ AI 优化后绘图提示词 (Optimized Prompt)</h4><div style="font-size:11.5px; white-space:pre-wrap;">${esc(dr.optimizedPrompt)}</div></div>` : ""}
+              ${dr.critique ? `<div class="section-box" style="margin-top:6px;"><h4>🧐 专家审图与改进建议 (Critique)</h4><div style="font-size:12px; white-space:pre-wrap; line-height:1.6;">${esc(dr.critique)}</div></div>` : ""}
+            </div>
+          `;
+        }
+
+        // 3.6 AI4Scholar Auto-Cite Result Card
+        if (r.auto_cite_result) {
+          const ac = r.auto_cite_result;
+          bodySections += `
+            <div class="card" style="margin-bottom:8px;">
+              <div class="card-header">
+                <h3 class="card-title">📝 Auto-Cite 自动引文标注结果（共匹配 ${(ac.references || []).length} 篇真实文献）</h3>
+                <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                  <button class="btn sm primary" id="btnCopyAutoCiteText">📋 复制带引用正文</button>
+                  ${ac.bibtex ? `<button class="btn sm" id="btnCopyAutoCiteBib">📋 复制 BibTeX</button>` : ""}
+                </div>
+              </div>
+              <pre class="pre-viewer" id="autoCiteTextBox" style="margin-bottom:8px;">${esc(ac.annotatedText || "")}</pre>
+              ${
+                Array.isArray(ac.references) && ac.references.length
+                  ? `<div class="section-box">
+                      <h4>📚 自动匹配的参考文献列表（下方卡片可一键存入 Zotero 或加入收藏篮）</h4>
+                      <div style="font-size:11.5px; line-height:1.6; display:flex; flex-direction:column; gap:4px;">
+                        ${ac.references.map((ref, idx) => `<div><strong>[${esc(ref.number || idx + 1)}]</strong> ${esc(ref.formatted || ref.title || "")}</div>`).join("")}
+                      </div>
+                    </div>`
+                  : ""
+              }
+            </div>
+          `;
+        }
+
         // 4. Normalized Papers List with Secondary Sort, Filter Chips, Live Keyword Filter & Batch Actions
         if (papers.length > 0) {
           const nonExcl = papers.filter((p) => p.handoff_stage !== "excluded");
           const cntAll = papers.length;
+          const cntTop = nonExcl.filter((p) => p.venue_rank?.is_top_tier).length;
           const cntPdf = nonExcl.filter((p) => p.local_pdf_path || p.primary_pdf_url || (p.candidate_pdf_urls && p.candidate_pdf_urls.length)).length;
           const cntNotZot = nonExcl.filter((p) => !p.zotero_match?.matched).length;
           const cntAbs = nonExcl.filter((p) => p.abstract && String(p.abstract).trim()).length;
           const cntExcl = papers.filter((p) => p.handoff_stage === "excluded").length;
           const zOnline = Boolean(state.panelData?.configStatus?.zotero_local?.online);
+          const esConfigured = Boolean(state.panelData?.configStatus?.easyscholar_secret_key?.configured);
 
           bodySections += `
             <div class="filter-toolbar" id="resultsFilterToolbar">
@@ -3508,16 +3832,19 @@
                 <div style="display:flex; flex-wrap:wrap; gap:5px; align-items:center;">
                   <span style="font-size:11px; font-weight:600; color:var(--text-secondary);">筛选:</span>
                   <span class="filter-chip ${state.resultFilter === "all" ? "active" : ""}" data-flt="all">全部 (${cntAll})</span>
+                  <span class="filter-chip ${state.resultFilter === "top_tier" ? "active" : ""}" data-flt="top_tier" title="筛选中科院 1 区 / TOP / JCR Q1 / CCF-A / IF≥10 的顶刊文献">🏆 顶刊/1区/Q1 (${cntTop})</span>
                   <span class="filter-chip ${state.resultFilter === "has_pdf" ? "active" : ""}" data-flt="has_pdf">🔓 可下PDF (${cntPdf})</span>
                   <span class="filter-chip ${state.resultFilter === "not_in_zotero" ? "active" : ""}" data-flt="not_in_zotero">📚 未入Zotero (${cntNotZot})</span>
                   <span class="filter-chip ${state.resultFilter === "has_abstract" ? "active" : ""}" data-flt="has_abstract">📖 含完整摘要 (${cntAbs})</span>
                   <span class="filter-chip ${state.resultFilter === "excluded" ? "active" : ""}" data-flt="excluded">🚫 已排除 (${cntExcl})</span>
                 </div>
-                <div style="display:flex; align-items:center; gap:5px;">
+                <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                  ${esConfigured ? `<button class="btn sm exec-btn" id="btnEnrichRunRanks" title="使用 easyScholar 为当前批次文献补全中科院分区与影响因子">🏆 补全分区</button>` : ""}
                   <span style="font-size:11px; font-weight:600; color:var(--text-secondary);">排序:</span>
                   <select id="selResultSort" style="width:auto; padding:3px 7px; font-size:11.5px;">
                     <option value="default" ${state.resultSort === "default" ? "selected" : ""}>默认顺序</option>
                     <option value="citations_desc" ${state.resultSort === "citations_desc" ? "selected" : ""}>🔥 被引次数 (高→低)</option>
+                    <option value="if_desc" ${state.resultSort === "if_desc" ? "selected" : ""}>📈 影响因子 IF (高→低)</option>
                     <option value="year_desc" ${state.resultSort === "year_desc" ? "selected" : ""}>📅 发表年份 (新→旧)</option>
                   </select>
                 </div>
@@ -3565,6 +3892,53 @@
         });
         onAction(contentEl.querySelector("#btnOpenAcqFolder"), "click", async () => {
           if (bundle.acquisition?.saved_dir) await openLocalPathInSystem(bundle.acquisition.saved_dir, "local");
+        });
+        contentEl.querySelectorAll(".open-exp-file-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            if (btn.dataset.path) await openLocalPathInSystem(btn.dataset.path, "local");
+          });
+        });
+        contentEl.querySelectorAll(".ext-url-direct-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            if (btn.dataset.url) await openExternalUrl(btn.dataset.url);
+          });
+        });
+        onAction(contentEl.querySelector("#btnVectorizeThisImg"), "click", async (e) => {
+          const imgUrl = e.currentTarget.dataset.img;
+          if (!imgUrl) return;
+          const saveDir = getChosenSaveDir();
+          await callTool(
+            "ai4scholar_draw_and_cite",
+            {
+              mode: "draw",
+              drawAction: "vectorize",
+              images: [imgUrl],
+              vectorizeMode: "standard",
+              saveDir
+            },
+            "正在将该科研配图转换为矢量 PDF 与可编辑 PPTX 文件...",
+            e.currentTarget
+          );
+          showBanner("✅ 已完成矢量化转换，矢量 PDF 与可编辑 PPTX 已保存至默认下载目录！", "success");
+        });
+        onAction(contentEl.querySelector("#btnCopyAutoCiteText"), "click", async () => {
+          const txt = r.auto_cite_result?.annotatedText || "";
+          await copyTextToClipboard(txt, contentEl.querySelector("#autoCiteTextBox"));
+          showBanner("✅ 已复制带引用的学术段落到剪贴板！", "success");
+        });
+        onAction(contentEl.querySelector("#btnCopyAutoCiteBib"), "click", async () => {
+          const bib = r.auto_cite_result?.bibtex || "";
+          await copyTextToClipboard(bib);
+          showBanner("✅ 已复制 BibTeX 参考文献到剪贴板！", "success");
+        });
+        onAction(contentEl.querySelector("#btnEnrichRunRanks"), "click", async (e) => {
+          await callTool(
+            "lookup_venue_rank",
+            { runId: bundle.runId, preserveActiveRun: true },
+            "正在通过 easyScholar 补全当前批次文献的中科院分区与影响因子...",
+            e.currentTarget
+          );
+          showBanner("🏆 已完成当前批次文献的期刊等级与分区标注！", "success");
         });
 
         const mainPapersEl = contentEl.querySelector("#mainPapersList");
@@ -3851,6 +4225,9 @@
         viewportEl: null,
         centerId: null,
         hoveredNodeId: null,
+        hoverLeaveTimer: null,
+        tooltipHovered: false,
+        lastTooltipKey: "",
         draggingNode: null,
         alpha: 0,
         alphaTarget: 0,
@@ -3924,7 +4301,7 @@
 
         const K = rawBuckets.length;
         const leftPad = 82;
-        const rightPad = 52;
+        const rightPad = 60;
         const usableW = GRAPH_W - leftPad - rightPad;
 
         const xPositions = rawBuckets.map((b, idx) => {
@@ -3967,7 +4344,7 @@
 
           sortedGroup.forEach((n, idx) => {
             const staggerX = total >= 5 ? (idx % 2 === 0 ? -11 : 11) : total >= 3 ? (idx % 2 === 0 ? -6 : 6) : 0;
-            n.targetX = xPos + staggerX;
+            n.targetX = Math.max(leftPad - 22, Math.min(GRAPH_W - rightPad, xPos + staggerX));
             n.targetY =
               total === 1
                 ? GRAPH_CY - 8
@@ -4049,11 +4426,20 @@
         const n = activeId ? graphSim.nodeById.get(activeId) : null;
         if (!n || !n.paper) {
           tooltipEl.classList.add("hidden");
+          graphSim.lastTooltipKey = "";
           return;
         }
         const p = findUpdatedPaper(n.paper.paper_key || n.paperKey || n.id, n.paper) || n.paper;
         const deg = graphSim.neighborsById.get(n.id)?.size || 0;
         const isHovered = Boolean(graphSim.hoveredNodeId);
+        const rankBadge = p.venue_rank?.badges?.[0] || "";
+        const renderKey = `${n.id}::${isHovered ? "H" : "S"}::${deg}::${n.inZotero ? 1 : 0}::${n.inBasket ? 1 : 0}::${rankBadge}::${p.title || n.title}`;
+        tooltipEl.classList.remove("hidden");
+        if (graphSim.lastTooltipKey === renderKey) {
+          return;
+        }
+        graphSim.lastTooltipKey = renderKey;
+
         const roleTagMap = {
           seed: "🎯 中心种子",
           reference: "⬅ 参考文献",
@@ -4063,29 +4449,43 @@
           search_hit: "🔍 检索文献"
         };
         tooltipEl.innerHTML = `
-          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0;">
             <div style="flex:1; min-width:0;">
-              <div style="font-size:10.5px; color:var(--text-tertiary); margin-bottom:2px;">
+              <div style="font-size:10.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                 <span style="font-weight:600; color:var(--accent);">${esc(roleTagMap[n.role] || "图谱节点")}</span>
-                · ${isHovered ? "悬停预览（单击节点可固定选中）" : "当前选中节点（点击标题或右侧按钮看详情）"}
+                · ${isHovered ? "悬停预览（单击节点固定选中）" : "当前选中节点（点击标题或右侧按钮看详情）"}
               </div>
-              <div class="graph-tooltip-title" id="graphTooltipTitleLink" title="点击打开该文献完整详情">${esc(p.title || n.title)}</div>
+              <div class="graph-tooltip-title" id="graphTooltipTitleLink" title="点击打开《${esc(p.title || n.title)}》完整详情">${esc(p.title || n.title)}</div>
             </div>
             <button type="button" class="btn sm primary" id="btnGraphTooltipInspect" style="padding:2px 8px; font-size:11px; flex-shrink:0;">📄 查看详情 ➔</button>
           </div>
-          <div style="color:var(--text-secondary); margin-top:3px; font-size:11px;">
-            👤 ${esc(n.firstAuthor)} · 📅 ${esc(n.year || "未知")} · 🔥 被引 ${esc(n.citationCount)} · 🕸 关联 ${deg}
-            ${n.inZotero ? " · 📚 Zotero已存" : ""}
-            ${n.inBasket ? " · ⭐ 已收藏" : ""}
+          <div class="graph-tooltip-meta">
+            👤 ${esc(n.firstAuthor)} · 📅 ${esc(n.year || "未知")}${n.journal ? ` · 📘 ${esc(n.journal)}` : ""}${rankBadge ? ` · ${esc(rankBadge)}` : ""} · 🔥 被引 ${esc(n.citationCount)} · 🕸 关联 ${deg}${n.inZotero ? " · 📚 Zotero已存" : ""}${n.inBasket ? " · ⭐ 已收藏" : ""}
           </div>
         `;
-        tooltipEl.classList.remove("hidden");
         const openDetailHandler = (e) => {
           e.stopPropagation();
           inspectGraphNodePaper(n);
         };
         tooltipEl.querySelector("#graphTooltipTitleLink")?.addEventListener("click", openDetailHandler);
         tooltipEl.querySelector("#btnGraphTooltipInspect")?.addEventListener("click", openDetailHandler);
+        if (!tooltipEl.dataset.hoverBound) {
+          tooltipEl.dataset.hoverBound = "1";
+          tooltipEl.addEventListener("pointerenter", () => {
+            graphSim.tooltipHovered = true;
+            if (graphSim.hoverLeaveTimer) {
+              clearTimeout(graphSim.hoverLeaveTimer);
+              graphSim.hoverLeaveTimer = null;
+            }
+          });
+          tooltipEl.addEventListener("pointerleave", () => {
+            graphSim.tooltipHovered = false;
+            if (graphSim.hoveredNodeId && !graphSim.draggingNode) {
+              graphSim.hoveredNodeId = null;
+              updateGraphVisualHighlights();
+            }
+          });
+        }
       }
 
       function updateGraphVisualHighlights() {
@@ -4340,10 +4740,15 @@
       function stopGraphPhysics() {
         if (graphSim.rafId !== null) cancelAnimationFrame(graphSim.rafId);
         graphSim.rafId = null;
+        if (graphSim.hoverLeaveTimer !== null) {
+          clearTimeout(graphSim.hoverLeaveTimer);
+          graphSim.hoverLeaveTimer = null;
+        }
         graphSim.pointerCleanup?.();
         graphSim.pointerCleanup = null;
         graphSim.draggingNode = null;
         graphSim.hoveredNodeId = null;
+        graphSim.tooltipHovered = false;
         graphSim.alphaTarget = 0;
       }
 
@@ -4793,8 +5198,9 @@
             const badgeIcon = n.role === "seed" ? "🎯" : n.inBasket ? "⭐" : n.inZotero ? "📚" : "";
             return `
               <g class="graph-node-g" data-node-id="${esc(n.id)}" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">
-                <circle class="node-ring" r="${(n.r + 5).toFixed(1)}" fill="none" stroke="#0969da" stroke-width="2" opacity="0" />
-                <circle class="node-main" r="${n.r.toFixed(1)}" fill="${fill}" stroke="#ffffff" stroke-width="1.6" />
+                <circle class="node-hit" r="${(n.r + 5).toFixed(1)}" fill="transparent" stroke="none" />
+                <circle class="node-ring" r="${(n.r + 5).toFixed(1)}" fill="none" stroke="#0969da" stroke-width="2" opacity="0" style="pointer-events:none;" />
+                <circle class="node-main" r="${n.r.toFixed(1)}" fill="${fill}" stroke="#ffffff" stroke-width="1.6" style="pointer-events:none;" />
                 ${badgeIcon ? `<text x="0" y="3.8" text-anchor="middle" font-size="9.5" fill="#fff" style="pointer-events:none;">${badgeIcon}</text>` : ""}
                 <text class="node-pin" x="${(n.r + 4).toFixed(1)}" y="${(-n.r + 4).toFixed(1)}" font-size="9" style="pointer-events:none;">${n.pinned ? "📌" : ""}</text>
                 <text class="node-label" x="0" y="${(n.r + 12.5).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="500" fill="var(--text-primary)" style="pointer-events:none;">${esc(n.shortLabel)}</text>
@@ -4837,19 +5243,31 @@
           const nid = gEl.dataset.nodeId;
           graphSim.nodeElMap.set(nid, gEl);
 
-          // Hover Spotlight & Floating Bar
+          // Hover Spotlight & Docked Bar (with grace timer so switching nodes never flickers)
           gEl.addEventListener("pointerenter", () => {
             if (graphSim.draggingNode) return;
-            graphSim.hoveredNodeId = nid;
-            updateGraphVisualHighlights();
+            if (graphSim.hoverLeaveTimer !== null) {
+              clearTimeout(graphSim.hoverLeaveTimer);
+              graphSim.hoverLeaveTimer = null;
+            }
+            if (graphSim.hoveredNodeId !== nid) {
+              graphSim.hoveredNodeId = nid;
+              updateGraphVisualHighlights();
+            }
           });
 
           gEl.addEventListener("pointerleave", () => {
             if (graphSim.draggingNode) return;
-            if (graphSim.hoveredNodeId === nid) {
-              graphSim.hoveredNodeId = null;
-              updateGraphVisualHighlights();
+            if (graphSim.hoverLeaveTimer !== null) {
+              clearTimeout(graphSim.hoverLeaveTimer);
             }
+            graphSim.hoverLeaveTimer = setTimeout(() => {
+              graphSim.hoverLeaveTimer = null;
+              if (!graphSim.draggingNode && !graphSim.tooltipHovered && graphSim.hoveredNodeId === nid) {
+                graphSim.hoveredNodeId = null;
+                updateGraphVisualHighlights();
+              }
+            }, 70);
           });
 
           // Double-click to toggle pin/unpin a node
@@ -5234,6 +5652,8 @@
           "save_config",
           {
             politeEmail: document.getElementById("cfgPoliteEmail").value,
+            ai4scholarApiKey: document.getElementById("cfgAi4scholarKey").value,
+            easyscholarSecretKey: document.getElementById("cfgEasyscholarKey").value,
             openalexApiKey: document.getElementById("cfgOpenalexKey").value,
             s2ApiKey: document.getElementById("cfgS2Key").value,
             exaApiKey: document.getElementById("cfgExaKey").value,
@@ -5244,6 +5664,8 @@
           "正在保存配置...",
           e.currentTarget
         );
+        document.getElementById("cfgAi4scholarKey").value = "";
+        document.getElementById("cfgEasyscholarKey").value = "";
         document.getElementById("cfgOpenalexKey").value = "";
         document.getElementById("cfgS2Key").value = "";
         document.getElementById("cfgExaKey").value = "";
@@ -5254,11 +5676,27 @@
       onAction(document.getElementById("btnClearSavedKeys"), "click", async (e) => {
         await callTool(
           "save_config",
-          { clearKeys: ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey"] },
+          { clearKeys: ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey"] },
           "正在重置面板自定义 Key...",
           e.currentTarget
         );
         showBanner("已清空面板内覆盖的 Key，恢复使用系统环境变量配置。", "success");
+      });
+
+      onAction(document.getElementById("btnCheckAi4sCredits"), "click", async (e) => {
+        const res = await callTool(
+          "search_ai4scholar",
+          { mode: "credits", preserveActiveRun: true },
+          "正在查询 AI4Scholar 账户积分余额...",
+          e.currentTarget
+        );
+        const cb = res?.creditsBalance || res?.subRun?.run?.credits_balance;
+        if (cb) {
+          showBanner(
+            `💰 AI4Scholar 可用积分：${cb.total_available ?? 0}（永久积分: ${cb.permanent ?? 0}，当前Key已用: ${cb.key_credits_used ?? 0}）`,
+            "success"
+          );
+        }
       });
 
       onAction(document.getElementById("btnRunDoctorInCfg"), "click", async (e) => {
@@ -5349,7 +5787,7 @@
       bindEnterKey(document.getElementById("qSearchYearFrom"), btnExecSearch);
       bindEnterKey(document.getElementById("qSearchYearTo"), btnExecSearch);
 
-      // Mode 2: Google Scholar / Patents (Serper) & Exa AI Search
+      // Mode 2: Google Scholar / Patents / PubMed / Snippets (AI4Scholar & Serper) & Exa AI Search
       const btnExecExtSearch = document.getElementById("btnExecExtSearch");
       onAction(btnExecExtSearch, "click", async () => {
         const query = document.getElementById("qExtQuery").value.trim();
@@ -5365,6 +5803,23 @@
             `正在使用 Exa AI 语义检索「${query}」...`,
             btnExecExtSearch
           );
+        } else if (channel.startsWith("ai4s:")) {
+          const ai4sMode = channel.slice("ai4s:".length) || "gs-search";
+          const country = (document.getElementById("qExtPatentCountry")?.value || "").trim() || undefined;
+          const patentStatus = (document.getElementById("qExtPatentStatus")?.value || "").trim() || undefined;
+          const assignee = (document.getElementById("qExtPatentAssignee")?.value || "").trim() || undefined;
+          await callTool(
+            "search_ai4scholar",
+            {
+              mode: ai4sMode,
+              query,
+              yearFrom,
+              limit,
+              ...(ai4sMode === "patents" ? { country, patentStatus, assignee } : {})
+            },
+            `正在通过 AI4Scholar (${ai4sMode}) 检索「${query}」...`,
+            btnExecExtSearch
+          );
         } else {
           const serperType = channel.split(":")[1] || "scholar";
           await callTool(
@@ -5378,6 +5833,82 @@
       });
       bindEnterKey(document.getElementById("qExtQuery"), btnExecExtSearch);
       bindEnterKey(document.getElementById("qExtYearFrom"), btnExecExtSearch);
+
+      // Mode 5: AI4Scholar Scientific Drawing (Nano Draw) & Auto-Cite
+      const qStudioToolMode = document.getElementById("qStudioToolMode");
+      const updateStudioModeUi = () => {
+        const val = qStudioToolMode?.value || "draw:smart";
+        const isAutoCite = val === "auto-cite";
+        document.getElementById("studioDrawOptionsRow")?.classList.toggle("hidden", isAutoCite);
+        document.getElementById("studioImageInputWrap")?.classList.toggle("hidden", isAutoCite);
+        document.getElementById("studioAutoCiteOptionsRow")?.classList.toggle("hidden", !isAutoCite);
+        const lbl = document.getElementById("qStudioPromptLabel");
+        if (lbl) {
+          lbl.textContent = isAutoCite
+            ? "粘贴待自动配参考文献的学术文本段落（100 ~ 10000 字符）"
+            : val === "draw:vectorize"
+              ? "矢量化说明（可选，请务必在下方填入要转换的 PNG/JPG 图片路径或 URL）"
+              : "科研配图描述（支持中文或英文，如：单原子 Ni/NiOx@C 负载 g-C3N4 光热协同催化析氢机理示意图）";
+        }
+      };
+      qStudioToolMode?.addEventListener("change", updateStudioModeUi);
+
+      const btnExecStudio = document.getElementById("btnExecStudio");
+      onAction(btnExecStudio, "click", async () => {
+        const rawMode = document.getElementById("qStudioToolMode")?.value || "draw:smart";
+        const prompt = (document.getElementById("qStudioPrompt")?.value || "").trim();
+        const saveDir = getChosenSaveDir();
+
+        if (rawMode === "auto-cite") {
+          if (prompt.length < 100 || prompt.length > 10000) {
+            return showBanner("Auto-Cite 需要输入 100 至 10000 字符的学术文本段落。", "error");
+          }
+          const citationStyle = document.getElementById("qStudioCiteStyle")?.value || "gbt7714";
+          const minCitations = readIntegerInput("qStudioMinCitations", "最少引用数", 8, 1, 50);
+          const field = (document.getElementById("qStudioCiteField")?.value || "").trim() || undefined;
+          await callTool(
+            "ai4scholar_draw_and_cite",
+            {
+              mode: "auto-cite",
+              prompt,
+              citationStyle,
+              minCitations,
+              field,
+              saveDir
+            },
+            "正在调用 AI4Scholar Auto-Cite 检索真实文献并自动插入引用标注（约需 20-60 秒）...",
+            btnExecStudio
+          );
+        } else {
+          const drawAction = rawMode.split(":")[1] || "smart";
+          const refImg = (document.getElementById("qStudioRefImage")?.value || "").trim();
+          const images = refImg ? refImg.split(/\s*[,;]\s*/).filter(Boolean) : [];
+          if (!["critic", "vectorize"].includes(drawAction) && !prompt) {
+            return showBanner("请输入科研配图的描述或修改指令。", "error");
+          }
+          if (["edit", "style", "compose", "iterate", "critic", "vectorize"].includes(drawAction) && !images.length) {
+            return showBanner(`当前操作 (${drawAction}) 需要填写参考图片 URL 或本地文件路径。`, "error");
+          }
+          await callTool(
+            "ai4scholar_draw_and_cite",
+            {
+              mode: "draw",
+              drawAction,
+              prompt: prompt || undefined,
+              model: document.getElementById("qStudioModel")?.value || "flash",
+              aspectRatio: document.getElementById("qStudioAspect")?.value || "16:9",
+              imageSize: document.getElementById("qStudioSize")?.value || "2K",
+              stylePreset: (document.getElementById("qStudioStylePreset")?.value || "").trim() || undefined,
+              lang: "zh",
+              images: images.length ? images : undefined,
+              saveDir
+            },
+            `正在调用 AI4Scholar Nano Draw (${drawAction}) 生成科研图表并保存至 ${saveDir}（约需 20-60 秒）...`,
+            btnExecStudio
+          );
+        }
+        switchTab("results");
+      });
 
       // Mode 3: Author Search
       const btnExecAuthor = document.getElementById("btnExecAuthor");
@@ -5441,7 +5972,10 @@
 
       onAction(document.getElementById("btnCopyCitation"), "click", async (e) => {
         const previewEl = document.getElementById("citationPreviewBox");
-        const rawText = state.panelData?.citationsPreview?.[state.citeFormat] || "";
+        const hasLoadedPanel = state.panelData !== null;
+        const rawText = hasLoadedPanel
+          ? state.panelData?.citationsPreview?.[state.citeFormat] || ""
+          : previewEl?.textContent || "";
         if (!rawText.trim()) {
           return showBanner("收藏篮为空，请先在检索结果中点击「⭐ 收藏」添加文献后再复制参考文献。", "warn");
         }

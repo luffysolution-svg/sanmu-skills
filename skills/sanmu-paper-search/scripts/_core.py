@@ -12,11 +12,12 @@ from urllib.parse import unquote, urlsplit, urlunsplit, parse_qsl, urlencode, qu
 SCHEMA = "sanmu-paper-search/v1"
 PROVIDERS = ("openalex", "semantic-scholar", "crossref")
 SECRET_NAMES = ("S2_API_KEY", "SEMANTIC_SCHOLAR_API_KEY", "OPENALEX_API_KEY",
-                "UNPAYWALL_EMAIL", "CROSSREF_EMAIL", "SERPER_API_KEY", "EXA_API_KEY", "OPENALEX_EMAIL", "POLITE_EMAIL")
+                "UNPAYWALL_EMAIL", "CROSSREF_EMAIL", "SERPER_API_KEY", "EXA_API_KEY", "OPENALEX_EMAIL", "POLITE_EMAIL",
+                "EASYSCHOLAR_SECRET_KEY", "AI4SCHOLAR_API_KEY")
 # Canonicalized names are shared by structured fields and parsed URL queries.
 SENSITIVE = {"apikey", "authorization", "token", "accesstoken", "email", "mailto",
              "password", "secret", "xapikey", "key", "signature", "credential",
-             "xamzsignature", "xamzcredential", "xamzsecuritytoken"}
+             "xamzsignature", "xamzcredential", "xamzsecuritytoken", "secretkey"}
 
 
 def _sensitive_key(value, query=False):
@@ -41,7 +42,7 @@ class Redactor:
     def __init__(self, env=None):
         env = os.environ if env is None else env
         values = {variant for name in SECRET_NAMES for variant in
-                  (env.get(name, ""), env.get(name, "").strip())} - {""}
+                  (env.get(name, ""), env.get(name, "").strip(), re.sub(r"\s+", "", env.get(name, "")))} - {""}
         self.values = sorted({variant for value in values for variant in
                               (value, quote(value, safe=""), urlencode({"v": value})[2:])},
                              key=len, reverse=True)
@@ -287,6 +288,13 @@ def _combine(group):
             else:
                 result[field] = alternatives[0]
     result["authors"] = _merge_authors(group, result.get("authors") or [])
+    for opt_field in ("venue_rank", "mesh_terms", "keywords", "citation_contexts", "citation_intents",
+                      "is_influential", "patent_info", "gs_id", "cites_id", "pdfUrl", "search_snippet"):
+        if not result.get(opt_field):
+            for p in group:
+                if p.get(opt_field):
+                    result[opt_field] = p[opt_field]
+                    break
     for key, values in result["identifiers"].items():
         if len(values) > 1:
             result["conflicts"].append({"field": "identifiers." + key, "values": values})
@@ -595,7 +603,7 @@ def check_bundle(path, include_metadata=False):
     if (root / "run.json").is_file():
         try:
             run = read_json(root / "run.json")
-            if isinstance(run, dict) and run.get("command") in ("serper", "exa", "epmc"):
+            if isinstance(run, dict) and run.get("command") in ("serper", "exa", "epmc", "ai4scholar", "rank"):
                 for required in ("results.json", "response.json"):
                     if required not in seen:
                         issues.append("Not in manifest: " + required)
