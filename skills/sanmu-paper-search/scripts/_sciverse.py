@@ -371,7 +371,8 @@ def normalize_sciverse_meta_paper(item):
         p["is_content_accessible"] = item["is_content_accessible"]
     p["url"] = oa_url or (f"https://doi.org/{clean_doi}" if clean_doi else None)
     if arxiv_id and not p.get("pdfUrl"):
-        p["pdfUrl"] = f"https://arxiv.org/pdf/{re.sub(r'\\.pdf$', '', arxiv_id, flags=re.I)}.pdf"
+        arx_clean = re.sub(r"\.pdf$", "", arxiv_id, flags=re.I)
+        p["pdfUrl"] = f"https://arxiv.org/pdf/{arx_clean}.pdf"
     elif oa_url and (oa_url.lower().endswith(".pdf") or "/pdf/" in oa_url.lower()):
         p["pdfUrl"] = oa_url
     return p
