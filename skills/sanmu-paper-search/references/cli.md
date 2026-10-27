@@ -6,6 +6,9 @@
 - Serper（可选）
 - Exa（可选）
 - Europe PMC
+- easyScholar 期刊等级与分区（可选）
+- AI4Scholar 全源检索、科研绘图与自动引文（可选）
+- SciVerse 开放平台（可选）
 - 配置（环境变量）
 - 状态与退出码
 - 文件与交接、PDF 获取
@@ -91,7 +94,7 @@ python scripts/paper_search.py epmc PMC12710600 --fetch all --out "/path/to/work
 
 ## easyScholar 期刊等级与分区（可选）
 
-配置 `EASYSCHOLAR_SECRET_KEY` 后，可通过 `rank` 子命令查询期刊或会议的中科院升级版分区（含 TOP 标记与小类）、JCR Q1–Q4、SCI 影响因子（含 5 年 IF）、JCI、CCF 推荐等级、EI/CSSCI/北大核心及中科院预警状态，或在 `search` / `lookup` / `related` / `author` / `epmc` / `exa` / `ai4scholar` 时加 `--with-ranks` 自动写入每篇论文的 `venue_rank` 字段（自带本地缓存复用）。
+配置 `EASYSCHOLAR_SECRET_KEY` 后，可通过 `rank` 子命令查询期刊或会议的中科院升级版分区（含 TOP 标记与小类）、JCR Q1–Q4、SCI 影响因子（含 5 年 IF）、JCI、CCF 推荐等级、EI/CSSCI/北大核心及中科院预警状态，或在 `search` / `lookup` / `related` / `author` / `epmc` / `exa` / `ai4scholar` / `sciverse` 时加 `--with-ranks` 自动写入每篇论文的 `venue_rank` 字段（自带本地缓存复用）。
 
 ```bash
 python scripts/paper_search.py rank "Advanced Materials" "ACS Catalysis" --out "/path/to/work/runs/ranks"
@@ -109,9 +112,23 @@ python scripts/paper_search.py ai4scholar "single atom nanozyme" --mode pubmed-s
 python scripts/paper_search.py ai4scholar "Single-atom Ni/NiOx on g-C3N4 H2 evolution schematic" --mode draw --draw-action smart --model flash --aspect-ratio 16:9 --image-size 2K --out "/path/to/work/runs/ai4s-draw"
 ```
 
+## SciVerse 开放平台（可选）
+
+配置 `SCIVERSE_API_KEY`（兼容 `SCIVERSE_API_TOKEN` 或 `~/.sciverse/credentials.json`）后，可通过 `sciverse` 子命令调用 SciVerse 开放平台的 12 种模式：结构化检索（`meta-search`：支持 `papers` / `authors` / `sources`、布尔检索式、`--freshness-boost` / `--impact-boost` / `--language-affinity` 软加权及 `fwci`）、全文语义片段检索（`semantic-search`：Agentic RAG 返回匹配原文段落、页码与 Unicode 码点偏移 `offset`）、按 Unicode 码点偏移读取原文 Markdown 并自动提取下载高清原图（`content --download-figures` / `resource`）、引文关系分页与批量补全（`relations`）、字段自省（`catalog`），以及 Paper Schema 结构化论文剖析与复现材料包（`schema-search`、`schema-materials`、`schema-entities`、`schema-evidence`、`schema-citations`、`schema-in-paper`）。
+
+```bash
+python scripts/paper_search.py sciverse "How do single-atom Ni cocatalysts enhance photocatalytic H2 evolution on g-C3N4?" --mode semantic-search --semantic-mode quality --limit 5 --with-ranks --out "/path/to/work/runs/sv-rag"
+python scripts/paper_search.py sciverse "single atom photocatalyst hydrogen evolution" --mode meta-search --freshness-boost MILD --impact-boost MILD --limit 10 --with-ranks --out "/path/to/work/runs/sv-meta"
+python scripts/paper_search.py sciverse "AlphaFold2 protein structure" --mode content --chars 6000 --download-figures --out "/path/to/work/runs/sv-content"
+python scripts/paper_search.py sciverse "graph neural network molecular property" --mode schema-materials --goal reproduction --out "/path/to/work/runs/sv-materials"
+```
+
+`content` 模式的 `--offset` 与 `--chars` 均按 Unicode 码点（Python `len()`）计量，翻页使用返回的 `next_offset`（不能用 `bytes_returned`）；产物包含 `fulltext_excerpt.md` 与 `figures/` 原图。`schema-materials` 支持 `--goal overview|survey|benchmark|method|reproduction`，输出 `schema_materials.md`。
+
 ## 配置（仅环境变量，不写入记录）
 
 - Europe PMC：公共免凭证开放访问，`doctor` 显示 `europepmc_public_access: true`。
+- `SCIVERSE_API_KEY` / `SCIVERSE_API_TOKEN`：可选 SciVerse 开放平台密钥（兼容 `~/.sciverse/credentials.json`，解锁结构化文献检索、全文语义 RAG、原文 Markdown 切片与原图下载及 Paper Schema 结构化材料包）。
 - `AI4SCHOLAR_API_KEY`：可选 AI4Scholar 开放平台密钥（解锁高速 S2、Google Scholar、Google Patents、PubMed、Nano Draw 科研绘图与 Auto-Cite 自动引文）。
 - `EASYSCHOLAR_SECRET_KEY`：可选 easyScholar 开放接口密钥（自动标注中科院升级版分区、JCR 分区、影响因子、CCF 与预警状态）。
 - `SERPER_API_KEY`：可选 Serper 接口，缺失时不执行该服务；安全设置方法见 [Serper 指南](serper.md)。

@@ -43,10 +43,10 @@ The three skills can be used separately or chained: **search** → get the PDF /
 
 ### sanmu-paper-search
 
-- **Multi-source search**: OpenAlex, Semantic Scholar and Crossref, with optional AI4Scholar (S2, Google Scholar, patents and PubMed), Serper and Exa semantic search.
-- **Venue ranks and research tools**: easyScholar journal ranks, impact factors, CCF and warning labels; AI4Scholar scientific drawing, vectorization and automatic citations.
-- **Citation expansion and author disambiguation**: references, citing papers and similar papers are recorded separately; authors with the same name are pinned with stable IDs.
-- **Full text and SI**: Europe PMC provides JATS full text and supplementary original-figure bundles without a key, and checks retractions and errata.
+- **Multi-source search**: OpenAlex, Semantic Scholar and Crossref, with optional SciVerse (structured metadata, full-text semantic RAG and citation relations), AI4Scholar (S2, Google Scholar, patents and PubMed), Serper and Exa semantic search.
+- **Venue ranks and research tools**: easyScholar journal ranks, impact factors, CCF and warning labels; SciVerse Paper Schema structured analysis and reproduction material packs; AI4Scholar scientific drawing, vectorization and automatic citations.
+- **Citation expansion and author disambiguation**: references, citing papers and similar papers are recorded separately; authors with the same name are pinned with stable IDs and topic filters.
+- **Full text, excerpts and SI**: Europe PMC provides JATS full text and supplementary original-figure bundles without a key and checks retractions and errata; SciVerse reads original Markdown slices by Unicode code-point offset and downloads high-resolution figures.
 - **Honest reporting**: success, zero results, truncation and failure are recorded separately; "nothing found" is never reported as "does not exist".
 
 ## Installation
@@ -85,7 +85,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 3. sanmu-paper-reader: the core tools only need Python 3.10+; install requirements.txt only when SI search, PDF figure extraction or subfigure cropping is needed.
    Run python scripts/evidence_tools.py --help to confirm the entry point.
 4. sanmu-paper-search: the core has no third-party dependencies; run python scripts/paper_search.py doctor.
-   Only check whether API credentials are configured (OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY, optional SERPER_API_KEY / EXA_API_KEY); do not display values.
+   Only check whether API credentials are configured (OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY, optional SCIVERSE_API_KEY, AI4SCHOLAR_API_KEY, EASYSCHOLAR_SECRET_KEY, SERPER_API_KEY, EXA_API_KEY); do not display values.
 5. Tell me the installation path, the check results, and what I still need to configure.
 ```
 

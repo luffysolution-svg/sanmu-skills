@@ -1,7 +1,7 @@
 {
   "name": "sanmu-skills",
-  "version": "1.7.1",
-  "workbuddyVersion": "1.7.1",
+  "version": "1.8.0",
+  "workbuddyVersion": "1.8.0",
   "license": "MIT",
   "author": "三木 / Sanmu",
   "repository": "https://github.com/luffysolution-svg/sanmu-skills",
@@ -36,9 +36,9 @@
       "displayName": "三木 · 文献检索",
       "workbuddyDisplayName": "三木文献检索",
       "workbuddyDisplayNameEn": "Sanmu-Paper-Search",
-      "summary": "检索文献、扩展引文和匹配 Zotero；集成 Europe PMC 结构化 JATS 全文与补充材料原图包获取、预印本与撤稿核验，可选 Exa 语义补搜及 Serper 检索。",
+      "summary": "检索文献、扩展引文和匹配 Zotero；集成 Europe PMC 全文与补充材料原图包、SciVerse 全文语义与结构化材料包、AI4Scholar、easyScholar 分区、Exa 及 Serper 检索。",
       "displayNameEn": "Sanmu · Paper Search",
-      "summaryEn": "Find literature, follow citations and match Zotero holdings; fetch Europe PMC full text and SI figures, check retractions, with optional Exa and Serper search."
+      "summaryEn": "Find literature, follow citations and match Zotero holdings; fetch Europe PMC full text and SI figures, with SciVerse, AI4Scholar, easyScholar, Exa and Serper integration."
     }
   ]
 }

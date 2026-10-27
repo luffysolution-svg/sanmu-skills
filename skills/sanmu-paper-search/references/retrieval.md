@@ -31,7 +31,7 @@ DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的�
 
 ## 运行条件
 
-凭证通过环境变量：`OPENALEX_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY`（兼容 `S2_API_KEY`）、`UNPAYWALL_EMAIL`、`CROSSREF_EMAIL`，以及可选 `SERPER_API_KEY`、`EXA_API_KEY`。不同 API 认证、预算和分页规则以当前官方文档为准。无 key 可进行的基本查询与需 key 的能力分别检查；不把限流当成无结果，也不读取不相关凭证。
+凭证通过环境变量：`OPENALEX_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY`（兼容 `S2_API_KEY`）、`UNPAYWALL_EMAIL`、`CROSSREF_EMAIL`，以及可选 `SCIVERSE_API_KEY`（兼容 `SCIVERSE_API_TOKEN`）、`AI4SCHOLAR_API_KEY`、`EASYSCHOLAR_SECRET_KEY`、`SERPER_API_KEY`、`EXA_API_KEY`。不同 API 认证、预算和分页规则以当前官方文档为准。无 key 可进行的基本查询与需 key 的能力分别检查；不把限流当成无结果，也不读取不相关凭证。SciVerse 的 `meta-search` 软加权（`freshness_boost`/`impact_boost`/`language_affinity`）仅在 `query` 非空且未传硬排序时生效；`semantic-search` 的元数据过滤除 `doc_id` 外均为软过滤；Paper Schema 当前侧重 100 万+ AI/CS 会议与 arXiv 论文，零命中只代表该抽取语料未收录，不代表不存在该论文。
 
 外部后端可选：OmniScholar 用于额外来源/作者接口，ScanSci PDF 用于获取；easyseek/其他检索 CLI 接入前核对输出契约、许可与逐源状态。没有安装这些工具时核心流程仍可工作。复制上游代码需保留相应许可；本技能的核心实现独立编写。
 
@@ -42,3 +42,4 @@ DOI 规范化去除解析器前缀并忽略大小写，不随意裁剪 DOI 的�
 - Crossref：https://www.crossref.org/documentation/retrieve-metadata/rest-api/
 - Unpaywall：https://unpaywall.org/products/api
 - Europe PMC：https://europepmc.org/RestfulWebService
+- SciVerse：https://sciverse.space/docs

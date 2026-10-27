@@ -12,7 +12,7 @@
 
 按已有附件、出版社开放版本、机构仓储、OpenAlex/S2 OA 位置和 Unpaywall 定位。各位置保留版本、许可、来源；Crossref 的 PDF/TDM 链接不自动等于 OA。预印本可作为可读替代，但不能无标记代替正式版。
 
-可选 Serper `search` 可定位出版社、仓储和 SI 页面，`webpage --url URL` 可提取公开网页文字及链接，见 [Serper 指南](serper.md)。网页提取可能只有摘要、参考文献或部分内容；HTTP 200、`markdown` 字段或附件链接都不能证明已取得完整主文/SI。先回查目标身份、正文与实际附件，再更新获取状态；`webpage` 不代替 PDF 下载或机构授权访问。
+可选 Serper `search` 可定位出版社、仓储和 SI 页面，`webpage --url URL` 可提取公开网页文字及链接，见 [Serper 指南](serper.md)。可选 SciVerse `content` 接口可按 `doc_id` 与 Unicode 码点偏移读取已收录论文的原文 Markdown 切片，并通过 `resource` 下载其中 `![alt](file_name)` 引用的正文图表；注意 `offset/limit` 均按 Unicode 码点计数并只能用返回的 `next_offset` 翻页，读取切片或结构化摘要在未完成实际精读前仍保持 `read=false`。网页提取可能只有摘要、参考文献或部分内容；HTTP 200、`markdown` 字段或附件链接都不能证明已取得完整主文/SI。先回查目标身份、正文与实际附件，再更新获取状态；`webpage` 不代替 PDF 下载或机构授权访问。
 
 `fetch_pdf.py` 只处理用户任务中的公开 HTTPS PDF。检查 PDF header/trailer，记录原始/最终 URL、大小和 SHA-256。可选 PyMuPDF 在首屏题名区匹配完整 DOI 与标题（同时提供时均需命中，排除参考文献区），结果只代表文字层身份线索，不证明版本、内容完整或科学正确。扫描 PDF、乱码或未匹配进入人工回看，不按尺寸删除。下载失败、HTML 非 PDF、身份待核验分别记录。
 

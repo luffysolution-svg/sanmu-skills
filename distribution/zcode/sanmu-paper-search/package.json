@@ -1,7 +1,7 @@
 {
   "name": "sanmu-paper-search",
-  "version": "1.7.1",
-  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI 与 easyScholar 期刊分区/IF 标注，以及 OA PDF / SI 下载与本机 Zotero 双向联动。",
+  "version": "1.8.0",
+  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse (全文语义RAG/原文切片与配图/Paper Schema)、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI 与 easyScholar 期刊分区/IF 标注，以及 OA PDF / SI 下载与本机 Zotero 双向联动。",
   "type": "module",
   "main": "./scripts/mcp-server.mjs",
   "license": "MIT",

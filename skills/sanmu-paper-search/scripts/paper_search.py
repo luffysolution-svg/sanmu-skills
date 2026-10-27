@@ -149,6 +149,55 @@ def parser():
     cmd.add_argument("--exclude-conferences", action="store_true", help="Exclude conferences in Auto-Cite")
     cmd.add_argument("--with-ranks", action="store_true", help="Enrich papers with easyScholar journal ranks when configured")
     cmd.add_argument("--out", required=True)
+    from _sciverse import (BOOST_LEVELS, EVIDENCE_GROUPS, MATERIAL_GOALS, RELATION_TYPES,
+                           SCIVERSE_COLLECTIONS, SCIVERSE_MODES, SEMANTIC_MODES)
+    cmd = commands.add_parser("sciverse", help="SciVerse open platform: meta-search, semantic-search (RAG), fulltext content/figures, relations & Paper Schema")
+    cmd.add_argument("query", nargs="?", help="Search query, natural-language question, DOI, unique_id, doc_id, or schema_id")
+    cmd.add_argument("--mode", choices=SCIVERSE_MODES, default="meta-search")
+    cmd.add_argument("--collection", choices=SCIVERSE_COLLECTIONS, default="papers", help="Collection for meta-search / catalog (papers, authors, sources)")
+    cmd.add_argument("--id", help="Explicit DOI, unique_id (paper:...), doc_id, or schema_id")
+    cmd.add_argument("--doc-id", help="SciVerse 64-char sha256 fulltext doc_id for content / semantic-search")
+    cmd.add_argument("--doc-ids", action="append", default=[], help="Hard doc_id scope list for semantic-search")
+    cmd.add_argument("--schema-id", help="Paper Schema ID for schema-materials / schema-entities / schema-evidence / schema-citations / schema-in-paper")
+    cmd.add_argument("--schema-ids", action="append", default=[], help="Multiple Paper Schema IDs for schema-materials (1..20)")
+    cmd.add_argument("--title-contains", help="Substring filter on title (meta-search)")
+    cmd.add_argument("--abstract-contains", help="Substring filter on abstract (meta-search)")
+    cmd.add_argument("--author", dest="authors", action="append", default=[], help="Author name filter (repeatable)")
+    cmd.add_argument("--journal", dest="journals", action="append", default=[], help="Unified journal/venue filter (repeatable)")
+    cmd.add_argument("--subject", dest="subjects", action="append", default=[], help="Subject filter (repeatable)")
+    cmd.add_argument("--year-from", type=int)
+    cmd.add_argument("--year-to", type=int)
+    cmd.add_argument("--sort", help="Sort order (cited, date, fwci, influential, references, h_index)")
+    cmd.add_argument("--freshness-boost", choices=BOOST_LEVELS, default="NONE", help="Soft recency boost for fuzzy query (NONE, MILD, STRONG)")
+    cmd.add_argument("--impact-boost", choices=BOOST_LEVELS, default="NONE", help="Soft citation impact boost for fuzzy query (NONE, MILD, STRONG)")
+    cmd.add_argument("--language-affinity", choices=BOOST_LEVELS, default="NONE", help="Soft query-language affinity boost (NONE, MILD, STRONG)")
+    cmd.add_argument("--oa-only", action="store_true", help="Only open-access papers (access_is_oa=true)")
+    cmd.add_argument("--language", help="Language code filter (e.g. en, zh)")
+    cmd.add_argument("--filters", help="Advanced filters JSON (array for meta-search, object for semantic-search / schema-search)")
+    cmd.add_argument("--semantic-mode", choices=SEMANTIC_MODES, default="balanced", help="Agentic semantic search mode (fast, balanced, quality)")
+    cmd.add_argument("--source-type", dest="source_types", action="append", choices=("pdf", "web"), default=[], help="Source type filter for semantic-search")
+    cmd.add_argument("--offset", type=int, default=0, help="Unicode code-point start offset for content mode")
+    cmd.add_argument("--chars", type=int, default=6000, help="Max Unicode code points to read in content mode (200..65536)")
+    cmd.add_argument("--download-figures", action="store_true", help="Automatically download figures referenced in content Markdown via /resource")
+    cmd.add_argument("--file-name", help="Relative figure/table resource path from content Markdown for resource mode")
+    cmd.add_argument("--relation", choices=RELATION_TYPES, default="REFERENCES", help="Relation type for relations mode (REFERENCES, CITATIONS, RELATED_WORKS)")
+    cmd.add_argument("--sample-values", action="store_true", help="Include enum sample values in catalog mode")
+    cmd.add_argument("--field-stats", action="store_true", help="Include field statistics in catalog mode")
+    cmd.add_argument("--goal", choices=MATERIAL_GOALS, default="reproduction", help="Research goal for schema-materials (overview, survey, benchmark, method, reproduction)")
+    cmd.add_argument("--has-code", action="store_true", help="Only papers with code in schema-search")
+    cmd.add_argument("--has-data", action="store_true", help="Only papers with dataset in schema-search")
+    cmd.add_argument("--entity-type", dest="entity_types", action="append", default=[], help="Entity type filter for schema-entities")
+    cmd.add_argument("--evidence-group", dest="evidence_groups", action="append", choices=EVIDENCE_GROUPS, default=[], help="Evidence group for schema-evidence")
+    cmd.add_argument("--direction", choices=("outbound", "inbound"), default="outbound", help="Citation graph direction for schema-citations")
+    cmd.add_argument("--depth", type=int, default=1, help="Citation graph expansion depth (1..3)")
+    cmd.add_argument("--section-hint", help="Section hint for schema-in-paper")
+    cmd.add_argument("--paragraph-id", dest="paragraph_ids", action="append", default=[], help="Paragraph ID for schema-in-paper provenance resolution")
+    cmd.add_argument("--marker", dest="markers", action="append", default=[], help="Marker number for schema-in-paper provenance resolution")
+    cmd.add_argument("--window", type=int, default=1, help="Context paragraph window for schema-in-paper (0..5)")
+    cmd.add_argument("--page", type=int, default=1, help="Page number for meta-search / relations")
+    cmd.add_argument("--limit", type=int, default=10, help="Result limit (1..100)")
+    cmd.add_argument("--with-ranks", action="store_true", help="Enrich papers with easyScholar journal ranks when configured")
+    cmd.add_argument("--out", required=True)
     for name in ("search", "lookup", "related"):
         cmd = commands.add_parser(name)
         cmd.add_argument("query" if name == "search" else "id")
@@ -250,6 +299,7 @@ def diff_papers(before, after):
 def execute(args, client):
     redactor, adapter = client.redactor, Providers(client)
     if args.command == "doctor":
+        from _sciverse import has_sciverse_token
         env = client.env
         return {"schema": SCHEMA, "status": "success", "python_supported": sys.version_info >= (3, 10),
                 "configuration": {"semantic_scholar_api_key": bool(env.get("S2_API_KEY") or env.get("SEMANTIC_SCHOLAR_API_KEY")),
@@ -258,6 +308,7 @@ def execute(args, client):
                                   "exa_api_key": bool(env.get("EXA_API_KEY", "").strip()),
                                   "easyscholar_secret_key": bool(re.sub(r"\s+", "", env.get("EASYSCHOLAR_SECRET_KEY", ""))),
                                   "ai4scholar_api_key": bool(env.get("AI4SCHOLAR_API_KEY", "").strip()),
+                                  "sciverse_api_key": has_sciverse_token(env),
                                   "openalex_email": bool(env.get("OPENALEX_EMAIL")),
                                   "unpaywall_email": bool(env.get("UNPAYWALL_EMAIL")),
                                   "crossref_email": bool(env.get("CROSSREF_EMAIL")),
@@ -280,6 +331,9 @@ def execute(args, client):
     if args.command == "ai4scholar":
         from _ai4scholar import execute as execute_ai4scholar
         return execute_ai4scholar(args, client)
+    if args.command == "sciverse":
+        from _sciverse import execute as execute_sciverse
+        return execute_sciverse(args, client)
     # Input errors are diagnosed before reserving a directory or issuing a request.
     command = args.command
     year_from, year_to = getattr(args, "year_from", None), getattr(args, "year_to", None)

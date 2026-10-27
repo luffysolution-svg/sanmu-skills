@@ -32,7 +32,7 @@ https://github.com/luffysolution-svg/sanmu-skills
    python scripts/paper_search.py doctor
    python scripts/paper_search.py --help
 3. Check whether OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY (S2_API_KEY also accepted), UNPAYWALL_EMAIL, CROSSREF_EMAIL,
-   and the optional SERPER_API_KEY and EXA_API_KEY are configured, without displaying values. Europe PMC needs no key.
+   and the optional SCIVERSE_API_KEY (or SCIVERSE_API_TOKEN), AI4SCHOLAR_API_KEY, EASYSCHOLAR_SECRET_KEY, SERPER_API_KEY and EXA_API_KEY are configured, without displaying values. Europe PMC needs no key.
    Without credentials, explain what is available; only point to the official registration pages when actually needed.
 4. If Zotero is needed, check the host plugin and the local API; do not read the database or storage directly. Searching also works without Zotero.
 5. Create a new working directory outside the repository, run one small query, and report per-source status, the installation path and limitations; do not change Zotero.
@@ -66,22 +66,43 @@ Run from the skill directory. Point `--out` to a new directory in your personal 
 python scripts/paper_search.py doctor
 
 # Topic, seed paper, author
-python scripts/paper_search.py search "generative inorganic materials design" --sources openalex,semantic-scholar,crossref --limit 5 --out /path/to/work/topic
-python scripts/paper_search.py lookup 10.1038/s41586-025-08628-5 --out /path/to/work/seed
+python scripts/paper_search.py search "generative inorganic materials design" --sources openalex,semantic-scholar,crossref --sort relevance --with-ranks --limit 5 --out /path/to/work/topic
+python scripts/paper_search.py lookup 10.1038/s41586-025-08628-5 --with-ranks --out /path/to/work/seed
 python scripts/paper_search.py author "Claudio Zeni" --provider semantic-scholar --out /path/to/work/authors
-python scripts/paper_search.py author "Tian Xie" --provider openalex --from-paper 10.1038/s41586-025-08628-5 --out /path/to/work/author-from-paper
+python scripts/paper_search.py author "Tian Xie" --provider openalex --from-paper 10.1038/s41586-025-08628-5 --topic "materials" --sort cited --out /path/to/work/author-from-paper
 
-# Citations, open access, verification
-python scripts/paper_search.py related 10.1038/s41586-025-08628-5 --relation citations --limit 5 --out /path/to/work/citations
+# Citations, venue ranks, open access, verification
+python scripts/paper_search.py related 10.1038/s41586-025-08628-5 --relation citations --with-ranks --limit 5 --out /path/to/work/citations
+python scripts/paper_search.py rank "Advanced Materials" "ACS Catalysis" --out /path/to/work/ranks
 python scripts/paper_search.py oa /path/to/work/seed --out /path/to/work/oa
 python scripts/paper_search.py check /path/to/work/seed
 ```
 
-- After checking the author candidates, use `author --author-id ID --provider ...` to fetch publications.
-- `search` and author publications support `--year-from` / `--year-to`.
+- After checking the author candidates, use `author --author-id ID --provider ...` to fetch publications (supports `--topic` filtering and `--sort cited|date`).
+- `search` supports `--sort relevance|cited|date` and `--year-from` / `--year-to`; pass `--with-ranks` to annotate papers with easyScholar journal ranks and impact factors.
 - `--limit 1..20` is the candidate budget per source. All candidates are kept after cross-source deduplication, without cross-database reranking; the assistant reads them and forms the shortlist.
 
 Full parameters and record formats are in the [CLI guide](references/cli.md).
+
+### SciVerse: full-text semantic RAG, Markdown excerpts & figures, and Paper Schema material packs (optional, needs `SCIVERSE_API_KEY`)
+
+```bash
+python scripts/paper_search.py sciverse "How do single-atom Ni cocatalysts enhance photocatalytic H2 evolution on g-C3N4?" --mode semantic-search --semantic-mode quality --limit 5 --out /path/to/work/sciverse-rag
+python scripts/paper_search.py sciverse "single atom photocatalyst hydrogen evolution" --mode meta-search --freshness-boost MILD --impact-boost MILD --limit 10 --out /path/to/work/sciverse-meta
+python scripts/paper_search.py sciverse "AlphaFold2 protein structure" --mode content --chars 6000 --download-figures --out /path/to/work/sciverse-content
+python scripts/paper_search.py sciverse "graph neural network molecular property" --mode schema-materials --goal reproduction --out /path/to/work/sciverse-materials
+```
+
+Supports structured metadata search (`meta-search`: papers, authors and sources, with boolean syntax, soft freshness/impact/language boosts and FWCI), natural-language semantic chunk retrieval (`semantic-search`: returns matched excerpts, page numbers and Unicode code-point `offset`), reading original Markdown slices by Unicode offset and downloading embedded figures (`content --download-figures` / `resource`), citation relation paging (`relations`), and Paper Schema structured analysis and reproduction material packs (`schema-search` / `schema-materials` / `schema-evidence` / `schema-citations` / `schema-in-paper`).
+
+### AI4Scholar and easyScholar: multi-source search, scientific drawing, auto-cite and venue ranks (optional)
+
+```bash
+python scripts/paper_search.py ai4scholar "single atom Ni photocatalyst" --mode gs-search --year-from 2023 --limit 10 --with-ranks --out /path/to/work/ai4s-gs
+python scripts/paper_search.py ai4scholar "Single-atom Ni/NiOx on g-C3N4 H2 evolution schematic" --mode draw --draw-action smart --model flash --aspect-ratio 16:9 --image-size 2K --out /path/to/work/ai4s-draw
+```
+
+With `AI4SCHOLAR_API_KEY`, use Semantic Scholar, Google Scholar, Google Patents, PubMed, Nano Draw scientific illustration/vectorization and Auto-Cite. With `EASYSCHOLAR_SECRET_KEY`, use `rank` or `--with-ranks` to annotate CAS upgraded quartiles, JCR Q1–Q4, SCI impact factors, CCF tiers and warning lists.
 
 ### Europe PMC: full text, SI and retraction checks (no key)
 
@@ -117,6 +138,9 @@ Only structured publication entities are written to `papers.json`, as candidates
 | Crossref | DOI and bibliographic verification, supplementary recall | Optional `CROSSREF_EMAIL` |
 | Europe PMC | Preprints, associated data, retraction checks, JATS full text and SI original-figure bundles | No key |
 | Unpaywall | OA locations for a DOI | `UNPAYWALL_EMAIL`; not used for keyword search |
+| SciVerse (optional) | Full-text semantic RAG, structured paper/author/source search, original Markdown slices & figures, and Paper Schema reproduction material packs | `SCIVERSE_API_KEY` or `SCIVERSE_API_TOKEN` (also reads `~/.sciverse/credentials.json`) |
+| AI4Scholar (optional) | High-speed S2, Google Scholar, Google Patents, PubMed, Nano Draw scientific illustration and Auto-Cite | `AI4SCHOLAR_API_KEY` |
+| easyScholar (optional) | CAS upgraded quartiles, JCR Q1–Q4, SCI impact factors, CCF tiers and warning lists | `EASYSCHOLAR_SECRET_KEY` |
 | Serper (optional) | 13 types of endpoints including Google Scholar, web and patents | `SERPER_API_KEY`, billed per request |
 | Exa (optional) | Finding publications from a natural-language description | `EXA_API_KEY` |
 | Zotero | Checking holdings and existing attachments | Host Zotero tools, or a local standard JSON export |

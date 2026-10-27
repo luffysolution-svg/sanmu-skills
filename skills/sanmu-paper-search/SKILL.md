@@ -1,6 +1,6 @@
 ---
 name: sanmu-paper-search
-description: 从研究课题、种子论文或作者出发查找学术文献，追踪参考文献、施引文献和相似论文，合并去重并如实记录检索范围。数据源包括 OpenAlex、Semantic Scholar、Crossref 和 Europe PMC，可选 Google Scholar（Serper）和 Exa 语义补搜。还能获取开放全文和补充材料原图、核验撤稿与勘误、区分同名作者，以及整理 Zotero 分类和附件。只要用户想找论文、做开题调研或文献综述、从一篇论文扩展相关工作、查某位作者的研究、下载 PDF 或 SI，或者确认一篇论文有没有被撤稿，就使用本技能。Literature search, citation chasing and full-text/SI retrieval.
+description: 从研究课题、种子论文或作者出发查找学术文献，追踪参考文献、施引文献和相似论文，合并去重并如实记录检索范围。数据源包括 OpenAlex、Semantic Scholar、Crossref 和 Europe PMC，可选 SciVerse（全文语义 RAG、原文切片与原图、Paper Schema 复现材料包）、AI4Scholar（S2/Google Scholar/专利/PubMed/科研绘图/自动引文）、easyScholar 期刊分区、Serper 和 Exa 语义补搜。还能获取开放全文和补充材料原图、核验撤稿与勘误、区分同名作者，以及整理 Zotero 分类和附件。只要用户想找论文、做开题调研或文献综述、从一篇论文扩展相关工作、查某位作者的研究、下载 PDF 或 SI，或者确认一篇论文有没有被撤稿，就使用本技能。Literature search, citation chasing and full-text/SI retrieval.
 ---
 
 # 文献检索与获取
@@ -18,6 +18,7 @@ description: 从研究课题、种子论文或作者出发查找学术文献，�
 | 查某位作者或团队的其他研究 | 先列候选作者，用稳定 ID、机构和已知作品确认是同一人，再查作品；同名或译名难区分时用 `--from-paper` 从种子论文锚定 | [检索策略](references/retrieval.md) |
 | 开题、范围综述、尽量查全、定期更新 | 先定检索协议，记录分页和筛选，逐项检查已知文献有没有漏 | [检索协议](references/protocol.md) |
 | Google Scholar 补搜、专利、公开网页 | 配置 AI4Scholar 或 Serper 后按需选接口 | [Serper](references/serper.md) |
+| SciVerse 全文语义片段 RAG、结构化文献/学者/期刊检索、原文 Markdown 切片与原图提取、Paper Schema 结构拆解与复现材料包 | `sciverse` 子命令（支持 `--mode semantic-search|meta-search|content|relations|schema-search|schema-materials|schema-evidence`），配置 `SCIVERSE_API_KEY` | [CLI 指南](references/cli.md) |
 | AI4Scholar 全源检索（S2/GS/专利/PubMed）、科研绘图与自动引文 | `ai4scholar` 子命令（支持 `--mode gs-search|patents|pubmed-search|s2-snippets|draw|auto-cite`） | [CLI 指南](references/cli.md) |
 | 查询期刊中科院分区、JCR 分区、影响因子、CCF 与预警状态 | `rank` 子命令（或检索时加 `--with-ranks`），配置 `EASYSCHOLAR_SECRET_KEY` | [CLI 指南](references/cli.md) |
 | 用一段自然语言描述找论文 | 配置 Exa，保留 publication 类结果，再用学术源核验身份 | [Exa](references/exa.md) |
@@ -83,6 +84,7 @@ python scripts/paper_search.py --help
 长期任务保存 `run.json`、`papers.json`、脱敏后的原始响应、`report.md` 和哈希清单。不同子命令的产物略有差异：
 
 - **Europe PMC**：`papers.json`（含 PMCID 和撤稿关系）、`results.json`、`response.json`；加 `--fetch` 时另有 `fulltext.xml`、`fulltext_summary.json`、`supplementary_manifest.json` 和解压后的补充材料。
+- **SciVerse**：`papers.json`（含 `sciverse_doc_id`、`sciverse_unique_id`、`sciverse_schema_id`、语义命中片段 `sciverse_chunks` 或 `sciverse_schema`）、`results.json`、`response.json`；`content` 模式另有 `fulltext_excerpt.md` 与 `figures/` 原图，`schema-materials` 模式另有 `schema_materials.md` 结构化复现材料包。
 - **Serper**：结果在 `results.json` / `response.json`，`papers.json` 是空的；核对出稳定 ID 后再进入论文流程。
 - **Exa**：保留完整结果和请求/响应，只把能规范化的 publication 实体存为待核验候选，细节见 [Exa](references/exa.md)。
 

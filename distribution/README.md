@@ -137,7 +137,7 @@ skillhub publish ./dist/<版本>/skillhub/sanmu-paper-search --dry-run
 - 技能包的必填字段按[官方技能文档](https://open.workbuddy.cn/docs/skill)：`description`、`description_zh`、`description_en`、`version`、`author`。展示名虽未标必填，但缺失时实际会解析失败，所以也一并写入。
 - 付费资产名称只支持中文、英文字母、数字、`-` 和 `_`，不能含空格或间隔号。构建时校验中英文展示名；当前中文名为“三木学术文档转Markdown”“三木文献精读”“三木文献检索”。后台展示名从包内 `display_name` 解析且只读，改名后需重新上传 ZIP。
 - 本次三个付费技能均从“创建”入口重新建立，WorkBuddy 标识为 `sanmu-doc2md-paid`、`sanmu-paper-reader-paid`、`sanmu-paper-search-paid`，原已发布记录保持下架。实测旧免费记录的“更新版本”页不提供付费选项，而创建时沿用旧标识会提示技能已存在；渠道独立标识避免冲突，源码及 SkillHub 标识保持不变。
-- `workbuddyVersion` 当前为 `1.7.1`，与合集版本 `1.7.1` 保持一致。未设置时沿用合集版本。更新已有记录时，平台要求包内版本严格大于当前最新版本。
+- `workbuddyVersion` 当前为 `1.8.0`，与合集版本 `1.8.0` 保持一致。未设置时沿用合集版本。更新已有记录时，平台要求包内版本严格大于当前最新版本。
 - 三个新技能统一选择“按月付费”，金额为 `3` 元/月。价格在后台设置，ZIP 不携带定价；保存后核对确认页的“按月付费·3元/月”，再提交审核。
 - 解析失败时，先对照官方文档的“技能基础结构”排查；仍无法定位，可发邮件到 openworkbuddy@tencent.com。
 

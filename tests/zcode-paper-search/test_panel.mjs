@@ -637,5 +637,70 @@ test('v1.7.0 panel features: topic/author sort & topic filter, comprehensive rec
   assert.ok(!intelPanel.classList.contains('hidden'));
   assert.match(intelPanel.innerHTML, /图谱核心情报：共被引基石文献 &amp; 桥梁文献 Top 5/);
   assert.match(intelPanel.innerHTML, /Advanced Materials Core Single Atom Ni Paper/);
+
+  // v1.8.0: SciVerse channel in Mode 2 + paper card badges + detail view inline content & materials
+  p.document.querySelector('[data-mode="serper"]').click();
+  set(p, 'qExtChannel', 'sciverse:semantic-search');
+  p.document.getElementById('qExtChannel').dispatchEvent({ type: 'change', target: p.document.getElementById('qExtChannel') });
+  set(p, 'qExtQuery', 'How do single-atom Ni cocatalysts enhance H2 evolution?');
+  set(p, 'qExtSciverseSemMode', 'quality');
+  await click(p, 'btnExecExtSearch');
+  assert.equal(tools(p).at(-1).params.name, 'search_sciverse');
+  assert.equal(tools(p).at(-1).params.arguments.mode, 'semantic-search');
+  assert.equal(tools(p).at(-1).params.arguments.semanticMode, 'quality');
+
+  const svPaper = {
+    ...paper('sv1'),
+    title: 'SciVerse Fulltext and Schema Paper',
+    year: 2025,
+    fwci: 3.85,
+    sciverse_doc_id: 'b'.repeat(64),
+    sciverse_schema_id: '2501.00001v1-abcdef123456',
+    sciverse_saved_dir: 'F:/个人知识库/00-收件箱-待整理/文献检索/2025-SciVerse_SciVerse',
+    sciverse_excerpt_path: 'F:/个人知识库/00-收件箱-待整理/文献检索/2025-SciVerse_SciVerse/fulltext_excerpt.md',
+    sciverse_figure_files: ['F:/个人知识库/00-收件箱-待整理/文献检索/2025-SciVerse_SciVerse/figures/01_fig1.jpg'],
+    sciverse_chunks: [{ chunk_id: 'ck1', doc_id: 'b'.repeat(64), offset: 1500, page_no: 4, score: 0.92, chunk: 'EXAFS confirms Ni-N4 coordination.' }],
+    sciverse_schema: { schema_id: '2501.00001v1-abcdef123456', research_problem: 'Slow H2 evolution kinetics', central_contribution: 'Single-atom Ni/NiOx cocatalyst', headline_result: 'AQY reaches 28.5%', has_code: true }
+  };
+  answer(p, {
+    ...emptyState(),
+    configStatus: { ...emptyState().configStatus, sciverse_api_key: { configured: true, source: 'panel' } },
+    activeRun: { runId: 'sv-run-1', papers: [svPaper] }
+  });
+  await flush();
+  const cardHtml = p.document.getElementById('mainPapersList').innerHTML;
+  assert.match(cardHtml, /含SciVerse全文/);
+  assert.match(cardHtml, /Paper Schema/);
+  assert.match(cardHtml, /FWCI 3\.85/);
+  assert.match(cardHtml, /原文片段×1/);
+
+  // Open detail view and test inline SciVerse content fetch
+  p.inspectPaper(svPaper);
+  assert.match(p.document.getElementById('detailBody').innerHTML, /Slow H2 evolution kinetics/);
+  assert.match(p.document.getElementById('detailBody').innerHTML, /EXAFS confirms Ni-N4 coordination/);
+  await click(p, 'drwFetchSciverseContent');
+  assert.equal(tools(p).at(-1).params.name, 'search_sciverse');
+  assert.equal(tools(p).at(-1).params.arguments.mode, 'content');
+  assert.equal(tools(p).at(-1).params.arguments.offset, 1200);
+  answer(p, {
+    ...emptyState(),
+    exportedSaveDir: 'F:/个人知识库/00-收件箱-待整理/文献检索/2025-SciVerse_SciVerse',
+    sciverseContent: {
+      doc_id: 'b'.repeat(64),
+      offset: 1200,
+      limit: 6000,
+      chars_returned: 512,
+      next_offset: 1712,
+      more: true,
+      text: '## Fulltext Markdown Slice\nDetailed experimental procedure...',
+      downloaded_figures: [{ index: 1, alt: 'Fig 1', saved_path: 'F:/个人知识库/fig1.jpg', bytes: 24576 }]
+    }
+  });
+  await flush();
+  assert.match(p.document.getElementById('drwInlineSciverseMount').innerHTML, /Fulltext Markdown Slice/);
+  assert.match(p.document.getElementById('drwInlineSciverseMount').innerHTML, /打开原图 #1/);
+  const svPrompt = p.buildDeepReadHandoffPrompt(svPaper);
+  assert.match(svPrompt, /SciVerse 原文 Markdown 切片/);
+  assert.match(svPrompt, /01_fig1\.jpg/);
 });
 

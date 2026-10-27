@@ -30,6 +30,7 @@ python scripts/paper_search.py doctor
 | `EXA_API_KEY` | 用自然语言描述找论文 | 按请求计费 | 需要时再配 |
 | `EASYSCHOLAR_SECRET_KEY` | 期刊/会议分区、影响因子、CCF 与预警信息 | 以平台配额为准 | 需要分区标注时再配 |
 | `AI4SCHOLAR_API_KEY` | S2、Google Scholar、专利、PubMed、科研绘图与自动引文 | 按平台积分计费 | 需要对应功能时再配 |
+| `SCIVERSE_API_KEY`（或 `SCIVERSE_API_TOKEN`） | SciVerse 全文语义片段 RAG、结构化文献检索、原文 Markdown 切片与高清原图、Paper Schema 复现材料包 | 以平台配额为准 | 需要全文切片/原图或 Paper Schema 时再配 |
 
 Europe PMC 不需要任何配置。
 
@@ -43,6 +44,7 @@ Europe PMC 不需要任何配置。
 - **Exa**：在 <https://dashboard.exa.ai> 注册并创建 API key。同样按请求计费。
 - **easyScholar**：在 <https://www.easyscholar.cc> 登录后进入开放接口设置，获取 SecretKey；使用 `EASYSCHOLAR_SECRET_KEY` 保存。
 - **AI4Scholar**：在 <https://ai4scholar.net> 登录控制台创建 API key，保存为 `AI4SCHOLAR_API_KEY`；检索、绘图和自动引文按平台积分计费。
+- **SciVerse**：在 <https://sciverse.space> 登录控制台创建 API Token（`sci_...`），保存为 `SCIVERSE_API_KEY`（或 `SCIVERSE_API_TOKEN`，也兼容 `~/.sciverse/credentials.json`）。
 - **邮箱**：用用户自己的常用邮箱即可，不需要注册。
 
 ## 保存到本机

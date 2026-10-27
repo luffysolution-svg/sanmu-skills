@@ -1,7 +1,7 @@
 {
   "name": "sanmu-paper-search",
-  "version": "1.7.1",
-  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI 与 easyScholar 期刊分区/IF 标注，以及 OA PDF / SI 下载与本机 Zotero 双向联动。",
+  "version": "1.8.0",
+  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse (全文语义RAG/原文切片与配图/Paper Schema)、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI 与 easyScholar 期刊分区/IF 标注，以及 OA PDF / SI 下载与本机 Zotero 双向联动。",
   "author": {
     "name": "Sanmu (Wu Sen)"
   },
@@ -26,6 +26,7 @@
         "USER_CONFIG_SERPER_API_KEY": "${user_config.serperApiKey}",
         "USER_CONFIG_EASYSCHOLAR_SECRET_KEY": "${user_config.easyscholarSecretKey}",
         "USER_CONFIG_AI4SCHOLAR_API_KEY": "${user_config.ai4scholarApiKey}",
+        "USER_CONFIG_SCIVERSE_API_KEY": "${user_config.sciverseApiKey}",
         "USER_CONFIG_ZOTERO_URL": "${user_config.zoteroUrl}",
         "USER_CONFIG_EXPORT_SUBDIR": "${user_config.exportSubdir}"
       }
@@ -37,6 +38,12 @@
       "default": "",
       "title": "联系邮箱 (Polite Pool 推荐)",
       "description": "可选但推荐。填入常用邮箱可自动进入 OpenAlex、Crossref、Unpaywall 的礼貌加速池，减少匿名限流并解锁 Unpaywall 免费全文定位。"
+    },
+    "sciverseApiKey": {
+      "type": "string",
+      "default": "",
+      "title": "SciVerse API Key (全文语义RAG / 原文切片与配图 / Paper Schema)",
+      "description": "可选。填入 SciVerse 密钥 (sci_...) 后可解锁全文语义片段检索 (Agentic RAG)、按 Unicode 码点偏移读取论文原文 Markdown 与下载高清原图、引文网络追踪，以及 Paper Schema 论文结构拆解与复现材料包。"
     },
     "ai4scholarApiKey": {
       "type": "string",
@@ -103,7 +110,7 @@
     ]
   },
   "description_i18n": {
-    "en": "Search, verify, and explore academic literature in a side panel: OpenAlex, Semantic Scholar, Crossref, Europe PMC, AI4Scholar (S2/Google Scholar/Patents/PubMed/Nano Draw/Auto-Cite), Serper, Exa AI, and easyScholar journal rankings, with OA PDF / SI download and local Zotero integration.",
-    "zh-CN": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI 与 easyScholar 期刊分区/IF 标注，以及 OA PDF / SI 下载与本机 Zotero 双向联动。"
+    "en": "Search, verify, and explore academic literature in a side panel: OpenAlex, Semantic Scholar, Crossref, Europe PMC, SciVerse (Semantic RAG/Fulltext Markdown & Figures/Paper Schema), AI4Scholar (S2/Google Scholar/Patents/PubMed/Nano Draw/Auto-Cite), Serper, Exa AI, and easyScholar journal rankings, with OA PDF / SI download and local Zotero integration.",
+    "zh-CN": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse (全文语义RAG/原文切片与配图/Paper Schema)、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI 与 easyScholar 期刊分区/IF 标注，以及 OA PDF / SI 下载与本机 Zotero 双向联动。"
   }
 }

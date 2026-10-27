@@ -429,10 +429,12 @@ test("MCP offline regressions", async (t) => {
 
   await t.test('DSH bundle starts outside its package and explicitly passes credentials through the host environment scrub', async () => {
     const patch = resolve(here, '../../distribution/zcode/sanmu-paper-search/cordis.patch.yml');
-    const row = JSON.parse(execFileSync('python', ['-c',
-      'import json,sys,yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1],encoding="utf-8"))[0]["insert"][0]))', patch], { encoding: 'utf8' }));
+    const patchText = readFileSync(patch, 'utf8');
+    const idMatch = patchText.match(/-\s*id:\s*([^\r\n#]+)/);
+    const nameMatch = patchText.match(/name:\s*["']?([^"'\r\n#]+)["']?/);
+    const row = { id: idMatch?.[1]?.trim(), name: nameMatch?.[1]?.trim() };
     const hostEnv = { DSH_HOME: join(root, 'dsh-home'), DSH_WORKSPACE_ROOT: workspace,
-      USER_CONFIG_EXA_API_KEY: 'FAKE_DSH_EXA_KEY', USER_CONFIG_POLITE_EMAIL: 'dsh@example.test' };
+      USER_CONFIG_EXA_API_KEY: 'FAKE_DSH_EXA_KEY', USER_CONFIG_SCIVERSE_API_KEY: 'FAKE_DSH_SCIVERSE_KEY', USER_CONFIG_POLITE_EMAIL: 'dsh@example.test' };
     let config = row.config;
     if (row.name.startsWith('./')) {
       const adapter = resolve(here, '../../distribution/zcode/sanmu-paper-search', row.name);
@@ -672,5 +674,44 @@ test("MCP offline regressions", async (t) => {
     assert.equal(hubNode.isBridgeNode, true);
     assert.equal(graph.counts.coCitedHubs, 1);
     assert.equal(graph.counts.bridgeNodes, 1);
+  });
+
+  await t.test("v1.8.0 SciVerse MCP tool: search_sciverse content/figures & schema-materials export and config redaction", async () => {
+    reset();
+    await call("save_config", { sciverseApiKey: "sci_secret_unit_key_777" });
+    const cfgRaw = readFileSync(join(data, "config.json"), "utf8");
+    assert.match(cfgRaw, /sci_secret_unit_key_777/);
+
+    const contentRes = await call("search_sciverse", {
+      mode: "content",
+      docId: "a".repeat(64),
+      offset: 300,
+      chars: 4000,
+      downloadFigures: true,
+      paperKey: "doi:10.1234/fixture",
+      preserveActiveRun: true
+    });
+    assert.equal(contentRes.isError, undefined);
+    assert.equal(contentRes.structuredContent.configStatus.sciverse_api_key.configured, true);
+    const sc = contentRes.structuredContent.sciverseContent;
+    assert.ok(sc);
+    assert.equal(sc.offset, 300);
+    assert.ok(sc.exported_excerpt_path);
+    assert.ok(existsSync(sc.exported_excerpt_path));
+    assert.equal(sc.downloaded_figures.length, 1);
+    assert.ok(existsSync(sc.downloaded_figures[0].saved_path));
+
+    const matRes = await call("search_sciverse", {
+      mode: "schema-materials",
+      schemaId: "2008.12187v1-f78968c8e105",
+      goal: "reproduction"
+    });
+    assert.equal(matRes.isError, undefined);
+    const sm = matRes.structuredContent.sciverseMaterials;
+    assert.ok(sm);
+    assert.equal(sm.goal, "reproduction");
+    assert.ok(sm.exported_materials_path);
+    assert.ok(existsSync(sm.exported_materials_path));
+    assert.ok(!JSON.stringify(matRes).includes("sci_secret_unit_key_777"));
   });
 });

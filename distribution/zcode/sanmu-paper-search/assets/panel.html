@@ -863,7 +863,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.7.1</span>
+        <span class="brand-sub">v1.8.0</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -901,45 +901,49 @@
       <div class="form-grid">
         <div class="form-row">
           <div class="field">
+            <label>SciVerse API Key (全文语义RAG / 原文切片与原图 / Paper Schema) <span id="badgeSciverseKey" class="pill static"></span></label>
+            <input type="password" id="cfgSciverseKey" placeholder="填入 sci_... 覆盖，留空保持原配置" />
+          </div>
+          <div class="field">
             <label>AI4Scholar API Key (S2 / 谷歌学术 / 专利 / PubMed / 科研绘图) <span id="badgeAi4scholarKey" class="pill static"></span></label>
             <input type="password" id="cfgAi4scholarKey" placeholder="填入 sk-user-... 覆盖，留空保持原配置" />
           </div>
+        </div>
+        <div class="form-row">
           <div class="field">
             <label>easyScholar Secret Key (期刊分区 / IF / CCF / 预警) <span id="badgeEasyscholarKey" class="pill static"></span></label>
             <input type="password" id="cfgEasyscholarKey" placeholder="填入开放接口 SecretKey 覆盖，留空保持原配置" />
           </div>
-        </div>
-        <div class="form-row">
           <div class="field">
             <label>联系邮箱 (Polite Pool 加速 + Unpaywall) <span id="badgePoliteEmail" class="pill static"></span></label>
             <input type="text" id="cfgPoliteEmail" placeholder="例如 researcher@university.edu" />
           </div>
+        </div>
+        <div class="form-row">
           <div class="field">
             <label>Serper API Key (Google Scholar / 专利备选) <span id="badgeSerperKey" class="pill static"></span></label>
             <input type="password" id="cfgSerperKey" placeholder="填入新 Key 覆盖，留空保持原配置" />
           </div>
-        </div>
-        <div class="form-row">
           <div class="field">
             <label>Exa API Key (AI 自然语言语义搜论文) <span id="badgeExaKey" class="pill static"></span></label>
             <input type="password" id="cfgExaKey" placeholder="填入新 Key 覆盖，留空保持原配置" />
           </div>
+        </div>
+        <div class="form-row">
           <div class="field">
             <label>Semantic Scholar API Key (1 RPS 独立配额) <span id="badgeS2Key" class="pill static"></span></label>
             <input type="password" id="cfgS2Key" placeholder="填入新 Key 覆盖，留空保持原配置" />
           </div>
-        </div>
-        <div class="form-row">
           <div class="field">
             <label>OpenAlex API Key (可选) <span id="badgeOpenalexKey" class="pill static"></span></label>
             <input type="password" id="cfgOpenalexKey" placeholder="填入新 Key 覆盖，留空保持原配置" />
           </div>
+        </div>
+        <div class="form-row">
           <div class="field">
             <label>本机 Zotero 服务地址 <span id="badgeZoteroLocal" class="pill static"></span></label>
             <input type="text" id="cfgZoteroUrl" value="http://127.0.0.1:23119" />
           </div>
-        </div>
-        <div class="form-row">
           <div class="field">
             <label>📁 PDF/SI 默认下载目录（支持工作区相对路径或本地绝对路径）</label>
             <input type="text" id="globalSaveDirInput" value="00-收件箱-待整理/文献检索" title="支持当前工作区相对路径，或任意本地绝对路径（如 D:\文献下载）" placeholder="工作区相对路径 或 本地绝对路径 (如 D:\文献下载)" />
@@ -973,7 +977,7 @@
         <div class="card">
           <div class="mode-bar" id="searchModeBar">
             <button class="mode-chip active" data-mode="search">🔍 1. 主题与 DOI 检索</button>
-            <button class="mode-chip" data-mode="serper">🌐 2. 谷歌学术 / 专利 / PubMed / AI语义</button>
+            <button class="mode-chip" data-mode="serper">🌐 2. SciVerse / 谷歌学术 / 专利 / AI语义</button>
             <button class="mode-chip" data-mode="author">👤 3. 学者查代表作</button>
             <button class="mode-chip" data-mode="epmc">🧬 4. 全文与 SI 抓包 (EPMC)</button>
             <button class="mode-chip" data-mode="ai4s-studio">🎨 5. 科研绘图与自动引文</button>
@@ -1041,6 +1045,11 @@
                 <div class="field">
                   <label>选择扩展检索通道</label>
                   <select id="qExtChannel">
+                    <option value="sciverse:semantic-search">🔬 SciVerse 全文语义片段检索 (Agentic RAG · 定位原文段落与页码)</option>
+                    <option value="sciverse:meta-search">📚 SciVerse 结构化文献检索 (布尔检索 / 新鲜度与影响力软加权 / FWCI)</option>
+                    <option value="sciverse:schema-search">🧬 SciVerse Paper Schema 结构化检索 (研究问题 / 核心贡献 / 实验结论 / 开源代码)</option>
+                    <option value="sciverse:schema-materials">🧪 SciVerse 论文复现与方法材料包 (Entities / 实验设置 / 公式表格证据)</option>
+                    <option value="sciverse:schema-evidence">📐 SciVerse 跨论文结构化证据检索 (公式 / 表格证据 / 核心结论对比)</option>
                     <option value="ai4s:gs-search">🎓 Google Scholar (谷歌学术 · AI4Scholar)</option>
                     <option value="ai4s:patents">📜 Google Patents (全球专利检索 · AI4Scholar)</option>
                     <option value="ai4s:pubmed-search">🏥 PubMed 生物医学文献库 (AI4Scholar · 含 MeSH 与摘要)</option>
@@ -1056,6 +1065,42 @@
               <div class="field">
                 <label id="qExtQueryLabel">检索关键词（按 Enter 直接搜索）</label>
                 <input type="text" id="qExtQuery" placeholder="例如: single atom NiO carbon nitride photocatalytic hydrogen" />
+              </div>
+              <div class="form-row" id="extSciverseExtraRow" style="display:none;">
+                <div class="field" id="sciverseSemModeField">
+                  <label>语义检索深度</label>
+                  <select id="qExtSciverseSemMode">
+                    <option value="balanced">⚖ 混合检索 (Balanced · 默认)</option>
+                    <option value="quality">💎 深度多路改写 (Quality)</option>
+                    <option value="fast">⚡ 极速关键词 (Fast)</option>
+                  </select>
+                </div>
+                <div class="field" id="sciverseFreshnessField" style="display:none;">
+                  <label>新鲜度加权</label>
+                  <select id="qExtSciverseFreshness">
+                    <option value="NONE">不加权</option>
+                    <option value="MILD" selected>MILD (近10年偏新)</option>
+                    <option value="STRONG">STRONG (近3年最新)</option>
+                  </select>
+                </div>
+                <div class="field" id="sciverseImpactField" style="display:none;">
+                  <label>影响力加权</label>
+                  <select id="qExtSciverseImpact">
+                    <option value="NONE">不加权</option>
+                    <option value="MILD" selected>MILD (高被引轻度上浮)</option>
+                    <option value="STRONG">STRONG (强偏高被引)</option>
+                  </select>
+                </div>
+                <div class="field" id="sciverseGoalField" style="display:none;">
+                  <label>材料包研究目标 (Goal)</label>
+                  <select id="qExtSciverseGoal">
+                    <option value="reproduction" selected>🧪 实验复现 (Reproduction)</option>
+                    <option value="method">⚙ 方法架构剖析 (Method)</option>
+                    <option value="benchmark">📊 基准对比 (Benchmark)</option>
+                    <option value="survey">📚 领域综述 (Survey)</option>
+                    <option value="overview">👁 全文概览 (Overview)</option>
+                  </select>
+                </div>
               </div>
               <div class="form-row" id="extPatentExtraRow" style="display:none;">
                 <div class="field">
@@ -1611,7 +1656,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.7.1" },
+              appInfo: { name: "sanmu-paper-search", version: "1.8.0" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -1832,6 +1877,10 @@
         const pdfPath = paper.local_pdf_path || "未下载主文 PDF";
         const siDir = paper.epmc_saved_dir || "";
         const siFiles = Array.isArray(paper.epmc_suppl_files) ? paper.epmc_suppl_files : [];
+        const svDir = paper.sciverse_saved_dir || "";
+        const svFigs = Array.isArray(paper.sciverse_figure_files) ? paper.sciverse_figure_files : [];
+        const svExcerpt = paper.sciverse_excerpt_path || "";
+        const svMaterials = paper.sciverse_materials_path || "";
         const saveDir = getChosenSaveDir();
 
         const lines = [
@@ -1849,6 +1898,10 @@
           `- **主文 PDF 绝对路径**：\`${pdfPath}\``,
           ...(siDir ? [`- **SI 补充材料目录**：\`${siDir}\``] : []),
           ...(siFiles.length ? [`- **SI 补充材料文件列表**：\n${siFiles.map((f) => `  - \`${f}\``).join("\n")}`] : []),
+          ...(svDir ? [`- **SciVerse 原文切片与原图目录**：\`${svDir}\``] : []),
+          ...(svExcerpt ? [`- **SciVerse 原文 Markdown 切片**：\`${svExcerpt}\``] : []),
+          ...(svMaterials ? [`- **SciVerse Paper Schema 复现材料包**：\`${svMaterials}\``] : []),
+          ...(svFigs.length ? [`- **SciVerse 提取论文原图列表**：\n${svFigs.map((f) => `  - \`${f}\``).join("\n")}`] : []),
           ``,
           `### 3. 精读与复现评估执行要求`,
           `1. 调用 \`/sanmu-paper-reader\` 对主文 PDF 执行双模图文对照精读与子图精准切片；`,
@@ -2178,8 +2231,15 @@
         const hasDeepReadFiles = Boolean(
           paper.local_pdf_path ||
           paper.epmc_saved_dir ||
-          (Array.isArray(paper.epmc_suppl_files) && paper.epmc_suppl_files.length > 0)
+          (Array.isArray(paper.epmc_suppl_files) && paper.epmc_suppl_files.length > 0) ||
+          paper.sciverse_saved_dir ||
+          (Array.isArray(paper.sciverse_figure_files) && paper.sciverse_figure_files.length > 0)
         );
+        const sciverseConfigured = Boolean(state.panelData?.configStatus?.sciverse_api_key?.configured);
+        const svDocId = paper.sciverse_doc_id || paper.identifiers?.sciverse_doc?.[0] || "";
+        const svSchemaId = paper.sciverse_schema_id || paper.identifiers?.sciverse_schema?.[0] || "";
+        const svChunks = Array.isArray(paper.sciverse_chunks) ? paper.sciverse_chunks : [];
+        const svSchema = paper.sciverse_schema || null;
         const userTagsList = Array.isArray(paper.user_tags) ? paper.user_tags : [];
         const userNoteStr = paper.user_note || "";
 
@@ -2302,12 +2362,52 @@
               ${!paper.abstract ? `<button class="btn sm primary exec-btn" id="drwEnrichAbstract">🔎 跨源补全完整摘要与题录</button>` : ""}
               ${seedId ? `<button class="btn sm exec-btn" id="drwResolveOa">🔓 查找免费 OA 全文 (+Unpaywall)</button>` : ""}
               ${canFetchEpmcSuppl ? `<button class="btn sm success exec-btn" id="drwFetchEpmcAll">📎 下载 SI 补充材料包 (EPMC)</button>` : ""}
+              ${(svDocId || sciverseConfigured) ? `<button class="btn sm primary exec-btn" id="drwFetchSciverseContent" title="通过 SciVerse 读取该论文原文 Markdown 切片并自动提取下载正文高清原图">📖 读取 SciVerse 原文切片与原图</button>` : ""}
+              ${(svSchemaId || sciverseConfigured) ? `<button class="btn sm primary exec-btn" id="drwFetchSciverseMaterials" title="通过 SciVerse Paper Schema 提取该论文的研究问题、核心贡献、实验设置、内部关系与证据材料包">🧬 提取 Paper Schema 复现材料包</button>` : ""}
               <button class="btn sm primary" id="drwSendPaperChat">💬 发送给对话 AI 精读分析</button>
             </div>
             ${oaLocsHtml ? `<div style="margin-top:8px;"><strong>已发现的全文/来源位置：</strong>${oaLocsHtml}</div>` : ""}
             ${paper.local_pdf_path ? `<div class="notice success" style="margin-top:8px;"><span>✅ 已下载本地 PDF：<code>${esc(paper.local_pdf_path)}</code></span><button class="btn sm primary" id="drwOpenLocalPdf">🖥 打开 PDF</button></div>` : ""}
             ${paper.epmc_saved_dir ? `<div class="notice success" style="margin-top:6px;"><span>✅ 已下载 SI 补充材料目录：<code>${esc(paper.epmc_saved_dir)}</code></span></div>` : ""}
+            ${paper.sciverse_saved_dir ? `<div class="notice success" style="margin-top:6px;"><span>✅ 已保存 SciVerse 原文切片/原图/材料包目录：<code>${esc(paper.sciverse_saved_dir)}</code></span><button class="btn sm primary" id="drwOpenSciverseDir">📂 打开目录</button></div>` : ""}
           </div>
+
+          <div id="drwInlineSciverseMount"></div>
+
+          ${svSchema ? `
+          <div class="section-box">
+            <h4>🧬 SciVerse Paper Schema 结构化论文剖析 (<code>${esc(svSchema.schema_id || svSchemaId)}</code>)</h4>
+            <div style="font-size:12px; line-height:1.6; display:flex; flex-direction:column; gap:5px;">
+              ${svSchema.research_problem ? `<div><strong>🎯 研究问题 (Problem)：</strong>${esc(svSchema.research_problem)}</div>` : ""}
+              ${svSchema.central_contribution ? `<div><strong>💡 核心贡献 (Contribution)：</strong>${esc(svSchema.central_contribution)}</div>` : ""}
+              ${svSchema.headline_result ? `<div><strong>📊 主要实验结论 (Headline Result)：</strong>${esc(svSchema.headline_result)}</div>` : ""}
+              ${svSchema.document_thesis ? `<div><strong>📌 核心论点 (Thesis)：</strong>${esc(svSchema.document_thesis)}</div>` : ""}
+              <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:2px;">
+                ${svSchema.has_code ? `<span class="pill ok static">💻 含开源代码</span>` : ""}
+                ${svSchema.has_data ? `<span class="pill ok static">🗂 含关联数据集</span>` : ""}
+                ${(svSchema.tasks || []).slice(0, 6).map((t) => `<span class="pill info static">任务: ${esc(t)}</span>`).join("")}
+              </div>
+            </div>
+          </div>` : ""}
+
+          ${svChunks.length > 0 ? `
+          <div class="section-box">
+            <h4>🔬 SciVerse 命中的原文证据片段 (${svChunks.length} 段 · 点击按钮可直接展开前后原文上下文与配图)</h4>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              ${svChunks
+                .map(
+                  (ck, cIdx) => `
+                  <div style="padding:8px 10px; background:var(--bg-primary); border:1px solid var(--border-primary); border-left:3px solid var(--accent); border-radius:6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px; font-size:11px; color:var(--text-secondary);">
+                      <span>片段 #${cIdx + 1} · 字符偏移: <code>${esc(ck.offset ?? 0)}</code>${ck.page_no !== null && ck.page_no !== undefined ? ` · 页码: p.${esc(ck.page_no)}` : ""}${ck.score !== null && ck.score !== undefined ? ` · 相关性: ${esc(ck.score)}` : ""}</span>
+                      <button type="button" class="btn sm primary drw-read-chunk-btn exec-btn" data-doc-id="${esc(ck.doc_id || svDocId)}" data-offset="${Math.max(0, Number(ck.offset || 0) - 300)}">📖 展开此处前后原文与配图</button>
+                    </div>
+                    <div style="font-size:12px; line-height:1.6; white-space:pre-wrap;">${esc(ck.chunk || "")}</div>
+                  </div>`
+                )
+                .join("")}
+            </div>
+          </div>` : ""}
 
           <div class="section-box">
             <h4>🏷 课题标签与 📝 随手批注（失焦或回车即保存，存入 Zotero 时自动同步为标签与子笔记）</h4>
@@ -2551,6 +2651,179 @@
           });
           onAction(container.querySelector("#drwOpenLocalPdf"), "click", async () => {
             if (paper.local_pdf_path) await openLocalPathInSystem(paper.local_pdf_path, "local");
+          });
+          onAction(container.querySelector("#drwOpenSciverseDir"), "click", async () => {
+            if (paper.sciverse_saved_dir) await openLocalPathInSystem(paper.sciverse_saved_dir, "local");
+          });
+          const renderDetailSciverseResult = (res) => {
+            const mountEl = container.querySelector("#drwInlineSciverseMount");
+            if (!mountEl) return;
+            const sc = res?.sciverseContent || res?.subRun?.run?.sciverse_content;
+            const sm = res?.sciverseMaterials || res?.subRun?.run?.sciverse_materials;
+            if (sc) {
+              const figs = Array.isArray(sc.downloaded_figures) ? sc.downloaded_figures : [];
+              const prevOff = Math.max(0, Number(sc.offset || 0) - Number(sc.limit || 6000));
+              mountEl.innerHTML = `
+                <div class="section-box" style="border-color:var(--accent);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                    <div>
+                      <h4 style="margin:0; color:var(--accent);">📖 SciVerse 论文原文 Markdown 切片 (offset: ${esc(sc.offset)} · 返回 ${esc(sc.chars_returned)} 字符)</h4>
+                      ${res?.exportedSaveDir ? `<div style="font-size:11px; color:var(--text-secondary);">已同步保存至：<code>${esc(res.exportedSaveDir)}</code></div>` : ""}
+                    </div>
+                    <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                      ${sc.offset > 0 ? `<button type="button" class="btn sm drw-sv-page-btn exec-btn" data-doc-id="${esc(sc.doc_id)}" data-offset="${prevOff}">⬅ 上一段 (${prevOff})</button>` : ""}
+                      ${sc.more && sc.next_offset != null ? `<button type="button" class="btn sm primary drw-sv-page-btn exec-btn" data-doc-id="${esc(sc.doc_id)}" data-offset="${esc(sc.next_offset)}">➡ 下一段 (${esc(sc.next_offset)})</button>` : ""}
+                      <button type="button" class="btn sm" id="drwCopySvExcerpt">📋 复制原文切片</button>
+                      ${res?.exportedSaveDir ? `<button type="button" class="btn sm success" id="drwOpenSvExportDir">📂 打开保存目录</button>` : ""}
+                    </div>
+                  </div>
+                  ${figs.length ? `
+                    <div style="margin-bottom:8px; padding:6px 8px; background:var(--bg-primary); border:1px dashed var(--border-primary); border-radius:6px;">
+                      <div style="font-size:11.5px; font-weight:600; margin-bottom:4px;">🖼 已自动提取并保存本段中的 ${figs.length} 张论文原图：</div>
+                      <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                        ${figs.map((f) => `<button type="button" class="btn sm success drw-open-sv-fig-btn" data-path="${esc(f.saved_path || "")}">🖼 打开原图 #${esc(f.index)} (${Math.max(1, Math.round((f.bytes || 0) / 1024))} KB)</button>`).join("")}
+                      </div>
+                    </div>` : ""}
+                  <pre class="pre-viewer" id="drwSvExcerptBox" style="max-height:380px;">${esc(sc.text || "")}</pre>
+                </div>
+              `;
+              onAction(mountEl.querySelector("#drwCopySvExcerpt"), "click", async () => {
+                await copyTextToClipboard(sc.text || "", mountEl.querySelector("#drwSvExcerptBox"));
+                showBanner("✅ 已复制 SciVerse 原文 Markdown 切片到剪贴板！", "success");
+              });
+              onAction(mountEl.querySelector("#drwOpenSvExportDir"), "click", async () => {
+                if (res?.exportedSaveDir) await openLocalPathInSystem(res.exportedSaveDir, "local");
+              });
+              mountEl.querySelectorAll(".drw-open-sv-fig-btn").forEach((b) => {
+                onAction(b, "click", async () => {
+                  if (b.dataset.path) await openLocalPathInSystem(b.dataset.path, "local");
+                });
+              });
+              mountEl.querySelectorAll(".drw-sv-page-btn").forEach((b) => {
+                onAction(b, "click", async () => {
+                  const nextRes = await callTool(
+                    "search_sciverse",
+                    {
+                      mode: "content",
+                      docId: b.dataset.docId,
+                      offset: Number(b.dataset.offset || 0),
+                      chars: 6000,
+                      downloadFigures: true,
+                      title: paper.title || undefined,
+                      year: paper.year || undefined,
+                      paperKey: paper.paper_key,
+                      saveDir: getChosenSaveDir(),
+                      preserveActiveRun: true
+                    },
+                    `正在读取 SciVerse 原文切片 (offset=${b.dataset.offset})...`,
+                    b
+                  );
+                  renderDetailSciverseResult(nextRes);
+                });
+              });
+            } else if (sm && Array.isArray(sm.items) && sm.items.length) {
+              const m0 = sm.items[0] || {};
+              const sp = m0.schema_paper || {};
+              const ents = m0.entities || [];
+              const rels = m0.relations || [];
+              const evs = m0.evidence || [];
+              mountEl.innerHTML = `
+                <div class="section-box" style="border-color:var(--accent);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                    <h4 style="margin:0; color:var(--accent);">🧬 SciVerse Paper Schema 复现与方法材料包 (<code>${esc(m0.schema_id || "")}</code> · goal: ${esc(sm.goal)})</h4>
+                    <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                      ${sm.exported_materials_path ? `<button type="button" class="btn sm primary" id="drwOpenSvMatFile">📄 打开材料包 Markdown</button>` : ""}
+                      ${res?.exportedSaveDir ? `<button type="button" class="btn sm success" id="drwOpenSvMatDir">📂 打开目录</button>` : ""}
+                    </div>
+                  </div>
+                  <div style="font-size:12px; line-height:1.6; display:flex; flex-direction:column; gap:5px; margin-bottom:8px;">
+                    ${sp.research_problem ? `<div><strong>🎯 研究问题：</strong>${esc(sp.research_problem)}</div>` : ""}
+                    ${sp.central_contribution ? `<div><strong>💡 核心贡献：</strong>${esc(sp.central_contribution)}</div>` : ""}
+                    ${sp.headline_result ? `<div><strong>📊 主要实验结论：</strong>${esc(sp.headline_result)}</div>` : ""}
+                  </div>
+                  <div style="font-size:11.5px; max-height:320px; overflow-y:auto; background:var(--bg-primary); padding:8px 10px; border-radius:6px; border:1px solid var(--border-primary);">
+                    <div style="margin-bottom:6px;"><strong>🧩 结构对象 Entities (${ents.length})：</strong></div>
+                    ${ents.slice(0, 18).map((eItem) => `<div style="margin-bottom:3px;">• <span class="pill static">${esc(eItem.entity_type || "Entity")}${eItem.entity_subtype ? `/${esc(eItem.entity_subtype)}` : ""}</span> <strong>${esc(eItem.name || eItem.title || "")}</strong>: ${esc(String(eItem.text || "").slice(0, 180))}</div>`).join("")}
+                    ${rels.length ? `<div style="margin:8px 0 4px;"><strong>🔗 内部逻辑关系 Relations (${rels.length})：</strong></div>` + rels.slice(0, 12).map((rItem) => `<div>• <code>${esc(rItem.source_entity?.name || rItem.source_local_id || "?")}</code> ➔ <strong>${esc(rItem.relation_type)}</strong> ➔ <code>${esc(rItem.target_entity?.name || rItem.target_local_id || "?")}</code></div>`).join("") : ""}
+                    ${evs.length ? `<div style="margin:8px 0 4px;"><strong>📐 结构化证据 Evidence (${evs.length})：</strong></div>` + evs.slice(0, 15).map((evItem) => `<div>• <code>[${esc((evItem.hot_groups || []).join(","))}] ${esc(evItem.key || "")}</code>: ${esc(String(evItem.value_text || "").slice(0, 180))}</div>`).join("") : ""}
+                  </div>
+                </div>
+              `;
+              onAction(mountEl.querySelector("#drwOpenSvMatFile"), "click", async () => {
+                if (sm.exported_materials_path) await openLocalPathInSystem(sm.exported_materials_path, "local");
+              });
+              onAction(mountEl.querySelector("#drwOpenSvMatDir"), "click", async () => {
+                if (res?.exportedSaveDir) await openLocalPathInSystem(res.exportedSaveDir, "local");
+              });
+            }
+          };
+          onAction(container.querySelector("#drwFetchSciverseContent"), "click", async (e) => {
+            const firstChunkOffset = svChunks[0]?.offset ? Math.max(0, Number(svChunks[0].offset) - 300) : 0;
+            const res = await callTool(
+              "search_sciverse",
+              {
+                mode: "content",
+                docId: svDocId || undefined,
+                id: !svDocId ? (doi || paper.sciverse_unique_id || undefined) : undefined,
+                query: !svDocId && !doi ? paper.title : undefined,
+                offset: firstChunkOffset,
+                chars: 6000,
+                downloadFigures: true,
+                title: paper.title || undefined,
+                year: paper.year || undefined,
+                paperKey: paper.paper_key,
+                saveDir: getChosenSaveDir(),
+                preserveActiveRun: true
+              },
+              "正在从 SciVerse 读取论文原文 Markdown 切片并提取正文高清原图...",
+              e.currentTarget
+            );
+            renderDetailSciverseResult(res);
+            showBanner("✅ 已读取 SciVerse 原文 Markdown 切片并同步提取正文配图！", "success", res?.exportedSaveDir || null, "📂 打开文件夹");
+          });
+          container.querySelectorAll(".drw-read-chunk-btn").forEach((btn) => {
+            onAction(btn, "click", async () => {
+              const res = await callTool(
+                "search_sciverse",
+                {
+                  mode: "content",
+                  docId: btn.dataset.docId || svDocId || undefined,
+                  offset: Number(btn.dataset.offset || 0),
+                  chars: 6000,
+                  downloadFigures: true,
+                  title: paper.title || undefined,
+                  year: paper.year || undefined,
+                  paperKey: paper.paper_key,
+                  saveDir: getChosenSaveDir(),
+                  preserveActiveRun: true
+                },
+                `正在读取该片段前后的 SciVerse 原文上下文 (offset=${btn.dataset.offset})...`,
+                btn
+              );
+              renderDetailSciverseResult(res);
+              showBanner("✅ 已展开该处的 SciVerse 原文上下文与配图！", "success");
+            });
+          });
+          onAction(container.querySelector("#drwFetchSciverseMaterials"), "click", async (e) => {
+            const res = await callTool(
+              "search_sciverse",
+              {
+                mode: "schema-materials",
+                schemaId: svSchemaId || undefined,
+                id: !svSchemaId && doi ? doi : undefined,
+                query: !svSchemaId && !doi ? paper.title : undefined,
+                goal: "reproduction",
+                title: paper.title || undefined,
+                year: paper.year || undefined,
+                paperKey: paper.paper_key,
+                saveDir: getChosenSaveDir(),
+                preserveActiveRun: true
+              },
+              "正在从 SciVerse Paper Schema 提取论文结构拆解与复现材料包...",
+              e.currentTarget
+            );
+            renderDetailSciverseResult(res);
+            showBanner("✅ 已提取 SciVerse Paper Schema 结构拆解与复现材料包！", "success", res?.exportedSaveDir || null, "📂 打开文件夹");
           });
           const renderDetailSubBundle = (subBundle, labelTitle) => {
             const mountEl = container.querySelector("#drwInlineRelatedMount");
@@ -2855,11 +3128,41 @@
         const hintText = document.getElementById("serperKeyHintText");
         const queryInput = document.getElementById("qExtQuery");
         const patentRow = document.getElementById("extPatentExtraRow");
+        const svRow = document.getElementById("extSciverseExtraRow");
         if (patentRow) {
           patentRow.style.display = val === "ai4s:patents" ? "flex" : "none";
         }
+        if (svRow) {
+          const isSv = val.startsWith("sciverse:");
+          svRow.style.display = isSv ? "flex" : "none";
+          if (isSv) {
+            const svMode = val.slice("sciverse:".length);
+            document.getElementById("sciverseSemModeField").style.display = svMode === "semantic-search" ? "" : "none";
+            document.getElementById("sciverseFreshnessField").style.display = svMode === "meta-search" ? "" : "none";
+            document.getElementById("sciverseImpactField").style.display = svMode === "meta-search" ? "" : "none";
+            document.getElementById("sciverseGoalField").style.display = svMode === "schema-materials" ? "" : "none";
+          }
+        }
 
-        if (val.startsWith("ai4s:")) {
+        if (val.startsWith("sciverse:")) {
+          if (val === "sciverse:semantic-search") {
+            queryInput.placeholder = "输入自然语言科研问题（中英文均可），如：How do single-atom Ni cocatalysts enhance H2 evolution on g-C3N4?";
+          } else if (val === "sciverse:meta-search") {
+            queryInput.placeholder = "支持关键词或布尔检索式 (大写 AND/OR/NOT)，如：(photocatalyst OR g-C3N4) AND \"single atom\"";
+          } else if (val === "sciverse:schema-materials") {
+            queryInput.placeholder = "输入论文标题、DOI 或 schema_id，一键构建复现/方法/综述结构化材料包...";
+          } else if (val === "sciverse:schema-evidence") {
+            queryInput.placeholder = "输入实验结论、指标或模型关键词，跨论文检索公式、表格证据与核心结论...";
+          } else {
+            queryInput.placeholder = "输入研究主题或方法关键词，检索 Paper Schema 结构化论文（含问题/贡献/结论/代码）...";
+          }
+          if (!cs.sciverse_api_key?.configured) {
+            hintText.textContent = "使用 SciVerse 通道需先配置 SciVerse API Key (sci_...)。";
+            hintBox.classList.remove("hidden");
+          } else {
+            hintBox.classList.add("hidden");
+          }
+        } else if (val.startsWith("ai4s:")) {
           if (val === "ai4s:patents") {
             queryInput.placeholder = "例如: single atom catalyst photocatalyst hydrogen";
           } else if (val === "ai4s:pubmed-search") {
@@ -2902,7 +3205,8 @@
       document.getElementById("btnJumpConfigFromSerper").addEventListener("click", () => {
         document.getElementById("configPanel").classList.remove("hidden");
         const val = document.getElementById("qExtChannel").value;
-        if (val.startsWith("ai4s:")) document.getElementById("cfgAi4scholarKey").focus();
+        if (val.startsWith("sciverse:")) document.getElementById("cfgSciverseKey").focus();
+        else if (val.startsWith("ai4s:")) document.getElementById("cfgAi4scholarKey").focus();
         else if (val.startsWith("exa:")) document.getElementById("cfgExaKey").focus();
         else document.getElementById("cfgSerperKey").focus();
       });
@@ -2913,6 +3217,7 @@
         const pyOk = cs.python_runtime?.configured !== false;
 
         const keyItems = [
+          { key: "sciverse_api_key", label: "SciVerse", badgeId: "badgeSciverseKey", inputId: "cfgSciverseKey" },
           { key: "ai4scholar_api_key", label: "AI4Scholar", badgeId: "badgeAi4scholarKey", inputId: "cfgAi4scholarKey" },
           { key: "easyscholar_secret_key", label: "easyScholar", badgeId: "badgeEasyscholarKey", inputId: "cfgEasyscholarKey" },
           { key: "polite_email", label: "礼貌邮箱", badgeId: "badgePoliteEmail", inputId: "cfgPoliteEmail" },
@@ -3039,7 +3344,9 @@
         const hasDeepReadFiles = Boolean(
           p.local_pdf_path ||
           p.epmc_saved_dir ||
-          (Array.isArray(p.epmc_suppl_files) && p.epmc_suppl_files.length > 0)
+          (Array.isArray(p.epmc_suppl_files) && p.epmc_suppl_files.length > 0) ||
+          p.sciverse_saved_dir ||
+          (Array.isArray(p.sciverse_figure_files) && p.sciverse_figure_files.length > 0)
         );
         const userTagsList = Array.isArray(p.user_tags) ? p.user_tags : [];
         const userNoteStr = p.user_note || "";
@@ -3112,6 +3419,11 @@
                 .join("")}
               ${providers ? `<span class="pill info static">${esc(providers)}</span>` : ""}
               ${p.citation_count !== undefined && p.citation_count !== null ? `<span class="pill static">🔥 被引 ${esc(p.citation_count)}</span>` : ""}
+              ${p.fwci !== undefined && p.fwci !== null ? `<span class="pill info static" title="领域加权引用影响力 (FWCI)">📈 FWCI ${esc(p.fwci)}</span>` : ""}
+              ${p.sciverse_doc_id ? `<span class="pill ok static" title="含 SciVerse 全文 Markdown 与可提取原图">📄 含SciVerse全文</span>` : ""}
+              ${p.sciverse_schema_id ? `<span class="pill purple static" title="含 SciVerse Paper Schema 结构化剖析">🧬 Paper Schema</span>` : ""}
+              ${p.sciverse_schema?.has_code ? `<span class="pill ok static">💻 含开源代码</span>` : ""}
+              ${Array.isArray(p.sciverse_chunks) && p.sciverse_chunks.length ? `<span class="pill info static">🎯 原文片段×${p.sciverse_chunks.length}</span>` : ""}
               ${firstOaPdf ? `<span class="pill ok static">🔓 可下PDF</span>` : p.oa_locations?.length ? `<span class="pill static">🔗 含OA页</span>` : ""}
               ${p.local_pdf_path ? `<span class="pill ok static">✅ 已存PDF</span>` : ""}
               ${zMatch?.matched ? `<span class="pill ok static" title="Zotero Key: ${esc(zMatch.itemKey)}">📚 Zotero已收录${esc(zColTag)}</span>` : ""}
@@ -3903,7 +4215,7 @@
                 ? authorCandidates.length
                 : r.gs_citations?.citations?.length
                   ? r.gs_citations.citations.length
-                  : bundle.acquisition || r.draw_result || r.auto_cite_result || r.credits_balance
+                  : bundle.acquisition || r.draw_result || r.auto_cite_result || r.credits_balance || r.sciverse_content || r.sciverse_materials || r.sciverse_evidence?.length
                     ? 1
                     : 0;
         document.getElementById("tabCountResults").textContent = String(totalCount);
@@ -4171,6 +4483,102 @@
           `;
         }
 
+        // 3.8 SciVerse Fulltext Content & Extracted Figures Card
+        if (r.sciverse_content) {
+          const sc = r.sciverse_content;
+          const figs = Array.isArray(sc.downloaded_figures) ? sc.downloaded_figures : [];
+          const prevOff = Math.max(0, Number(sc.offset || 0) - Number(sc.limit || 6000));
+          bodySections += `
+            <div class="card" style="margin-bottom:8px;">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">📖 SciVerse 论文原文 Markdown 切片与原图 (${esc(sc.title || sc.doc_id)})</h3>
+                  <div style="font-size:11.5px; color:var(--text-secondary); margin-top:2px;">
+                    doc_id: <code>${esc((sc.doc_id || "").slice(0, 16))}...</code> · 起始偏移: <code>${esc(sc.offset)}</code> · 返回字符: <code>${esc(sc.chars_returned)}</code> · 下一偏移: <code>${esc(sc.next_offset ?? "已到文末")}</code>
+                  </div>
+                </div>
+                <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                  ${sc.offset > 0 ? `<button type="button" class="btn sm run-sv-page-btn exec-btn" data-doc-id="${esc(sc.doc_id)}" data-offset="${prevOff}">⬅ 上一段 (${prevOff})</button>` : ""}
+                  ${sc.more && sc.next_offset != null ? `<button type="button" class="btn sm primary run-sv-page-btn exec-btn" data-doc-id="${esc(sc.doc_id)}" data-offset="${esc(sc.next_offset)}">➡ 下一段 (${esc(sc.next_offset)})</button>` : ""}
+                  <button type="button" class="btn sm primary" id="btnCopyRunSvExcerpt">📋 复制原文切片</button>
+                  ${sc.exported_excerpt_path ? `<button type="button" class="btn sm success open-exp-file-btn" data-path="${esc(sc.exported_excerpt_path)}">📄 打开本地 Markdown</button>` : ""}
+                </div>
+              </div>
+              ${
+                figs.length
+                  ? `<div class="section-box" style="margin-bottom:8px;">
+                      <h4>🖼 已从本段 Markdown 自动提取并保存的高清论文原图 (${figs.length} 张)</h4>
+                      <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                        ${figs.map((f) => `<button type="button" class="btn sm success open-exp-file-btn" data-path="${esc(f.saved_path || "")}">🖼 打开原图 #${esc(f.index)}: ${esc(f.alt || f.file_name)} (${Math.max(1, Math.round((f.bytes || 0) / 1024))} KB)</button>`).join("")}
+                      </div>
+                    </div>`
+                  : ""
+              }
+              <pre class="pre-viewer" id="runSvExcerptBox" style="max-height:420px;">${esc(sc.text || "")}</pre>
+            </div>
+          `;
+        }
+
+        // 3.9 SciVerse Paper Schema Research Materials Pack Card
+        if (r.sciverse_materials && Array.isArray(r.sciverse_materials.items) && r.sciverse_materials.items.length) {
+          const sm = r.sciverse_materials;
+          const m0 = sm.items[0] || {};
+          const sp = m0.schema_paper || {};
+          const ents = m0.entities || [];
+          const rels = m0.relations || [];
+          const evs = m0.evidence || [];
+          bodySections += `
+            <div class="card" style="margin-bottom:8px;">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">🧬 SciVerse Paper Schema 复现与方法材料包 (goal: ${esc(sm.goal)})</h3>
+                  <div style="font-size:11.5px; color:var(--text-secondary); margin-top:2px;">
+                    schema_id: <code>${esc(m0.schema_id || "")}</code> · 结构对象 ${ents.length} 项 · 内部关系 ${rels.length} 条 · 结构证据 ${evs.length} 条
+                  </div>
+                </div>
+                <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                  ${sm.exported_materials_path ? `<button type="button" class="btn sm primary open-exp-file-btn" data-path="${esc(sm.exported_materials_path)}">📄 打开本地材料包 Markdown</button>` : ""}
+                </div>
+              </div>
+              <div class="section-box" style="margin-bottom:8px; font-size:12px; line-height:1.6; display:flex; flex-direction:column; gap:5px;">
+                ${sp.research_problem ? `<div><strong>🎯 研究问题 (Problem)：</strong>${esc(sp.research_problem)}</div>` : ""}
+                ${sp.central_contribution ? `<div><strong>💡 核心贡献 (Contribution)：</strong>${esc(sp.central_contribution)}</div>` : ""}
+                ${sp.headline_result ? `<div><strong>📊 主要实验结论 (Headline Result)：</strong>${esc(sp.headline_result)}</div>` : ""}
+                ${sp.document_thesis ? `<div><strong>📌 核心论点 (Thesis)：</strong>${esc(sp.document_thesis)}</div>` : ""}
+              </div>
+              <div class="section-box" style="font-size:11.5px; max-height:360px; overflow-y:auto;">
+                <h4 style="margin-bottom:6px;">🧩 结构对象 Entities (${ents.length}) / 关系 Relations (${rels.length}) / 证据 Evidence (${evs.length})</h4>
+                ${ents.slice(0, 20).map((eItem) => `<div style="margin-bottom:4px;">• <span class="pill static">${esc(eItem.entity_type || "Entity")}${eItem.entity_subtype ? `/${esc(eItem.entity_subtype)}` : ""}</span> <strong>${esc(eItem.name || eItem.title || "")}</strong>: ${esc(String(eItem.text || "").slice(0, 200))}</div>`).join("")}
+                ${rels.length ? `<div style="margin:8px 0 4px;"><strong>🔗 内部逻辑关系 Relations：</strong></div>` + rels.slice(0, 15).map((rItem) => `<div>• <code>${esc(rItem.source_entity?.name || rItem.source_local_id || "?")}</code> ➔ <strong>${esc(rItem.relation_type)}</strong> ➔ <code>${esc(rItem.target_entity?.name || rItem.target_local_id || "?")}</code></div>`).join("") : ""}
+                ${evs.length ? `<div style="margin:8px 0 4px;"><strong>📐 结构化证据 Evidence：</strong></div>` + evs.slice(0, 18).map((evItem) => `<div>• <code>[${esc((evItem.hot_groups || []).join(","))}] ${esc(evItem.key || "")}</code>: ${esc(String(evItem.value_text || "").slice(0, 200))}</div>`).join("") : ""}
+              </div>
+            </div>
+          `;
+        }
+
+        // 3.10 SciVerse Structured Evidence Search Results
+        if (Array.isArray(r.sciverse_evidence) && r.sciverse_evidence.length) {
+          bodySections += `
+            <div class="card" style="margin-bottom:8px;">
+              <h3 class="card-title" style="margin-bottom:8px;">📐 SciVerse 跨论文结构化证据命中（共 ${r.sciverse_evidence.length} 条）</h3>
+              <div style="display:flex; flex-direction:column; gap:6px; max-height:360px; overflow-y:auto;">
+                ${r.sciverse_evidence
+                  .map(
+                    (ev, idx) => `
+                  <div style="padding:7px 10px; background:var(--bg-primary); border:1px solid var(--border-primary); border-radius:6px; font-size:12px;">
+                    <div style="display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; margin-bottom:3px;">
+                      <strong>#${idx + 1} [${esc((ev.groups || []).join(", "))}] <code>${esc(ev.key || "value")}</code></strong>
+                      <span style="font-size:11px; color:var(--text-secondary);">${esc(ev.paper_title || ev.schema_id || "")}</span>
+                    </div>
+                    <div style="white-space:pre-wrap; line-height:1.5;">${esc(ev.value_text || "")}</div>
+                  </div>`
+                  )
+                  .join("")}
+              </div>
+            </div>
+          `;
+        }
+
         // 4. Normalized Papers List with Secondary Sort, Filter Chips, Live Keyword Filter & Batch Actions
         if (papers.length > 0) {
           const nonExcl = papers.filter((p) => p.handoff_stage !== "excluded");
@@ -4288,6 +4696,28 @@
           const bib = r.auto_cite_result?.bibtex || "";
           await copyTextToClipboard(bib);
           showBanner("✅ 已复制 BibTeX 参考文献到剪贴板！", "success");
+        });
+        onAction(contentEl.querySelector("#btnCopyRunSvExcerpt"), "click", async () => {
+          const txt = r.sciverse_content?.text || "";
+          await copyTextToClipboard(txt, contentEl.querySelector("#runSvExcerptBox"));
+          showBanner("✅ 已复制 SciVerse 原文 Markdown 切片到剪贴板！", "success");
+        });
+        contentEl.querySelectorAll(".run-sv-page-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            await callTool(
+              "search_sciverse",
+              {
+                mode: "content",
+                docId: btn.dataset.docId,
+                offset: Number(btn.dataset.offset || 0),
+                chars: 6000,
+                downloadFigures: true,
+                saveDir: getChosenSaveDir()
+              },
+              `正在读取 SciVerse 原文切片 (offset=${btn.dataset.offset})...`,
+              btn
+            );
+          });
         });
         onAction(contentEl.querySelector("#btnEnrichRunRanks"), "click", async (e) => {
           await callTool(
@@ -6258,6 +6688,7 @@
           "save_config",
           {
             politeEmail: document.getElementById("cfgPoliteEmail").value,
+            sciverseApiKey: document.getElementById("cfgSciverseKey").value,
             ai4scholarApiKey: document.getElementById("cfgAi4scholarKey").value,
             easyscholarSecretKey: document.getElementById("cfgEasyscholarKey").value,
             openalexApiKey: document.getElementById("cfgOpenalexKey").value,
@@ -6270,6 +6701,7 @@
           "正在保存配置...",
           e.currentTarget
         );
+        document.getElementById("cfgSciverseKey").value = "";
         document.getElementById("cfgAi4scholarKey").value = "";
         document.getElementById("cfgEasyscholarKey").value = "";
         document.getElementById("cfgOpenalexKey").value = "";
@@ -6282,7 +6714,7 @@
       onAction(document.getElementById("btnClearSavedKeys"), "click", async (e) => {
         await callTool(
           "save_config",
-          { clearKeys: ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey"] },
+          { clearKeys: ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey", "sciverseApiKey"] },
           "正在重置面板自定义 Key...",
           e.currentTarget
         );
@@ -6414,7 +6846,28 @@
         }
         const limit = readLimitInput("qExtLimit");
 
-        if (channel.startsWith("exa:")) {
+        if (channel.startsWith("sciverse:")) {
+          const svMode = channel.slice("sciverse:".length) || "semantic-search";
+          const semanticMode = document.getElementById("qExtSciverseSemMode")?.value || "balanced";
+          const freshnessBoost = document.getElementById("qExtSciverseFreshness")?.value || "NONE";
+          const impactBoost = document.getElementById("qExtSciverseImpact")?.value || "NONE";
+          const goal = document.getElementById("qExtSciverseGoal")?.value || "reproduction";
+          await callTool(
+            "search_sciverse",
+            {
+              mode: svMode,
+              query,
+              yearFrom,
+              yearTo,
+              limit,
+              ...(svMode === "semantic-search" ? { semanticMode } : {}),
+              ...(svMode === "meta-search" ? { freshnessBoost, impactBoost } : {}),
+              ...(svMode === "schema-materials" ? { goal, saveDir: getChosenSaveDir() } : {})
+            },
+            `正在通过 SciVerse (${svMode}) 检索「${query}」...`,
+            btnExecExtSearch
+          );
+        } else if (channel.startsWith("exa:")) {
           await callTool(
             "search_exa",
             { query, type: "auto", yearFrom, yearTo, limit },

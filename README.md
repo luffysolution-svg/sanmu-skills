@@ -43,10 +43,10 @@
 
 ### sanmu-paper-search
 
-- **多源检索**：OpenAlex、Semantic Scholar、Crossref，可选 AI4Scholar（S2、Google Scholar、专利、PubMed）、Serper 和 Exa 语义补搜。
-- **期刊分区与科研辅助**：easyScholar 分区、IF、CCF 与预警标注；AI4Scholar 科研绘图、矢量化和自动引文。
-- **引文扩展与作者消歧**：参考文献、施引文献、相似论文分开记录；同名作者用稳定 ID 锚定。
-- **全文与 SI**：Europe PMC 免 Key 获取 JATS 全文和补充材料原图包，并核验撤稿与勘误。
+- **多源检索**：OpenAlex、Semantic Scholar、Crossref，可选 SciVerse（结构化文献、全文语义 RAG 与引文关系）、AI4Scholar（S2、Google Scholar、专利、PubMed）、Serper 和 Exa 语义补搜。
+- **期刊分区与科研辅助**：easyScholar 分区、IF、CCF 与预警标注；SciVerse Paper Schema 结构化论文剖析与复现材料包；AI4Scholar 科研绘图、矢量化和自动引文。
+- **引文扩展与作者消歧**：参考文献、施引文献、相似论文分开记录；同名作者用稳定 ID 与课题方向锚定。
+- **全文、原文切片与 SI**：Europe PMC 免 Key 获取 JATS 全文和补充材料原图包并核验撤稿与勘误；SciVerse 按 Unicode 码点偏移读取原文 Markdown 并提取正文高清原图。
 - **如实报告**：成功、零结果、截断、失败分开记录，不把“没查到”说成“不存在”。
 
 ## 安装
@@ -85,7 +85,7 @@ https://github.com/luffysolution-svg/sanmu-skills
 3. sanmu-paper-reader：核心工具只需 Python 3.10+；要用 SI 检索、PDF 附图提取或子图裁切时再装 requirements.txt。
    运行 python scripts/evidence_tools.py --help 确认入口。
 4. sanmu-paper-search：核心无第三方依赖，运行 python scripts/paper_search.py doctor。
-   只检查 API 凭证是否配置（OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY、可选 SERPER_API_KEY / EXA_API_KEY），不显示值。
+   只检查 API 凭证是否配置（OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY，可选 SCIVERSE_API_KEY、AI4SCHOLAR_API_KEY、EASYSCHOLAR_SECRET_KEY、SERPER_API_KEY、EXA_API_KEY），不显示值。
 5. 告诉我安装位置、检查结果，以及还需要我配置什么。
 ```
 

@@ -13,7 +13,7 @@ SCHEMA = "sanmu-paper-search/v1"
 PROVIDERS = ("openalex", "semantic-scholar", "crossref")
 SECRET_NAMES = ("S2_API_KEY", "SEMANTIC_SCHOLAR_API_KEY", "OPENALEX_API_KEY",
                 "UNPAYWALL_EMAIL", "CROSSREF_EMAIL", "SERPER_API_KEY", "EXA_API_KEY", "OPENALEX_EMAIL", "POLITE_EMAIL",
-                "EASYSCHOLAR_SECRET_KEY", "AI4SCHOLAR_API_KEY")
+                "EASYSCHOLAR_SECRET_KEY", "AI4SCHOLAR_API_KEY", "SCIVERSE_API_KEY", "SCIVERSE_API_TOKEN")
 # Canonicalized names are shared by structured fields and parsed URL queries.
 SENSITIVE = {"apikey", "authorization", "token", "accesstoken", "email", "mailto",
              "password", "secret", "xapikey", "key", "signature", "credential",
@@ -173,7 +173,8 @@ def unique(values):
 
 def _stable(paper):
     return {(kind, str(value).casefold()) for kind, values in paper.get("identifiers", {}).items()
-            for value in values if kind in {"doi", "openalex", "semantic_scholar", "pmid", "pmcid", "arxiv", "corpus_id"}}
+            for value in values if kind in {"doi", "openalex", "semantic_scholar", "pmid", "pmcid", "arxiv", "corpus_id",
+                                            "sciverse", "sciverse_doc", "sciverse_schema"}}
 
 
 def _fallback(paper):
@@ -297,12 +298,17 @@ def _combine(group):
                 result[field] = alternatives[0]
     result["authors"] = _merge_authors(group, result.get("authors") or [])
     for opt_field in ("venue_rank", "mesh_terms", "keywords", "citation_contexts", "citation_intents",
-                      "is_influential", "patent_info", "gs_id", "cites_id", "pdfUrl", "search_snippet"):
+                      "is_influential", "patent_info", "gs_id", "cites_id", "pdfUrl", "search_snippet",
+                      "sciverse_doc_id", "sciverse_unique_id", "sciverse_schema_id", "sciverse_schema",
+                      "fwci", "influential_citation_count", "citation_percentile", "is_content_accessible"):
         if not result.get(opt_field):
             for p in group:
-                if p.get(opt_field):
+                if p.get(opt_field) is not None and p.get(opt_field) != "":
                     result[opt_field] = p[opt_field]
                     break
+    combined_chunks = unique([c for p in group for c in (p.get("sciverse_chunks") or []) if isinstance(c, dict)])
+    if combined_chunks:
+        result["sciverse_chunks"] = combined_chunks
     for key, values in result["identifiers"].items():
         if len(values) > 1:
             result["conflicts"].append({"field": "identifiers." + key, "values": values})

@@ -97,12 +97,11 @@ A self-hosted GitHub marketplace is not the same as being listed in Anthropic's 
 
 ## GitHub Release
 
-Files on the Release page are flat, without `skillhub/` or `workbuddy/` subdirectories, and the packages for the two platforms have the same names. So when uploading, add a platform suffix to the WorkBuddy packages, and generate a checksum file that matches the flat file names:
+Files on the Release page are flat, without `skillhub/` or `workbuddy/` subdirectories. The WorkBuddy packages use their own `-paid` names, so keep the file names when uploading and generate a checksum file that matches the flat file names:
 
 ```bash
 V=<version>; D=dist/$V; R=$D/release; mkdir $R
-cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $D/zcode/*.zip $R/
-for f in $D/workbuddy/*.zip; do cp "$f" "$R/$(basename "$f" .zip)-workbuddy.zip"; done
+cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $D/workbuddy/*.zip $D/zcode/*.zip $R/
 (cd $R && sha256sum *.zip > SHA256SUMS)
 gh release create v$V $R/* --title "sanmu-skills v$V" --notes-file <release-notes.md>
 ```
@@ -138,7 +137,7 @@ On the [WorkBuddy open platform](https://open.workbuddy.cn), choose **发布管�
 - Required fields for skill packages follow the [official skill documentation](https://open.workbuddy.cn/docs/skill): `description`, `description_zh`, `description_en`, `version`, `author`. Display names are not marked as required, but parsing actually fails without them, so they are written too.
 - Paid asset names accept Chinese characters, English letters, digits, `-` and `_`; spaces and middle dots are not allowed. The build validates both display names. The current Chinese names are “三木学术文档转Markdown”, “三木文献精读” and “三木文献检索”. The console parses `display_name` from the package into a read-only field, so renaming requires uploading a new ZIP.
 - All three paid skills are created as new records using “创建” (Create), with WorkBuddy identifiers `sanmu-doc2md-paid`, `sanmu-paper-reader-paid` and `sanmu-paper-search-paid`. Previously published records stay unlisted. In the tested console, an existing free record's update form has no payment selector, while creating with its old identifier is rejected as a duplicate. Channel-specific identifiers avoid that conflict; source and SkillHub identifiers stay the same.
-- `workbuddyVersion` is currently `1.7.1`, matching the collection version `1.7.1`. If omitted, it defaults to the collection version. When updating an existing record, the platform requires a version greater than its latest one.
+- `workbuddyVersion` is currently `1.8.0`, matching the collection version `1.8.0`. If omitted, it defaults to the collection version. When updating an existing record, the platform requires a version greater than its latest one.
 - All three new skills use monthly billing at CNY `3` per month. Pricing is configured in the console, not in the ZIP. After saving, verify “按月付费·3元/月” on the confirmation page before submitting for review.
 - If parsing fails, first check against "技能基础结构" (basic skill structure) in the official documentation; if you still cannot find the cause, email openworkbuddy@tencent.com.
 

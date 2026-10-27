@@ -172,7 +172,8 @@ function savePanelConfig(patch) {
     "exaApiKey",
     "serperApiKey",
     "easyscholarSecretKey",
-    "ai4scholarApiKey"
+    "ai4scholarApiKey",
+    "sciverseApiKey"
   ]);
   for (const [k, v] of Object.entries(patch || {})) {
     if (k === "clearKeys" || v === undefined || v === null) continue;
@@ -288,7 +289,7 @@ function uniqueDestination(dir, filename, shortIdHint = "") {
 function redactSecrets(value) {
   const cfg = readJsonSafe(CONFIG_PATH, {}) || {};
   const secrets = new Set();
-  for (const key of ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey"]) {
+  for (const key of ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey", "sciverseApiKey"]) {
     if (typeof cfg[key] === "string" && cfg[key].trim()) {
       secrets.add(cfg[key].trim());
       secrets.add(cfg[key].replace(/\s+/g, "").trim());
@@ -455,6 +456,17 @@ function getEffectiveConfig() {
     "USER_CONFIG_AI4SCHOLAR_API_KEY",
     ["AI4SCHOLAR_API_KEY"]
   );
+  let sciverse = resolveCredential(
+    cfg.sciverseApiKey,
+    "USER_CONFIG_SCIVERSE_API_KEY",
+    ["SCIVERSE_API_KEY", "SCIVERSE_API_TOKEN"]
+  );
+  if (!sciverse.value && resolveEnvPath(process.env.SANMU_DISABLE_SCIVERSE_CRED_FILE) !== "1") {
+    const credObj = readJsonSafe(join(homedir(), ".sciverse", "credentials.json"), null);
+    if (credObj && typeof credObj.token === "string" && credObj.token.trim()) {
+      sciverse = { value: credObj.token.trim(), source: "systemEnv" };
+    }
+  }
   const zoteroUrl = validateZoteroUrl(resolveCredential(cfg.zoteroUrl, "USER_CONFIG_ZOTERO_URL", []).value || "http://127.0.0.1:23119");
   const exportSubdir = resolveCredential(cfg.exportSubdir, "USER_CONFIG_EXPORT_SUBDIR", []).value || "00-收件箱-待整理/文献检索";
 
@@ -483,6 +495,10 @@ function getEffectiveConfig() {
     childEnv.AI4SCHOLAR_API_KEY = ai4scholar.value;
     if (!s2.value) childEnv.AI4SCHOLAR_S2_PROXY = "1";
   }
+  if (sciverse.value) {
+    childEnv.SCIVERSE_API_KEY = sciverse.value;
+    childEnv.SCIVERSE_API_TOKEN = sciverse.value;
+  }
 
   const pyRt = resolvePythonRuntime();
 
@@ -500,6 +516,7 @@ function getEffectiveConfig() {
       serper_api_key: { configured: Boolean(serper.value), source: serper.source },
       easyscholar_secret_key: { configured: Boolean(easyscholar.value), source: easyscholar.source },
       ai4scholar_api_key: { configured: Boolean(ai4scholar.value), source: ai4scholar.source },
+      sciverse_api_key: { configured: Boolean(sciverse.value), source: sciverse.source },
       europepmc_public_access: { configured: true, source: "public" }
     },
     settings: {
@@ -660,7 +677,7 @@ function samePaperIdentity(target, candidate) {
   const aDois = (a.doi || []).map(normalizeDoi);
   const bDois = (b.doi || []).map(normalizeDoi);
   if (aDois.length && bDois.length) return aDois.some((id) => bDois.includes(id));
-  for (const ns of ["openalex", "semantic_scholar", "pmid", "pmcid", "arxiv"]) {
+  for (const ns of ["openalex", "semantic_scholar", "pmid", "pmcid", "arxiv", "sciverse", "sciverse_doc", "sciverse_schema"]) {
     const normalized = (values) => (values || []).map((v) => String(v).toLowerCase().replace(/^https?:\/\/openalex\.org\//, ""));
     if (normalized(a[ns]).some((id) => normalized(b[ns]).includes(id))) return true;
   }
@@ -677,6 +694,9 @@ function computePaperKey(paper) {
   if (ids.pmcid?.[0]) return `pmcid:${ids.pmcid[0]}`;
   if (ids.pmid?.[0]) return `pmid:${ids.pmid[0]}`;
   if (ids.arxiv?.[0]) return `arxiv:${ids.arxiv[0]}`;
+  if (ids.sciverse?.[0]) return `sciverse:${ids.sciverse[0]}`;
+  if (ids.sciverse_schema?.[0]) return `sciverse_schema:${ids.sciverse_schema[0]}`;
+  if (ids.sciverse_doc?.[0]) return `sciverse_doc:${ids.sciverse_doc[0]}`;
   if (ids.patent?.[0]) return `patent:${ids.patent[0]}`;
   const normTitle = String(paper?.title || "")
     .toLowerCase()
@@ -694,6 +714,9 @@ function computeResolvableSeedId(paper) {
   if (ids.pmcid?.[0]) return `pmcid:${ids.pmcid[0]}`;
   if (ids.arxiv?.[0]) return `arxiv:${ids.arxiv[0]}`;
   if (ids.corpus_id?.[0]) return `corpusid:${ids.corpus_id[0]}`;
+  if (ids.sciverse?.[0] && String(ids.sciverse[0]).toLowerCase().startsWith("paper:10.")) {
+    return String(ids.sciverse[0]).slice(6);
+  }
   return null;
 }
 
@@ -1671,6 +1694,14 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
       : Array.isArray(p.epmc_suppl_files)
         ? p.epmc_suppl_files
         : [];
+    const sciverseSavedDir = savedEv.sciverse_saved_dir || p.sciverse_saved_dir || null;
+    const sciverseFigureFiles = Array.isArray(savedEv.sciverse_figure_files)
+      ? savedEv.sciverse_figure_files
+      : Array.isArray(p.sciverse_figure_files)
+        ? p.sciverse_figure_files
+        : [];
+    const sciverseExcerptPath = savedEv.sciverse_excerpt_path || p.sciverse_excerpt_path || null;
+    const sciverseMaterialsPath = savedEv.sciverse_materials_path || p.sciverse_materials_path || null;
     const { versions, conflicts, ...cleanP } = p;
 
     return {
@@ -1698,6 +1729,10 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
       local_pdf_path: localPdf,
       ...(epmcSavedDir ? { epmc_saved_dir: epmcSavedDir } : {}),
       ...(epmcSupplFiles.length ? { epmc_suppl_files: epmcSupplFiles } : {}),
+      ...(sciverseSavedDir ? { sciverse_saved_dir: sciverseSavedDir } : {}),
+      ...(sciverseFigureFiles.length ? { sciverse_figure_files: sciverseFigureFiles } : {}),
+      ...(sciverseExcerptPath ? { sciverse_excerpt_path: sciverseExcerptPath } : {}),
+      ...(sciverseMaterialsPath ? { sciverse_materials_path: sciverseMaterialsPath } : {}),
       in_basket: basketKeys.has(key),
       zotero_match: zMatch
     };
@@ -2000,6 +2035,33 @@ function formatRunHumanSummary(runJson, acqJson, paperCount, resultCount) {
       subtitle: `${paperCount ? `共 ${paperCount} 篇文献` : `${resultCount} 条结果`}${credInfo}`
     };
   }
+  if (cmd === "sciverse") {
+    const m = q.mode || runJson?.sciverse_mode || "meta-search";
+    const sciverseModeNames = {
+      "meta-search": "SciVerse 结构化文献检索",
+      "semantic-search": "SciVerse 全文语义片段检索 (Agentic RAG)",
+      content: "SciVerse 论文原文 Markdown 切片与原图",
+      resource: "SciVerse 论文图表资源下载",
+      relations: "SciVerse 论文引文关系追踪",
+      catalog: "SciVerse 元数据字段目录自省",
+      "schema-search": "SciVerse Paper Schema 结构化检索",
+      "schema-materials": "SciVerse Paper Schema 复现与方法材料包",
+      "schema-entities": "SciVerse Paper Schema 结构对象检索",
+      "schema-evidence": "SciVerse Paper Schema 结构化证据检索",
+      "schema-citations": "SciVerse Paper Schema 引文图谱扩展",
+      "schema-in-paper": "SciVerse Paper Schema 单篇正文检索与定位"
+    };
+    const kw = q.query || q.id || q.doc_id || q.schema_id || "";
+    const chunkInfo = runJson?.chunk_count ? ` · ${runJson.chunk_count} 条原文片段` : "";
+    const contentInfo = runJson?.sciverse_content?.chars_returned
+      ? ` · 原文 ${runJson.sciverse_content.chars_returned} 字符${runJson.sciverse_content.downloaded_figures?.length ? ` · 已下原图 ${runJson.sciverse_content.downloaded_figures.length} 张` : ""}`
+      : "";
+    return {
+      modeLabel: sciverseModeNames[m] || `SciVerse (${m})`,
+      title: kw ? `${sciverseModeNames[m] || m}：「${String(kw).slice(0, 42)}」` : sciverseModeNames[m] || `SciVerse (${m})`,
+      subtitle: `${paperCount ? `共 ${paperCount} 篇文献` : `${resultCount} 条记录`}${chunkInfo}${contentInfo}`
+    };
+  }
   return {
     modeLabel: cmd,
     title: `检索记录 (${cmd})`,
@@ -2059,10 +2121,15 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
             ext === ".pptx" ||
             ext === ".png" ||
             ext === ".jpg" ||
+            ext === ".jpeg" ||
+            ext === ".webp" ||
             ext === ".svg" ||
             ext === ".bib" ||
             rel.startsWith("supplementary/") ||
+            rel.startsWith("figures/") ||
             entry.name === "annotated_text.md" ||
+            entry.name === "fulltext_excerpt.md" ||
+            entry.name === "schema_materials.md" ||
             entry.name === "report.md");
         files.push({
           path: rel,
@@ -2124,12 +2191,14 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
   const sourceStatuses = rawRunJson.source_status || rawRunJson.source_statuses || {};
   const cmdName = rawRunJson.command || rawRunJson.action || (acquisitionJson ? "fetch_pdf" : "search");
   const ai4sMode = rawRunJson.ai4scholar_mode || rawRunJson.query?.mode || "";
+  const sciverseMode = rawRunJson.sciverse_mode || rawRunJson.query?.mode || "";
   const isWrappedSerperPayload = Boolean(resultsRaw && typeof resultsRaw === "object" && !Array.isArray(resultsRaw) && Array.isArray(resultsRaw.results));
   const shouldIncludeRawResults =
     isWrappedSerperPayload ||
     cmdName === "serper" ||
     (cmdName === "exa" && (rawRunJson.unconverted_result_count > 0 || papers.length === 0)) ||
-    (cmdName === "ai4scholar" && ai4sMode === "s2-snippets" && papers.length === 0);
+    (cmdName === "ai4scholar" && ai4sMode === "s2-snippets" && papers.length === 0) ||
+    (cmdName === "sciverse" && ["catalog", "schema-entities", "schema-in-paper"].includes(sciverseMode) && papers.length === 0);
   const enrichedResults = shouldIncludeRawResults ? normalizeRawResults(resultsRaw, state) : [];
 
   const normalizedCandidates = Array.isArray(rawRunJson.author_candidates)
@@ -2370,6 +2439,49 @@ function summarizeRunForModel(bundle) {
       );
     }
   }
+  if (r.sciverse_content) {
+    const sc = r.sciverse_content;
+    lines.push(
+      "",
+      `#### 📖 SciVerse 论文原文 Markdown 切片 (doc_id: \`${sc.doc_id}\`, offset: \`${sc.offset}\`, 返回字符: \`${sc.chars_returned}\`, 下一偏移: \`${sc.next_offset ?? "末尾"}\`)：`
+    );
+    if (Array.isArray(sc.downloaded_figures) && sc.downloaded_figures.length) {
+      lines.push(
+        `- **已提取下载原图 (${sc.downloaded_figures.length} 张)**：` +
+          sc.downloaded_figures.map((f) => `\`${f.saved_path || f.local_path}\``).join(", ")
+      );
+    }
+    if (sc.text) {
+      lines.push("", "```markdown", String(sc.text).slice(0, 2400) + (String(sc.text).length > 2400 ? "\n...(更多内容见 fulltext_excerpt.md 或右侧面板)" : ""), "```");
+    }
+  }
+  if (r.sciverse_materials && Array.isArray(r.sciverse_materials.items) && r.sciverse_materials.items.length) {
+    lines.push("", `#### 🧬 SciVerse Paper Schema 结构化研究材料包 (goal: \`${r.sciverse_materials.goal}\`)：`);
+    for (const mItem of r.sciverse_materials.items.slice(0, 5)) {
+      const sp = mItem.schema_paper || {};
+      lines.push(
+        `- **${sp.title || mItem.schema_id}** (\`${mItem.schema_id}\`, ${sp.year || "n.d."})`,
+        ...(sp.research_problem ? [`  - **研究问题**：${sp.research_problem}`] : []),
+        ...(sp.central_contribution ? [`  - **核心贡献**：${sp.central_contribution}`] : []),
+        ...(sp.headline_result ? [`  - **主要结果**：${sp.headline_result}`] : []),
+        `  - **结构对象 (Entities)**：${(mItem.entities || []).length} 项 | **逻辑关系 (Relations)**：${(mItem.relations || []).length} 条 | **结构证据 (Evidence)**：${(mItem.evidence || []).length} 条`
+      );
+    }
+  }
+  if (Array.isArray(r.sciverse_evidence) && r.sciverse_evidence.length) {
+    lines.push("", `#### 📐 SciVerse 结构化证据命中（共 ${r.sciverse_evidence.length} 条）：`);
+    for (const ev of r.sciverse_evidence.slice(0, 10)) {
+      lines.push(
+        `- **[${(ev.groups || []).join(",")}] \`${ev.key || "value"}\`** (${ev.paper_title || ev.schema_id})：${String(ev.value_text || "").slice(0, 220)}`
+      );
+    }
+  }
+  if (r.sciverse_in_paper && Array.isArray(r.sciverse_in_paper.segments) && r.sciverse_in_paper.segments.length) {
+    lines.push("", `#### 🔎 SciVerse 单篇正文段落检索 (\`${r.sciverse_in_paper.schema_id}\`, 共 ${r.sciverse_in_paper.segments.length} 段)：`);
+    for (const seg of r.sciverse_in_paper.segments.slice(0, 8)) {
+      lines.push(`- **${seg.marker || seg.paragraph_id}** (${(seg.section_path || []).join(" / ")})：${String(seg.text || "").slice(0, 240)}`);
+    }
+  }
   if (bundle.results?.length && (!bundle.papers || bundle.papers.length === 0)) {
     lines.push("", `#### 检索结果条目（共 ${bundle.results.length} 条）：`);
     for (const item of bundle.results.slice(0, 15)) {
@@ -2527,6 +2639,36 @@ async function enrichPaperAbstractAndMetadata(paper) {
         }
       }
       rmSync(epmcOut, { recursive: true, force: true });
+    }
+
+    // If still no abstract and SciVerse is configured, try SciVerse meta-search by DOI or title
+    if ((!bestPaper || !bestPaper.abstract) && getEffectiveConfig().status.sciverse_api_key?.configured && (seedId || titleQuery)) {
+      const svOut = `${tempOut}-sciverse`;
+      const svArgs = ["sciverse", "--mode", "meta-search", "--limit", "3", "--out", svOut];
+      if (seedId && /^10\.\d{4,9}\//i.test(seedId)) {
+        svArgs.push("--id", seedId);
+      } else if (titleQuery) {
+        svArgs.push(titleQuery);
+      }
+      await runPython(PAPER_SEARCH_PY, svArgs, 35000);
+      const svFound = readJsonSafe(join(svOut, "papers.json"), []);
+      if (Array.isArray(svFound) && svFound.length > 0) {
+        const match = svFound.find((candidate) => samePaperIdentity(paper, candidate));
+        if (match) {
+          bestPaper = bestPaper
+            ? {
+                ...bestPaper,
+                abstract: bestPaper.abstract || match.abstract || null,
+                sciverse_doc_id: bestPaper.sciverse_doc_id || match.sciverse_doc_id || null,
+                sciverse_unique_id: bestPaper.sciverse_unique_id || match.sciverse_unique_id || null,
+                fwci: bestPaper.fwci ?? match.fwci ?? null,
+                oa_locations: [...(bestPaper.oa_locations || []), ...(match.oa_locations || [])],
+                identifiers: { ...(bestPaper.identifiers || {}), ...(match.identifiers || {}) }
+              }
+            : match;
+        }
+      }
+      rmSync(svOut, { recursive: true, force: true });
     }
 
     // If still no abstract and we only had a title (e.g. Google Scholar item without DOI), search OpenAlex + S2
@@ -3321,6 +3463,10 @@ async function getFullPanelState(activeRunId = null) {
       ...(ev.pdfPath ? { pdfPath: ev.pdfPath } : {}),
       ...(ev.epmc_saved_dir ? { epmc_saved_dir: ev.epmc_saved_dir } : {}),
       ...(Array.isArray(ev.epmc_suppl_files) ? { epmc_suppl_files: ev.epmc_suppl_files } : {}),
+      ...(ev.sciverse_saved_dir ? { sciverse_saved_dir: ev.sciverse_saved_dir } : {}),
+      ...(Array.isArray(ev.sciverse_figure_files) ? { sciverse_figure_files: ev.sciverse_figure_files } : {}),
+      ...(ev.sciverse_excerpt_path ? { sciverse_excerpt_path: ev.sciverse_excerpt_path } : {}),
+      ...(ev.sciverse_materials_path ? { sciverse_materials_path: ev.sciverse_materials_path } : {}),
       ...(ev.zoteroMatch ? { zoteroMatch: ev.zoteroMatch } : {}),
       ...(ev.zoteroUndoneKey ? { zoteroUndoneKey: ev.zoteroUndoneKey, zoteroUndoneAt: ev.zoteroUndoneAt } : {}),
       ...(enr
@@ -3446,6 +3592,7 @@ const TOOLS = [
         serperApiKey: { type: "string" },
         easyscholarSecretKey: { type: "string" },
         ai4scholarApiKey: { type: "string" },
+        sciverseApiKey: { type: "string" },
         zoteroUrl: { type: "string" },
         exportSubdir: { type: "string" },
         defaultSources: { type: "array", items: { type: "string" } },
@@ -5132,6 +5279,380 @@ const TOOLS = [
         }
       };
     }
+  },
+  {
+    name: "search_sciverse",
+    description:
+      "调用 SciVerse 开放平台接口执行学术文献与结构化证据检索：支持结构化文献/学者/期刊检索 (meta-search，含布尔检索、新鲜度/影响力/语言软加权与 FWCI)、自然语言全文语义片段检索 (semantic-search，Agentic RAG 返回原文匹配段落与页码/偏移)、按 Unicode 码点偏移读取论文原文 Markdown 并一键提取下载高清原图 (content / resource)、引文关系分页与批量题录补全 (relations)、字段目录自省 (catalog)，以及 Paper Schema 结构化论文搜索 (schema-search)、复现/方法/综述研究材料包构建 (schema-materials)、结构对象检索 (schema-entities)、跨论文公式/表格/核心结论证据检索 (schema-evidence)、引文图谱扩展 (schema-citations) 与单篇正文检索定位 (schema-in-paper)。需配置 SCIVERSE_API_KEY (或 SCIVERSE_API_TOKEN)。",
+    visibility: ["model", "app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        mode: {
+          type: "string",
+          enum: [
+            "meta-search",
+            "semantic-search",
+            "content",
+            "resource",
+            "relations",
+            "catalog",
+            "schema-search",
+            "schema-materials",
+            "schema-entities",
+            "schema-evidence",
+            "schema-citations",
+            "schema-in-paper"
+          ],
+          default: "meta-search",
+          description: "SciVerse 操作模式"
+        },
+        collection: {
+          type: "string",
+          enum: ["papers", "authors", "sources"],
+          default: "papers",
+          description: "meta-search / catalog 的实体集合：papers（论文）、authors（学者）、sources（来源期刊）"
+        },
+        query: {
+          type: "string",
+          description: "检索词、布尔检索式、自然语言问题（semantic-search）、单篇正文检索词（schema-in-paper）或论文标题/DOI"
+        },
+        id: {
+          type: "string",
+          description: "论文 DOI、SciVerse unique_id (如 paper:10.1038/...)、doc_id 或 schema_id"
+        },
+        docId: {
+          type: "string",
+          description: "SciVerse 64位全文哈希 doc_id（用于 content 读取原文或 semantic-search 限定单篇）"
+        },
+        docIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "semantic-search 硬范围过滤的 doc_id 数组（最多 1000 个）"
+        },
+        schemaId: {
+          type: "string",
+          description: "Paper Schema 论文主键 schema_id（用于 schema-materials / schema-entities / schema-evidence / schema-citations / schema-in-paper）"
+        },
+        schemaIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "schema-materials 批量构建研究材料包的多个 schema_id（1..20）"
+        },
+        titleContains: { type: "string", description: "meta-search 标题包含词" },
+        abstractContains: { type: "string", description: "meta-search 摘要包含词" },
+        authors: { type: "array", items: { type: "string" }, description: "作者姓名过滤列表" },
+        journals: { type: "array", items: { type: "string" }, description: "期刊/会议规范名过滤列表" },
+        subjects: { type: "array", items: { type: "string" }, description: "学科分类过滤列表" },
+        yearFrom: { type: "integer", description: "起始发表年份" },
+        yearTo: { type: "integer", description: "结束发表年份" },
+        sort: {
+          type: "string",
+          description: "排序字段：cited（被引）、date（年份降序）、year_asc（年份升序）、fwci（领域加权影响力）、influential（高影响力被引）、references（参考文献数）、h_index（学者/期刊 h-index）"
+        },
+        freshnessBoost: {
+          type: "string",
+          enum: ["NONE", "MILD", "STRONG"],
+          default: "NONE",
+          description: "meta-search 模糊检索新鲜度软加权（MILD=近10年，STRONG=近3年）"
+        },
+        impactBoost: {
+          type: "string",
+          enum: ["NONE", "MILD", "STRONG"],
+          default: "NONE",
+          description: "meta-search 模糊检索高被引软加权（MILD / STRONG）"
+        },
+        languageAffinity: {
+          type: "string",
+          enum: ["NONE", "MILD", "STRONG"],
+          default: "NONE",
+          description: "meta-search 语言亲和软加权（NONE / MILD / STRONG）"
+        },
+        oaOnly: { type: "boolean", description: "仅筛选开放获取 (OA) 论文" },
+        language: { type: "string", description: "语言过滤代码（如 en, zh）" },
+        semanticMode: {
+          type: "string",
+          enum: ["fast", "balanced", "quality"],
+          default: "balanced",
+          description: "semantic-search 检索深度：fast（关键词）、balanced（混合检索）、quality（多路改写+混合）"
+        },
+        sourceTypes: {
+          type: "array",
+          items: { type: "string", enum: ["pdf", "web"] },
+          description: "semantic-search 来源类型过滤"
+        },
+        offset: {
+          type: "integer",
+          minimum: 0,
+          default: 0,
+          description: "content 模式读取原文的起始 Unicode 码点偏移（可直接传入 semantic-search 返回的 offset）"
+        },
+        chars: {
+          type: "integer",
+          minimum: 200,
+          maximum: 65536,
+          default: 6000,
+          description: "content 模式单次读取的 Unicode 字符数上限（默认 6000）"
+        },
+        downloadFigures: {
+          type: "boolean",
+          default: true,
+          description: "content 模式下是否自动解析并下载正文 Markdown 中引用的论文原图（/resource）到保存目录"
+        },
+        fileName: {
+          type: "string",
+          description: "resource 模式下要下载的论文图表相对路径（来自 content Markdown 的 ![alt](file_name)）"
+        },
+        relation: {
+          type: "string",
+          enum: ["REFERENCES", "CITATIONS", "RELATED_WORKS", "references", "citations", "recommendations"],
+          default: "REFERENCES",
+          description: "relations 模式的关系类型：REFERENCES（参考文献）、CITATIONS（施引文献）、RELATED_WORKS（相关工作）"
+        },
+        goal: {
+          type: "string",
+          enum: ["overview", "survey", "benchmark", "method", "reproduction"],
+          default: "reproduction",
+          description: "schema-materials 模式的研究目标（overview / survey / benchmark / method / reproduction）"
+        },
+        hasCode: { type: "boolean", description: "schema-search 仅看含开源代码的论文" },
+        hasData: { type: "boolean", description: "schema-search 仅看含数据集的论文" },
+        entityTypes: {
+          type: "array",
+          items: { type: "string" },
+          description: "schema-entities 筛选的 Entity 类型（如 Problem, Contribution, Component, ExperimentSetup, Measure, Finding, Resource）"
+        },
+        evidenceGroups: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "citation_signal",
+              "comparison_detail",
+              "core_claim_result",
+              "evidence_score",
+              "formula",
+              "reference_core",
+              "reference_semantics",
+              "resource",
+              "schema_unit",
+              "table_evidence"
+            ]
+          },
+          description: "schema-evidence 筛选的证据类别"
+        },
+        direction: {
+          type: "string",
+          enum: ["outbound", "inbound"],
+          default: "outbound",
+          description: "schema-citations 引文图谱扩展方向"
+        },
+        depth: { type: "integer", minimum: 1, maximum: 3, default: 1, description: "schema-citations 引文图谱扩展深度 (1..3)" },
+        sectionHint: { type: "string", description: "schema-in-paper 优先章节提示（如 method, experiment）" },
+        sampleValues: { type: "boolean", description: "catalog 模式是否返回枚举字段样本值" },
+        fieldStats: { type: "boolean", description: "catalog 模式是否返回字段统计" },
+        page: { type: "integer", minimum: 1, maximum: 200, default: 1 },
+        limit: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+        title: { type: "string", description: "可选。关联论文标题，用于生成易读的导出文件夹名" },
+        year: { type: ["integer", "string"], description: "可选。关联论文发表年份，用于生成易读的导出文件夹名" },
+        paperKey: { type: "string", description: "可选。关联的论文键值，用于将提取的原文切片、原图或材料包绑定到该卡片" },
+        saveDir: { type: "string", description: "可选。提取的原文切片、高清图表或复现材料包同步保存目录" },
+        preserveActiveRun: {
+          type: "boolean",
+          description: "设为 true 时保持当前主检索结果列表不跳转，将本次结果作为 subRun 返回（适合在详情页内联读取原文或提取复现材料包）"
+        }
+      }
+    },
+    execute: async (input) => {
+      const mode = input?.mode || "meta-search";
+      const runId = makeRunId(`sciverse-${mode}`);
+      const outDir = join(RUNS_DIR, runId);
+      const args = ["sciverse"];
+      if (input?.query && String(input.query).trim()) {
+        args.push(String(input.query).trim());
+      }
+      args.push("--mode", mode, "--limit", String(input?.limit || 10), "--out", outDir);
+      if (input?.collection) args.push("--collection", input.collection);
+      if (input?.id && String(input.id).trim()) args.push("--id", String(input.id).trim());
+      if (input?.docId && String(input.docId).trim()) args.push("--doc-id", String(input.docId).trim());
+      for (const d of input?.docIds || []) {
+        if (d && String(d).trim()) args.push("--doc-ids", String(d).trim());
+      }
+      if (input?.schemaId && String(input.schemaId).trim()) args.push("--schema-id", String(input.schemaId).trim());
+      for (const sid of input?.schemaIds || []) {
+        if (sid && String(sid).trim()) args.push("--schema-ids", String(sid).trim());
+      }
+      if (input?.titleContains) args.push("--title-contains", String(input.titleContains).trim());
+      if (input?.abstractContains) args.push("--abstract-contains", String(input.abstractContains).trim());
+      for (const a of input?.authors || []) {
+        if (a && String(a).trim()) args.push("--author", String(a).trim());
+      }
+      for (const j of input?.journals || []) {
+        if (j && String(j).trim()) args.push("--journal", String(j).trim());
+      }
+      for (const s of input?.subjects || []) {
+        if (s && String(s).trim()) args.push("--subject", String(s).trim());
+      }
+      if (input?.yearFrom) args.push("--year-from", String(input.yearFrom));
+      if (input?.yearTo) args.push("--year-to", String(input.yearTo));
+      if (input?.sort) args.push("--sort", String(input.sort).trim());
+      if (input?.freshnessBoost && input.freshnessBoost !== "NONE") args.push("--freshness-boost", input.freshnessBoost);
+      if (input?.impactBoost && input.impactBoost !== "NONE") args.push("--impact-boost", input.impactBoost);
+      if (input?.languageAffinity && input.languageAffinity !== "NONE") args.push("--language-affinity", input.languageAffinity);
+      if (input?.oaOnly) args.push("--oa-only");
+      if (input?.language) args.push("--language", String(input.language).trim());
+      if (input?.semanticMode) args.push("--semantic-mode", input.semanticMode);
+      for (const st of input?.sourceTypes || []) {
+        if (st === "pdf" || st === "web") args.push("--source-type", st);
+      }
+      if (input?.offset !== undefined && input?.offset !== null) args.push("--offset", String(input.offset));
+      if (input?.chars !== undefined && input?.chars !== null) args.push("--chars", String(input.chars));
+      if (mode === "content" && input?.downloadFigures !== false) args.push("--download-figures");
+      if (input?.fileName && String(input.fileName).trim()) args.push("--file-name", String(input.fileName).trim());
+      if (input?.relation) args.push("--relation", input.relation);
+      if (input?.goal) args.push("--goal", input.goal);
+      if (input?.hasCode) args.push("--has-code");
+      if (input?.hasData) args.push("--has-data");
+      for (const et of input?.entityTypes || []) {
+        if (et && String(et).trim()) args.push("--entity-type", String(et).trim());
+      }
+      for (const eg of input?.evidenceGroups || []) {
+        if (eg && String(eg).trim()) args.push("--evidence-group", String(eg).trim());
+      }
+      if (input?.direction) args.push("--direction", input.direction);
+      if (input?.depth) args.push("--depth", String(input.depth));
+      if (input?.sectionHint) args.push("--section-hint", String(input.sectionHint).trim());
+      if (input?.sampleValues) args.push("--sample-values");
+      if (input?.fieldStats) args.push("--field-stats");
+      if (input?.page) args.push("--page", String(input.page));
+      if (getEffectiveConfig().status.easyscholar_secret_key.configured) {
+        args.push("--with-ranks");
+      }
+
+      const pyRes = await runPython(PAPER_SEARCH_PY, args, 180000);
+      requirePythonBundle(pyRes, outDir, `SciVerse (${mode}) failed`);
+
+      // Sync downloaded fulltext excerpt, figures, or schema_materials.md to user's saveDir when applicable
+      let exportedSaveDir = null;
+      let exportedExcerptPath = null;
+      let exportedMaterialsPath = null;
+      const exportedFigureFiles = [];
+      if (["content", "resource", "schema-materials"].includes(mode)) {
+        const hasExcerpt = existsSync(join(outDir, "fulltext_excerpt.md"));
+        const hasMaterials = existsSync(join(outDir, "schema_materials.md"));
+        const figSrcDir = join(outDir, "figures");
+        const hasFigs = existsSync(figSrcDir) && statSync(figSrcDir).isDirectory();
+        if (hasExcerpt || hasMaterials || hasFigs) {
+          const baseSaveDir = resolveTargetSaveDir(input?.saveDir);
+          const papers = readJsonSafe(join(outDir, "papers.json"), []);
+          const knownP = input?.paperKey ? findKnownPaperByAnyId(input.paperKey, loadState()) : null;
+          const firstPaper = papers[0] || knownP || {};
+          const folderYear = input?.year || firstPaper.year;
+          const folderTitle = input?.title || firstPaper.title || input?.query || input?.id || input?.schemaId || (input?.docId ? String(input.docId).slice(0, 16) : runId);
+          const folderName = `${makeSafeFileStem(folderYear, folderTitle, runId)}_SciVerse`;
+          exportedSaveDir = uniqueDestination(baseSaveDir, folderName);
+          mkdirSync(exportedSaveDir, { recursive: true });
+          if (hasExcerpt) {
+            exportedExcerptPath = join(exportedSaveDir, "fulltext_excerpt.md");
+            copyFileSync(join(outDir, "fulltext_excerpt.md"), exportedExcerptPath, fsConstants.COPYFILE_EXCL);
+          }
+          if (hasMaterials) {
+            exportedMaterialsPath = join(exportedSaveDir, "schema_materials.md");
+            copyFileSync(join(outDir, "schema_materials.md"), exportedMaterialsPath, fsConstants.COPYFILE_EXCL);
+          }
+          if (hasFigs) {
+            const dstFigDir = join(exportedSaveDir, "figures");
+            mkdirSync(dstFigDir, { recursive: true });
+            for (const entry of readdirSync(figSrcDir, { withFileTypes: true })) {
+              if (entry.isFile() && !entry.isSymbolicLink()) {
+                const srcF = join(figSrcDir, entry.name);
+                const dstF = join(dstFigDir, entry.name);
+                assertReadablePath(srcF);
+                copyFileSync(srcF, dstF, fsConstants.COPYFILE_EXCL);
+                exportedFigureFiles.push(dstF);
+              }
+            }
+          }
+
+          const runJson = readJsonSafe(join(outDir, "run.json"), {});
+          runJson.exported_save_dir = exportedSaveDir;
+          if (runJson.sciverse_content) {
+            runJson.sciverse_content.exported_excerpt_path = exportedExcerptPath;
+            if (Array.isArray(runJson.sciverse_content.downloaded_figures)) {
+              runJson.sciverse_content.downloaded_figures = runJson.sciverse_content.downloaded_figures.map((df) => ({
+                ...df,
+                saved_path: df.local_path ? join(exportedSaveDir, df.local_path) : null
+              }));
+            }
+          }
+          if (runJson.sciverse_materials) {
+            runJson.sciverse_materials.exported_materials_path = exportedMaterialsPath;
+          }
+          const runPath = join(outDir, "run.json");
+          writeJsonSafe(runPath, runJson);
+          const manifestPath = join(outDir, "manifest.json");
+          if (existsSync(manifestPath)) {
+            try {
+              const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+              const runEntry = manifest?.files?.find((entry) => entry.path === "run.json");
+              if (manifest?.algorithm === "sha256" && runEntry) {
+                const runBytes = readFileSync(runPath);
+                runEntry.sha256 = createHash("sha256").update(runBytes).digest("hex");
+                runEntry.size = runBytes.length;
+                writeJsonSafe(manifestPath, manifest);
+              }
+            } catch {}
+          }
+
+          const exportState = loadState();
+          exportState.runExports = { ...(exportState.runExports || {}), [runId]: exportedSaveDir };
+          const targetKey =
+            input?.paperKey ||
+            firstPaper.paper_key ||
+            (firstPaper.title || firstPaper.identifiers ? computePaperKey(firstPaper) : null);
+          if (targetKey) {
+            const prevEv = exportState.evidenceMap[targetKey] || {};
+            exportState.evidenceMap[targetKey] = {
+              ...prevEv,
+              sciverse_saved_dir: exportedSaveDir,
+              ...(exportedFigureFiles.length ? { sciverse_figure_files: exportedFigureFiles } : {}),
+              ...(exportedExcerptPath ? { sciverse_excerpt_path: exportedExcerptPath } : {}),
+              ...(exportedMaterialsPath ? { sciverse_materials_path: exportedMaterialsPath } : {}),
+              updatedAt: new Date().toISOString()
+            };
+          }
+          saveState(exportState);
+        }
+      }
+
+      const state = loadState();
+      if (!input?.preserveActiveRun) {
+        recordMainRunNavigation(state, runId);
+        saveState(state);
+      }
+
+      const panelState = await getFullPanelState(input?.preserveActiveRun ? state.lastRunId : runId);
+      let subRun = null;
+      if (input?.preserveActiveRun) {
+        const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
+        const subProbe = await probeLocalZotero(Array.isArray(subRaw) ? subRaw : []);
+        subRun = loadRunBundle(runId, subProbe.matches);
+      }
+      const targetBundle = subRun || panelState.activeRun;
+      return {
+        text:
+          summarizeRunForModel(targetBundle) +
+          (exportedSaveDir ? `\n\n✅ SciVerse 原文切片/原图/结构化材料包已自动保存至目录：\`${exportedSaveDir}\`` : ""),
+        structured: {
+          ...panelState,
+          ...(subRun ? { subRun } : {}),
+          ...(exportedSaveDir ? { exportedSaveDir } : {}),
+          sciverseContent: targetBundle?.run?.sciverse_content || null,
+          sciverseMaterials: targetBundle?.run?.sciverse_materials || null
+        }
+      };
+    }
   }
 ];
 
@@ -5185,6 +5706,7 @@ function validateToolInput(name, input) {
       "serperApiKey",
       "easyscholarSecretKey",
       "ai4scholarApiKey",
+      "sciverseApiKey",
       "politeEmail"
     ];
     if (input.clearKeys?.some((key) => !allowed.includes(key))) throw new Error("clearKeys 只允许清空 API Key 或联系邮箱。");
@@ -5234,6 +5756,28 @@ function validateToolInput(name, input) {
       }
     }
   }
+  if (name === "search_sciverse") {
+    const m = input.mode || "meta-search";
+    if (m === "semantic-search") {
+      requiredText("query");
+    } else if (m === "content") {
+      if (![input.docId, input.id, input.query].some((v) => v?.trim())) {
+        throw new Error("SciVerse content 模式需要提供 docId、id 或 query 参数。");
+      }
+    } else if (m === "resource") {
+      if (![input.fileName, input.query].some((v) => v?.trim())) {
+        throw new Error("SciVerse resource 模式需要提供 fileName 参数。");
+      }
+    } else if (m === "relations") {
+      if (![input.id, input.query].some((v) => v?.trim())) {
+        throw new Error("SciVerse relations 模式需要提供 id (unique_id / DOI) 或 query 参数。");
+      }
+    } else if (["schema-materials", "schema-citations", "schema-in-paper"].includes(m)) {
+      if (![input.schemaId, input.id, input.query].some((v) => v?.trim()) && !(Array.isArray(input.schemaIds) && input.schemaIds.length > 0)) {
+        throw new Error(`SciVerse ${m} 模式需要提供 schemaId、id 或 query 参数。`);
+      }
+    }
+  }
 }
 
 for (const tool of TOOLS) tool.inputSchema.additionalProperties = false;
@@ -5276,7 +5820,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.7.1"
+          version: "1.8.0"
         }
       }
     };
