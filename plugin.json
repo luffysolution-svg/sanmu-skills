@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "sanmu-skills",
-  "version": "1.6.9",
+  "version": "1.7.0",
   "description": "Academic document conversion, evidence-grounded paper reading, and literature discovery for research knowledge bases."
 }

@@ -1,0 +1,11 @@
+# sanmu-paper-search bundle patch for DeepSeek Harness (dsh Desktop / CLI)
+- insert:
+    - id: mcp-sanmu-paper-search
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: "sanmu-paper-search"
+        transport: "stdio"
+        command: "node"
+        args: ["./scripts/mcp-server.mjs"]
+        toolCallTimeoutMs: 300000
+        failOnStartupError: false

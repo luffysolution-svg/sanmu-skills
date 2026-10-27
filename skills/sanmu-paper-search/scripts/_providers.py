@@ -528,14 +528,19 @@ class Providers:
             filters += [f"until-pub-date:{year_to}-12-31"] if year_to else []
         return {"filter": ",".join(filters)}
 
-    def search(self, source, query, limit, year_from=None, year_to=None):
+    def search(self, source, query, limit, year_from=None, year_to=None, sort="relevance"):
         years = self._year_params(source, year_from, year_to)
         papers, cursor, offset, pages = [], "*", 0, 0
         total, truncated = None, False
         while len(papers) < limit and pages < 4:
             size = min(20 if source == "semantic-scholar" else 10, limit - len(papers))
             if source == "openalex":
-                data, normalized = self._page(source, "/works", {"search": query, "per-page": size, "cursor": cursor, **years}, papers, pages)
+                oa_params = {"search": query, "per-page": size, "cursor": cursor, **years}
+                if sort == "cited":
+                    oa_params["sort"] = "cited_by_count:desc"
+                elif sort == "date":
+                    oa_params["sort"] = "publication_date:desc"
+                data, normalized = self._page(source, "/works", oa_params, papers, pages)
                 entries = data.get("results")
                 total = (data.get("meta") or {}).get("count")
                 following = (data.get("meta") or {}).get("next_cursor")
@@ -543,7 +548,8 @@ class Providers:
                 data, normalized = self._page(source, "/paper/search", {"query": query, "limit": size, "offset": offset, "fields": S2_FIELDS, **years}, papers, pages)
                 entries, total, following = data.get("data"), data.get("total"), data.get("next")
             else:
-                data, normalized = self._page(source, "/works", {"query.title": query, "sort": "score", "order": "desc", "rows": size, "cursor": cursor, **years}, papers, pages)
+                cr_sort = "is-referenced-by-count" if sort == "cited" else "published" if sort == "date" else "score"
+                data, normalized = self._page(source, "/works", {"query.title": query, "sort": cr_sort, "order": "desc", "rows": size, "cursor": cursor, **years}, papers, pages)
                 message = data.get("message") or {}
                 entries, total, following = message.get("items"), message.get("total-results"), message.get("next-cursor")
             if not isinstance(entries, list):
@@ -559,11 +565,19 @@ class Providers:
                 offset = following
             else:
                 cursor = following
-        return papers, {"status": "ok", "fetched": len(papers), "pages": pages, "total": total,
-                        "truncated": truncated, "limit": limit,
-                        "query_strategy": "title_only" if source == "crossref" else "provider_search"}
+        if source == "semantic-scholar" and len(papers) > 1 and sort in ("cited", "date"):
+            if sort == "cited":
+                papers.sort(key=lambda p: (int(p.get("citation_count") if p.get("citation_count") is not None else -1), int(p.get("year") or 0)), reverse=True)
+            else:
+                papers.sort(key=lambda p: (str(p.get("publication_date") or ""), int(p.get("year") or 0), int(p.get("citation_count") if p.get("citation_count") is not None else -1)), reverse=True)
+        status_obj = {"status": "ok", "fetched": len(papers), "pages": pages, "total": total,
+                      "truncated": truncated, "limit": limit,
+                      "query_strategy": "title_only" if source == "crossref" else "provider_search"}
+        if sort and sort != "relevance":
+            status_obj["sort"] = sort
+        return papers, status_obj
 
-    def authors(self, source, query, author_id, limit, year_from=None, year_to=None):
+    def authors(self, source, query, author_id, limit, year_from=None, year_to=None, topic=None, sort=None):
         if not author_id:
             if source == "openalex":
                 data = self.client.get(source, "/authors", {"search": query, "per-page": limit})
@@ -589,23 +603,41 @@ class Providers:
             raise InputError("OpenAlex author ID must be A followed by digits")
         if source == "semantic-scholar" and not author_id.isdigit():
             raise InputError("Semantic Scholar author ID must be numeric")
+        clean_topic = (topic or "").strip()
         papers, pages, cursor, offset, total, more = [], 0, "*", 0, None, False
         while len(papers) < limit and pages < 4:
             size = min(20 if source == "semantic-scholar" else 10, limit - len(papers))
             if source == "openalex":
                 year_filter = self._year_params(source, year_from, year_to).get("filter")
                 filters = "author.id:" + author_id + (("," + year_filter) if year_filter else "")
-                data, normalized = self._page(source, "/works", {"filter": filters,
-                                                          "per-page": size, "cursor": cursor}, papers, pages)
+                if clean_topic:
+                    filters += f",default.search:{clean_topic}"
+                oa_params = {"filter": filters, "per-page": size, "cursor": cursor}
+                if clean_topic:
+                    oa_params["search"] = clean_topic
+                if sort == "cited":
+                    oa_params["sort"] = "cited_by_count:desc"
+                elif sort == "date":
+                    oa_params["sort"] = "publication_date:desc"
+                data, normalized = self._page(source, "/works", oa_params, papers, pages)
                 entries = data.get("results")
                 total = (data.get("meta") or {}).get("count")
                 following = (data.get("meta") or {}).get("next_cursor")
             else:
                 date_filter = ({"publicationDateOrYear": f"{year_from or ''}:{year_to or ''}"}
                                if year_from is not None or year_to is not None else {})
+                fetch_size = 20 if (clean_topic or sort in ("cited", "date")) else size
                 data, normalized = self._page(source, "/author/" + quote(author_id, safe="") + "/papers",
-                                       {"fields": S2_BASE_FIELDS, "limit": size, "offset": offset, **date_filter}, papers, pages)
+                                       {"fields": S2_BASE_FIELDS, "limit": fetch_size, "offset": offset, **date_filter}, papers, pages)
                 entries, following = data.get("data"), data.get("next")
+                if clean_topic:
+                    topic_low = clean_topic.lower()
+                    topic_tokens = [tok for tok in re.split(r"\s+", topic_low) if tok]
+                    normalized = [
+                        p for p in normalized
+                        if topic_low in f"{str(p.get('title') or '').lower()} {str(p.get('abstract') or '').lower()}"
+                        or (topic_tokens and all(tok in f"{str(p.get('title') or '').lower()} {str(p.get('abstract') or '').lower()}" for tok in topic_tokens))
+                    ]
             if not isinstance(entries, list):
                 raise SourceError("Author papers response has no results array")
             papers.extend(normalized[:size])
@@ -614,8 +646,18 @@ class Providers:
             if not entries or not more or following is None or following in (cursor, offset):
                 break
             cursor, offset = following, following
-        return papers, {"status": "ok", "fetched": len(papers), "pages": pages, "total": total,
-                        "truncated": bool(more), "author_id": author_id}, []
+        if source == "semantic-scholar" and len(papers) > 1 and sort in ("cited", "date"):
+            if sort == "cited":
+                papers.sort(key=lambda p: (int(p.get("citation_count") if p.get("citation_count") is not None else -1), int(p.get("year") or 0)), reverse=True)
+            else:
+                papers.sort(key=lambda p: (str(p.get("publication_date") or ""), int(p.get("year") or 0), int(p.get("citation_count") if p.get("citation_count") is not None else -1)), reverse=True)
+        status_obj = {"status": "ok", "fetched": len(papers), "pages": pages, "total": total,
+                      "truncated": bool(more), "author_id": author_id}
+        if clean_topic:
+            status_obj["topic"] = clean_topic
+        if sort in ("cited", "date"):
+            status_obj["sort"] = sort
+        return papers, status_obj, []
 
     def _extract_seed_doi(self, identifier):
         kind, value = parse_id(identifier)

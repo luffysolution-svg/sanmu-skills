@@ -418,6 +418,90 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(doctor_code, 0)
             self.assertIn("polite_email", doctor["configuration"])
 
+    def test_search_sort_cited_and_date_across_providers(self):
+        seen_params = {}
+
+        def opener(request, timeout):
+            url = urlsplit(request.full_url)
+            params = parse_qs(url.query)
+            if "openalex.org" in url.netloc:
+                seen_params["openalex"] = params
+                return Response({"results": [{"id": "https://openalex.org/W1", "title": "OA 1", "publication_year": 2024, "cited_by_count": 120}],
+                                 "meta": {"count": 1}})
+            if "crossref.org" in url.netloc:
+                seen_params["crossref"] = params
+                return Response({"message": {"items": [{"DOI": "10.1234/cr1", "title": ["CR 1"], "is-referenced-by-count": 88}],
+                                             "total-results": 1}})
+            seen_params["s2"] = params
+            return Response({"data": [
+                s2(1, citationCount=15, year=2023, publicationDate="2023-05-01"),
+                s2(2, citationCount=240, year=2025, publicationDate="2025-02-10"),
+            ], "total": 2})
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = Client({}, opener, lambda _: None)
+            out_cited = root / "search-cited"
+            code, run = self.invoke(["search", "photocatalytic", "--sort", "cited", "--out", str(out_cited)], client)
+            self.assertEqual(code, 0, run)
+            self.assertEqual(run["query"]["sort"], "cited")
+            self.assertEqual(seen_params["openalex"].get("sort"), ["cited_by_count:desc"])
+            self.assertEqual(seen_params["crossref"].get("sort"), ["is-referenced-by-count"])
+            self.assertEqual(seen_params["crossref"].get("order"), ["desc"])
+            papers = json.loads((out_cited / "papers.json").read_text(encoding="utf-8"))
+            s2_papers = [p for p in papers if any(pr["provider"] == "semantic-scholar" for pr in p["provenance"])]
+            self.assertEqual([p["citation_count"] for p in s2_papers], [240, 15])
+
+            out_date = root / "search-date"
+            code, run = self.invoke(["search", "photocatalytic", "--sort", "date", "--out", str(out_date)], client)
+            self.assertEqual(code, 0, run)
+            self.assertEqual(run["query"]["sort"], "date")
+            self.assertEqual(seen_params["openalex"].get("sort"), ["publication_date:desc"])
+            self.assertEqual(seen_params["crossref"].get("sort"), ["published"])
+
+    def test_author_topic_and_sort_disambiguation(self):
+        seen = {}
+
+        def opener(request, timeout):
+            url = urlsplit(request.full_url)
+            params = parse_qs(url.query)
+            if "openalex.org" in url.netloc:
+                seen["openalex"] = params
+                return Response({"results": [{"id": "https://openalex.org/W10", "title": "Photocatalytic H2 on Ni", "publication_year": 2025, "cited_by_count": 95}],
+                                 "meta": {"count": 1}})
+            seen["s2"] = params
+            return Response({"data": [
+                s2(10, title="Battery cathode study", abstract="Lithium ion battery", citationCount=500, year=2024),
+                s2(11, title="Single atom Ni photocatalytic H2", abstract="Photocatalysis water splitting", citationCount=30, year=2023),
+                s2(12, title="Single atom Co catalyst", abstract="Single atom HER", citationCount=180, year=2025),
+            ]})
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = Client({}, opener, lambda _: None)
+            out_oa = root / "author-oa-topic"
+            code, run = self.invoke([
+                "author", "--provider", "openalex", "--author-id", "A5047449616",
+                "--topic", "photocatalytic", "--sort", "cited", "--out", str(out_oa)
+            ], client)
+            self.assertEqual(code, 0, run)
+            self.assertEqual(run["query"]["topic"], "photocatalytic")
+            self.assertEqual(run["query"]["sort"], "cited")
+            self.assertIn("author.id:A5047449616", seen["openalex"]["filter"][0])
+            self.assertIn("default.search:photocatalytic", seen["openalex"]["filter"][0])
+            self.assertEqual(seen["openalex"].get("search"), ["photocatalytic"])
+            self.assertEqual(seen["openalex"].get("sort"), ["cited_by_count:desc"])
+
+            out_s2 = root / "author-s2-topic"
+            code, run = self.invoke([
+                "author", "--provider", "semantic-scholar", "--author-id", "12345",
+                "--topic", "single atom", "--sort", "cited", "--out", str(out_s2)
+            ], client)
+            self.assertEqual(code, 0, run)
+            papers = json.loads((out_s2 / "papers.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(papers), 2)
+            self.assertEqual([p["citation_count"] for p in papers], [180, 30])
+
 
 if __name__ == "__main__":
     unittest.main()

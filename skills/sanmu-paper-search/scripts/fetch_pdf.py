@@ -12,7 +12,10 @@ import sys
 import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
+
+_DEFAULT_URLOPEN = urlopen
+_DEFAULT_BUILD_OPENER = build_opener
 
 
 SENSITIVE = {"apikey", "key", "token", "accesstoken", "email", "mailto", "signature", "credential",
@@ -226,7 +229,7 @@ def _download_pdf_bytes(url, max_bytes=80 * 1024 * 1024):
         raise ValueError("A public HTTPS URL without embedded credentials is required")
     parts.port  # Reject malformed port syntax before issuing a request.
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 sanmu-paper-search/1.6",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 sanmu-paper-search/1.7",
         "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
     }
     last_exc = None
@@ -244,10 +247,34 @@ def _download_pdf_bytes(url, max_bytes=80 * 1024 * 1024):
             checks = inspect_pdf(data)
             return data, url, final_url, content_type, checks
         except (URLError, socket.timeout, TimeoutError, OSError) as exc:
-            if isinstance(exc, HTTPError):
-                last_exc = exc
-                break
             last_exc = exc
+            can_try_direct = (urlopen is _DEFAULT_URLOPEN) or (build_opener is not _DEFAULT_BUILD_OPENER)
+            should_try_direct = (
+                can_try_direct
+                and (
+                    (isinstance(exc, HTTPError) and exc.code in (403, 429, 502, 503))
+                    or not isinstance(exc, HTTPError)
+                )
+            )
+            if should_try_direct:
+                try:
+                    direct_opener = build_opener(ProxyHandler({}))
+                    direct_req = Request(url, headers=headers)
+                    with direct_opener.open(direct_req, timeout=40) as response:
+                        if urlsplit(response.url).scheme != "https":
+                            raise ValueError("insecure_redirect: HTTPS is required")
+                        data = response.read(max_bytes + 1)
+                        final_url = response.url
+                        content_type = response.headers.get_content_type()
+                    if len(data) > max_bytes:
+                        raise ValueError("response_too_large: PDF exceeds the download budget")
+                    checks = inspect_pdf(data)
+                    checks["direct_no_proxy_fallback"] = True
+                    return data, url, final_url, content_type, checks
+                except Exception:
+                    pass
+            if isinstance(exc, HTTPError):
+                break
             if attempt < 2:
                 import time
                 time.sleep(1.2 * (attempt + 1))
@@ -316,7 +343,10 @@ def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_u
             if last_error is not None:
                 raise last_error
             raise ValueError("not_pdf: no candidate URL returned a valid PDF stream")
+        direct_fallback_used = bool(isinstance(checks, dict) and checks.pop("direct_no_proxy_fallback", False))
         record = {"schema_version": "1.0", "retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "file_obtained", "source_url": public_url(source_used), "final_url": public_url(final_url), "tried_urls": tried_urls, "content_type": content_type, "file": "paper.pdf", "sha256": hashlib.sha256(data).hexdigest(), "format_checks": checks, "identity": identity, "requested_identity": {"doi": doi, "title": title}, "license": "not_determined", "read": False}
+        if direct_fallback_used:
+            record["direct_no_proxy_fallback"] = True
         (stage / "acquisition.json").write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if out.exists():
             raise ValueError("Output directory appeared during download; refusing overwrite")
@@ -329,17 +359,48 @@ def fetch(url, out, doi=None, title=None, max_bytes=80 * 1024 * 1024, fallback_u
             stage.rmdir()
 
 
+def check_local_pdf(path, doi=None, title=None):
+    p = Path(path)
+    if not p.is_file():
+        raise ValueError("local_pdf_not_found")
+    data = p.read_bytes()
+    checks = inspect_pdf(data)
+    identity = identity_check(p, doi, title)
+    return {
+        "ok": True,
+        "status": "file_obtained",
+        "file": str(p),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "format_checks": checks,
+        "identity": identity,
+        "requested_identity": {"doi": doi, "title": title},
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", nargs="?", default="")
-    parser.add_argument("--out", required=True, help="New acquisition directory")
+    parser.add_argument("--out", help="New acquisition directory")
+    parser.add_argument("--check-local", help="Inspect and verify identity of a local PDF file")
     parser.add_argument("--doi")
     parser.add_argument("--title")
     parser.add_argument("--fallback-url", action="append", default=[], help="Optional fallback OA PDF URLs to try if primary fails")
     parser.add_argument("--resolve-doi", action="store_true", help="Automatically resolve DOI to OA/publisher PDF URLs")
     args = parser.parse_args()
-    primary_url = (args.url or "").strip()
     target_doi = (args.doi or "").strip() or None
+    if args.check_local:
+        try:
+            result = check_local_pdf(args.check_local, target_doi, args.title)
+            code = 0
+        except (ValueError, OSError) as exc:
+            result, code = {"ok": False, "error": str(exc) if isinstance(exc, ValueError) else "filesystem_error"}, 2
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return code
+    if not args.out:
+        parser.error("the following arguments are required: --out")
+    primary_url = (args.url or "").strip()
     auto_resolve = args.resolve_doi
     if primary_url and re.match(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?10\.\d{4,9}/\S+$", primary_url, flags=re.I):
         if not target_doi:

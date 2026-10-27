@@ -160,7 +160,7 @@ export function makePanel({ bootstrap = false, clipboard, resizeObserver = true 
   let nextTimer = 0;
   let nextFrame = 0;
   let observerDisconnected = false;
-  const exports = 'state, graphSim, pendingRpc, ensureInitialized, callTool, sendRpcRequest, normalizeDirectId, isDirectPaperIdentifier, safeWebUrl, openExternalUrl, updatePanelData, renderPaperCardHtml, renderRawResultCardHtml, renderActiveRun, renderSessionNavBar, bindPaperListEvents, inspectPaper, inspectRawResultItem, executeUndoZoteroImport, canUndoZoteroImport, computeTimelineTargets, clientToGraphWorld, renderRelationshipGraph, switchTab, openDetailView, closeDetailView, copyTextToClipboard, sendToChat';
+  const exports = 'state, graphSim, pendingRpc, ensureInitialized, callTool, sendRpcRequest, normalizeDirectId, isDirectPaperIdentifier, safeWebUrl, openExternalUrl, updatePanelData, renderPaperCardHtml, renderRawResultCardHtml, renderActiveRun, renderSessionNavBar, bindPaperListEvents, inspectPaper, inspectRawResultItem, executeUndoZoteroImport, canUndoZoteroImport, computeTimelineTargets, clientToGraphWorld, renderRelationshipGraph, renderGraphIntelligencePanel, renderBasket, filterAndSortPapers, computePaperRecommendScore, buildDeepReadHandoffPrompt, triggerDeepReadHandoff, switchTab, openDetailView, closeDetailView, copyTextToClipboard, sendToChat, sendPromptToChat';
   let script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   script = script.replace('callTool("open_panel", {}).catch(() => {});', `globalThis.panel = { ${exports} }; ${bootstrap ? 'callTool("open_panel", {}).catch(() => {});' : ''}`);
   const context = vm.createContext({

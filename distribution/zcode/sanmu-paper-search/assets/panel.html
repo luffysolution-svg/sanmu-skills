@@ -863,7 +863,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.6.9</span>
+        <span class="brand-sub">v1.7.0</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -1003,6 +1003,14 @@
               </div>
               <div class="form-row">
                 <div class="field">
+                  <label>召回排序</label>
+                  <select id="qTopicSort">
+                    <option value="relevance">🎯 默认相关性</option>
+                    <option value="cited">🔥 历史高被引优先</option>
+                    <option value="date">📅 最新发表优先</option>
+                  </select>
+                </div>
+                <div class="field">
                   <label>起始年份</label>
                   <input type="number" id="qSearchYearFrom" placeholder="如 2021" />
                 </div>
@@ -1101,6 +1109,20 @@
                   <select id="qAuthorProvider">
                     <option value="openalex">OpenAlex</option>
                     <option value="semantic-scholar">Semantic Scholar</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="field" style="flex:2;">
+                  <label>课题方向过滤词（可选）</label>
+                  <input type="text" id="qAuthorTopic" placeholder="如 photocatalytic / single atom，用于同名学者消歧" />
+                </div>
+                <div class="field">
+                  <label>作品排序</label>
+                  <select id="qAuthorSort">
+                    <option value="">默认</option>
+                    <option value="cited">🔥 高被引代表作优先</option>
+                    <option value="date">📅 最新发表优先</option>
                   </select>
                 </div>
               </div>
@@ -1320,9 +1342,10 @@
             <span><i class="legend-dot" style="background:#1a7f37;"></i>➡ 施引文献 (最新)</span>
             <span><i class="legend-dot" style="background:#d29922;"></i>✨ 相似推荐</span>
             <span><i class="legend-dot" style="background:#57606a;"></i>🔍 检索/收藏文献</span>
-            <span>⭕ 金圈 = 📚 Zotero已收录 | ⭐ = 收藏篮 | 单击节点选中 · 点击浮窗或下方卡片查看详情 · 双击节点锁定/解锁</span>
+            <span>🌉 双虚线紫环 = 桥梁文献 (Bridge) | 🏛 金虚线环 = 共被引基石 (Co-cited Hub) | ⭕ 金圈 = 📚 Zotero已收录 | ⭐ = 收藏篮</span>
           </div>
         </div>
+        <div id="graphIntelligencePanel" class="hidden" style="margin-top:8px;"></div>
         <div id="graphTimelineChronicle" class="hidden" style="margin-top:8px;"></div>
         <div id="graphSelectedNodeCard" style="margin-top:8px;"></div>
       </div>
@@ -1338,6 +1361,7 @@
               <button class="btn sm danger" id="btnClearBasket">🗑 清空收藏篮</button>
             </div>
           </div>
+          <div id="basketTagFilterBar" class="hidden" style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-bottom:8px; padding-bottom:6px; border-bottom:1px dashed var(--border-primary);"></div>
           <div id="basketListContainer"></div>
         </div>
 
@@ -1397,6 +1421,12 @@
       // =========================================================================
       // 1. MCP App Host Bridge
       // =========================================================================
+      const origGetElementById = document.getElementById.bind(document);
+      document.getElementById = (id) => {
+        if (id === "paperSortSelect") return origGetElementById("paperSortSelect") || origGetElementById("selResultSort");
+        if (id === "form-topic") return origGetElementById("form-topic") || origGetElementById("form-search");
+        return origGetElementById(id);
+      };
       let rpcId = 1;
       const pendingRpc = new Map();
       let hostInitialized = false;
@@ -1432,6 +1462,7 @@
         resultSort: "default",
         resultFilter: "all",
         resultKeyword: "",
+        basketTagFilter: "all",
         inlineSubRuns: new Map(),
         navStack: [],
         navIndex: -1,
@@ -1580,7 +1611,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.6.9" },
+              appInfo: { name: "sanmu-paper-search", version: "1.7.0" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -1788,6 +1819,60 @@
           await copyTextToClipboard(promptText);
           showBanner("已将分析指令复制到剪贴板，可直接粘贴到对话框。", "success");
         }
+      }
+
+      const sendPromptToChat = sendToChat;
+
+      function buildDeepReadHandoffPrompt(paper) {
+        if (!paper) return "";
+        const doi = paper.identifiers?.doi?.[0] || "未标注";
+        const journalStr = safeJournalStr(paper) || "未标注";
+        const authorsStr = (paper.authors || []).map((a) => a.name).filter(Boolean).slice(0, 8).join(", ") || "Unknown";
+        const rankBadges = (paper.venue_rank?.badges || []).join(" · ") || paper.venue_rank?.summary || "未标注";
+        const pdfPath = paper.local_pdf_path || "未下载主文 PDF";
+        const siDir = paper.epmc_saved_dir || "";
+        const siFiles = Array.isArray(paper.epmc_suppl_files) ? paper.epmc_suppl_files : [];
+        const saveDir = getChosenSaveDir();
+
+        const lines = [
+          `请调用 \`/sanmu-paper-reader\` 技能对以下已落盘文献执行深度图文精读与实验复现充分性评估：`,
+          ``,
+          `### 1. 论文核心元数据`,
+          `- **标题**：${paper.title || "Untitled"}`,
+          `- **作者**：${authorsStr}`,
+          `- **发表年份**：${paper.year || "未知"}`,
+          `- **DOI**：${doi}`,
+          `- **期刊/会议**：${journalStr}`,
+          `- **期刊等级/中科院分区/IF**：${rankBadges}`,
+          ``,
+          `### 2. 本地已落盘全文与补充材料 (SI) 路径`,
+          `- **主文 PDF 绝对路径**：\`${pdfPath}\``,
+          ...(siDir ? [`- **SI 补充材料目录**：\`${siDir}\``] : []),
+          ...(siFiles.length ? [`- **SI 补充材料文件列表**：\n${siFiles.map((f) => `  - \`${f}\``).join("\n")}`] : []),
+          ``,
+          `### 3. 精读与复现评估执行要求`,
+          `1. 调用 \`/sanmu-paper-reader\` 对主文 PDF 执行双模图文对照精读与子图精准切片；`,
+          `2. 若包含 SI PDF 或补充材料，运行 \`si_probe.py\` 评估实验复现充分性，并运行 \`extract_si_figures.py\` 全量抽离 SI 附图、复现 SOP 配方卡与性能基准表；`,
+          `3. 将生成的结构化双模图文精读笔记输出到当前知识库目录（建议目录：\`${saveDir}\`）。`
+        ];
+        return lines.join("\n");
+      }
+
+      async function triggerDeepReadHandoff(paper) {
+        if (!paper) return;
+        const prompt = buildDeepReadHandoffPrompt(paper);
+        await sendPromptToChat(prompt, {
+          handoffSkill: "sanmu-paper-reader",
+          paper_key: paper.paper_key,
+          title: paper.title,
+          year: paper.year,
+          doi: paper.identifiers?.doi?.[0] || null,
+          journal: safeJournalStr(paper),
+          venue_rank: paper.venue_rank || null,
+          local_pdf_path: paper.local_pdf_path || null,
+          epmc_saved_dir: paper.epmc_saved_dir || null,
+          epmc_suppl_files: paper.epmc_suppl_files || []
+        });
       }
 
       const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
@@ -2090,6 +2175,13 @@
         const zMatch = paper.zotero_match;
         const zOnline = Boolean(state.panelData?.configStatus?.zotero_local?.online);
         const fallbackPdfJson = esc(JSON.stringify(paper.candidate_pdf_urls || []));
+        const hasDeepReadFiles = Boolean(
+          paper.local_pdf_path ||
+          paper.epmc_saved_dir ||
+          (Array.isArray(paper.epmc_suppl_files) && paper.epmc_suppl_files.length > 0)
+        );
+        const userTagsList = Array.isArray(paper.user_tags) ? paper.user_tags : [];
+        const userNoteStr = paper.user_note || "";
 
         const linksHtml = (paper.clickable_links || [])
           .map(
@@ -2193,9 +2285,11 @@
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
               ${linksHtml || '<span style="color:var(--text-secondary);">暂无直达外链</span>'}
               ${!paper.local_pdf_path && doi ? `<button class="btn sm success exec-btn" id="drwTryDoiPdf" title="自动通过 Unpaywall、AI4Scholar S2 与出版商 PDF 规则解析下载全文">⬇ 尝试下载PDF (DOI智能解析)</button>` : ""}
+              <button class="btn sm success exec-btn" id="drwClaimBrowserPdf" title="自动扫描本机 Downloads 目录最近下载的 PDF，校验首屏 DOI/标题后重命名归档到保存目录">📥 认领浏览器刚下载的 PDF</button>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:6px; padding-top:8px; border-top:1px dashed var(--border-primary);">
               <button class="btn sm ${paper.in_basket ? "success" : "primary"}" id="drwToggleBasket">${paper.in_basket ? "⭐ 已在收藏篮 (点击移出)" : "⭐ 加入收藏篮"}</button>
+              ${hasDeepReadFiles ? `<button class="btn sm primary deep-read-handoff-btn" id="drwDeepReadHandoff" data-paper-key="${esc(paper.paper_key)}" title="调用 /sanmu-paper-reader 对已落盘 PDF 与 SI 执行双模图文精读和实验复现充分性探针">🔬 启动三木精读 / 复现评估</button>` : ""}
               <button class="btn sm" id="drwCopySingleCite" title="复制该篇文献的 GB/T 7714 标准参考文献格式">📋 复制单篇引用</button>
               ${
                 zMatch?.matched
@@ -2212,6 +2306,16 @@
             </div>
             ${oaLocsHtml ? `<div style="margin-top:8px;"><strong>已发现的全文/来源位置：</strong>${oaLocsHtml}</div>` : ""}
             ${paper.local_pdf_path ? `<div class="notice success" style="margin-top:8px;"><span>✅ 已下载本地 PDF：<code>${esc(paper.local_pdf_path)}</code></span><button class="btn sm primary" id="drwOpenLocalPdf">🖥 打开 PDF</button></div>` : ""}
+            ${paper.epmc_saved_dir ? `<div class="notice success" style="margin-top:6px;"><span>✅ 已下载 SI 补充材料目录：<code>${esc(paper.epmc_saved_dir)}</code></span></div>` : ""}
+          </div>
+
+          <div class="section-box">
+            <h4>🏷 课题标签与 📝 随手批注（失焦或回车即保存，存入 Zotero 时自动同步为标签与子笔记）</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+              <input type="text" id="drwUserTagsInput" value="${esc(userTagsList.join(", "))}" placeholder="🏷 课题标签（逗号分隔，如: 单原子Ni, 光催化析氢, 基准对比）" style="flex:1; min-width:160px;" />
+              <input type="text" id="drwUserNoteInput" value="${esc(userNoteStr)}" placeholder="📝 一句话随手批注（如: 含 XPS Ni 2p 分峰拟合参数与 AQY 波长依赖表）" style="flex:2; min-width:200px;" />
+              <button type="button" class="btn sm primary exec-btn" id="drwSaveNoteTagsBtn">💾 保存批注</button>
+            </div>
           </div>
 
           ${seedId ? `
@@ -2334,6 +2438,72 @@
               inspectPaper(findUpdatedPaper(paper.paper_key, paper));
             }
           });
+          onAction(container.querySelector("#drwClaimBrowserPdf"), "click", async (e) => {
+            const saveDir = getChosenSaveDir();
+            const res = await callTool(
+              "resolve_oa_and_pdf",
+              {
+                action: "claim_browser_pdf",
+                doi: doi || undefined,
+                title: paper.title || undefined,
+                year: paper.year || undefined,
+                paperKey: paper.paper_key,
+                saveDir
+              },
+              `正在扫描本机 Downloads 目录认领刚下载的 PDF 并归档至 ${saveDir} ...`,
+              e.currentTarget
+            );
+            if (res?.lastDownload?.pdfPath) {
+              showBanner(
+                `✅ 已成功认领浏览器 PDF 并归档至：${res.lastDownload.pdfPath}（首屏核验: ${res.lastDownload.identity_status || "已保存"}）。现可一键存入 Zotero！`,
+                "success",
+                res.lastDownload.pdfPath,
+                "🖥 打开 PDF"
+              );
+              inspectPaper(findUpdatedPaper(paper.paper_key, { ...paper, local_pdf_path: res.lastDownload.pdfPath }));
+            }
+          });
+          onAction(container.querySelector("#drwDeepReadHandoff"), "click", async () => {
+            await triggerDeepReadHandoff(findUpdatedPaper(paper.paper_key, paper));
+          });
+          const saveDetailNoteAndTags = async (triggerBtn = null) => {
+            const tagsRaw = container.querySelector("#drwUserTagsInput")?.value || "";
+            const noteRaw = container.querySelector("#drwUserNoteInput")?.value || "";
+            const nextTags = tagsRaw
+              .split(/[,，;；]+/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            const nextNote = noteRaw.trim();
+            paper.user_tags = nextTags;
+            paper.user_note = nextNote;
+            await callTool(
+              "manage_basket",
+              {
+                action: "update_evidence",
+                paperKey: paper.paper_key,
+                user_tags: nextTags,
+                user_note: nextNote
+              },
+              "正在保存课题标签与随手批注...",
+              triggerBtn
+            );
+            showBanner("✅ 已保存课题标签与随手批注（存入 Zotero 时将自动同步为标签与子笔记）", "success");
+          };
+          onAction(container.querySelector("#drwSaveNoteTagsBtn"), "click", async (e) => {
+            await saveDetailNoteAndTags(e.currentTarget);
+          });
+          for (const inputId of ["#drwUserTagsInput", "#drwUserNoteInput"]) {
+            const inp = container.querySelector(inputId);
+            if (inp) {
+              onAction(inp, "change", () => saveDetailNoteAndTags());
+              inp.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+                  e.preventDefault();
+                  saveDetailNoteAndTags().catch(reportActionError);
+                }
+              });
+            }
+          }
           onAction(container.querySelector("#drwUndoZoteroItem"), "click", async (e) => {
             if (!zMatch?.itemKey) return;
             await executeUndoZoteroImport(zMatch.itemKey, paper.paper_key, e.currentTarget);
@@ -2502,6 +2672,7 @@
                 res.exportedSaveDir,
                 "📂 打开文件夹"
               );
+              inspectPaper(findUpdatedPaper(paper.paper_key, { ...paper, epmc_saved_dir: `${res.exportedSaveDir}/supplementary` }));
             } else {
               showBanner(
                 "Europe PMC 暂未收录该论文的独立 SI 补充材料压缩包（仅开放获取 PMC 归档文章提供直下 SI），请点击上方「🔗 DOI / 原文」在出版商页面下载。",
@@ -2865,6 +3036,13 @@
         const isAbsExpanded = isAbstractExpanded(p.paper_key);
         const hasLongAbstract = Boolean(p.abstract && p.abstract.length > 160);
         const isChecked = state.selectedPapers.has(p.paper_key);
+        const hasDeepReadFiles = Boolean(
+          p.local_pdf_path ||
+          p.epmc_saved_dir ||
+          (Array.isArray(p.epmc_suppl_files) && p.epmc_suppl_files.length > 0)
+        );
+        const userTagsList = Array.isArray(p.user_tags) ? p.user_tags : [];
+        const userNoteStr = p.user_note || "";
         const diffBadgeHtml =
           p.diff_status === "added"
             ? `<span class="pill ok static">🆕 新增文献</span>`
@@ -2955,8 +3133,14 @@
                     <button class="btn sm enrich-abs-btn exec-btn" data-paper-key="${esc(p.paper_key)}" onclick="event.stopPropagation();" style="margin-left:6px; padding:1px 7px;">🔎 一键跨源补全摘要</button>
                   </div>`
             }
+            <div class="inline-note-tags-bar" data-paper-key="${esc(p.paper_key)}" onclick="event.stopPropagation();" style="margin-top:6px; display:flex; flex-wrap:wrap; gap:5px; align-items:center; font-size:11.5px;">
+              ${userTagsList.map((t) => `<span class="pill purple static user-tag-pill">🏷 ${esc(t)}</span>`).join("")}
+              <input type="text" class="inline-tags-input" data-paper-key="${esc(p.paper_key)}" value="${esc(userTagsList.join(", "))}" placeholder="🏷 课题标签 (逗号分隔，如: 单原子Ni, 析氢)" style="width:auto; min-width:135px; flex:1; padding:2px 6px; font-size:11px;" />
+              <input type="text" class="inline-note-input" data-paper-key="${esc(p.paper_key)}" value="${esc(userNoteStr)}" placeholder="📝 随手批注 (回车/失焦保存，存Zotero自动建子笔记)" style="width:auto; min-width:175px; flex:2; padding:2px 6px; font-size:11px;" />
+            </div>
             <div class="action-bar" onclick="event.stopPropagation();">
               <button class="btn sm basket-toggle-btn ${p.in_basket ? "success" : "primary"}" data-paper-key="${esc(p.paper_key)}">${p.in_basket ? "⭐ 已收藏" : "⭐ 收藏"}</button>
+              ${hasDeepReadFiles ? `<button class="btn sm primary deep-read-handoff-btn" data-paper-key="${esc(p.paper_key)}" title="调用 /sanmu-paper-reader 对已落盘 PDF 与 SI 执行双模图文精读和实验复现充分性探针">🔬 启动三木精读 / 复现评估</button>` : ""}
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success zotero-open-btn" data-zkey="${esc(zMatch.itemKey)}" title="在 Zotero 桌面端直接定位此文献">📖 Zotero定位</button>
@@ -2966,6 +3150,7 @@
                     : ""
               }
               ${p.local_pdf_path ? `<button class="btn sm success card-open-local-pdf-btn" data-path="${esc(p.local_pdf_path)}">🖥 打开PDF</button>` : firstOaPdf ? `<button class="btn sm success card-dl-pdf-btn exec-btn" data-url="${esc(firstOaPdf)}" data-fallbacks="${fallbackPdfJson}" data-doi="${esc(doi)}" data-title="${esc(p.title)}" data-year="${esc(p.year || "")}" data-key="${esc(p.paper_key)}">⬇ 下载PDF</button>` : ""}
+              ${!p.local_pdf_path ? `<button class="btn sm claim-browser-pdf-btn exec-btn" data-doi="${esc(doi)}" data-title="${esc(p.title)}" data-year="${esc(p.year || "")}" data-key="${esc(p.paper_key)}" title="在浏览器打开原文下载 PDF 后，点击此按钮自动从本机 Downloads 目录认领、校验并重命名归档">📥 认领浏览器刚下载的 PDF</button>` : ""}
               ${seedId ? `
                 <button class="btn sm rel-quick-btn exec-btn" data-paper-key="${esc(p.paper_key)}" data-id="${esc(seedId)}" data-rel="references" title="在当前卡片下方直接展开参考文献（不丢失当前页面）">⬅ 参考文献</button>
                 <button class="btn sm rel-quick-btn exec-btn" data-paper-key="${esc(p.paper_key)}" data-id="${esc(seedId)}" data-rel="citations" title="在当前卡片下方直接展开施引文献（不丢失当前页面）">➡ 施引</button>
@@ -3309,6 +3494,78 @@
         container.querySelectorAll(".open-doi-btn").forEach((btn) => {
           onAction(btn, "click", async () => openExternalUrl(btn.dataset.url));
         });
+        container.querySelectorAll(".claim-browser-pdf-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            const saveDir = getChosenSaveDir();
+            const res = await callTool(
+              "resolve_oa_and_pdf",
+              {
+                action: "claim_browser_pdf",
+                doi: btn.dataset.doi || undefined,
+                title: btn.dataset.title || undefined,
+                year: btn.dataset.year || undefined,
+                paperKey: btn.dataset.key || undefined,
+                saveDir
+              },
+              `正在扫描本机 Downloads 目录认领刚下载的 PDF 并归档至 ${saveDir} ...`,
+              btn
+            );
+            if (res?.lastDownload?.pdfPath) {
+              showBanner(
+                `✅ 已成功认领浏览器 PDF 并归档至：${res.lastDownload.pdfPath}（首屏核验: ${res.lastDownload.identity_status || "已保存"}）。现可一键存入 Zotero！`,
+                "success",
+                res.lastDownload.pdfPath,
+                "🖥 打开 PDF"
+              );
+            }
+          });
+        });
+        container.querySelectorAll(".deep-read-handoff-btn").forEach((btn) => {
+          onAction(btn, "click", async (e) => {
+            e.stopPropagation();
+            const p = paperMap.get(btn.dataset.paperKey);
+            if (p) await triggerDeepReadHandoff(p);
+          });
+        });
+        const saveCardInlineNoteTags = async (barEl) => {
+          if (!barEl) return;
+          const pk = barEl.dataset.paperKey;
+          const p = paperMap.get(pk);
+          if (!p) return;
+          const tagsEl = barEl.querySelector(".inline-tags-input");
+          const noteEl = barEl.querySelector(".inline-note-input");
+          const nextTags = (tagsEl ? tagsEl.value : (p.user_tags || []).join(","))
+            .split(/[,，;；]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          const nextNote = noteEl ? noteEl.value.trim() : (p.user_note || "");
+          const prevTagsStr = (p.user_tags || []).join("|");
+          if (prevTagsStr === nextTags.join("|") && (p.user_note || "") === nextNote) return;
+          p.user_tags = nextTags;
+          p.user_note = nextNote;
+          await callTool(
+            "manage_basket",
+            {
+              action: "update_evidence",
+              paperKey: pk,
+              user_tags: nextTags,
+              user_note: nextNote
+            },
+            "正在保存课题标签与随手批注..."
+          );
+          showBanner("✅ 已保存课题标签与随手批注（存入 Zotero 时将自动同步为标签与子笔记）", "success");
+        };
+        container.querySelectorAll(".inline-note-tags-bar").forEach((barEl) => {
+          barEl.querySelectorAll("input").forEach((inp) => {
+            onAction(inp, "change", () => saveCardInlineNoteTags(barEl));
+            inp.addEventListener("keydown", (e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+                e.preventDefault();
+                saveCardInlineNoteTags(barEl).catch(reportActionError);
+              }
+            });
+          });
+        });
       }
 
       function bindRawResultsEvents(container, rawResults) {
@@ -3515,6 +3772,30 @@
         });
       }
 
+      function computePaperRecommendScore(p) {
+        if (!p) return -999;
+        let score = 0;
+        const idx = Math.max(1, Number(p.index) || 1);
+        score += Math.max(0, 18 - (idx - 1) * 0.8);
+        const vr = p.venue_rank || {};
+        const badgesStr = [...(vr.badges || []), vr.cas_up || "", vr.jcr || "", vr.ccf ? `CCF ${vr.ccf}` : ""].join(" ");
+        if (vr.is_top_tier) score += 35;
+        if (/1区|TOP/i.test(badgesStr)) score += 20;
+        else if (/Q1|CCF[\s-]*A/i.test(badgesStr)) score += 14;
+        if (vr.warning) score -= 40;
+        const ifVal = Number(vr.if);
+        if (Number.isFinite(ifVal) && ifVal > 0) {
+          score += Math.min(30, ifVal * 1.1);
+        }
+        const cites = Math.max(0, Number(p.citation_count) || 0);
+        score += Math.log10(cites + 1) * 14;
+        const yr = Number(p.year) || 0;
+        if (yr >= 2000 && yr <= 2030) {
+          score += Math.max(0, (yr - 2015) * 1.4);
+        }
+        return score;
+      }
+
       function filterAndSortPapers(papers) {
         const kw = (state.resultKeyword || "").trim().toLowerCase();
         const flt = state.resultFilter || "all";
@@ -3541,6 +3822,8 @@
               safeJournalStr(p),
               p.venue_rank?.summary || "",
               ...(p.venue_rank?.badges || []),
+              ...(p.user_tags || []),
+              p.user_note || "",
               ...(p.authors || []).map((a) => a.name || ""),
               ...(p.identifiers?.doi || []),
               String(p.year || "")
@@ -3558,7 +3841,11 @@
             const bEx = b.handoff_stage === "excluded" ? 1 : 0;
             if (aEx !== bEx) return aEx - bEx;
           }
-          if (srt === "citations_desc") {
+          if (srt === "recommended" || srt === "comprehensive") {
+            const sa = computePaperRecommendScore(a);
+            const sb = computePaperRecommendScore(b);
+            if (sb !== sa) return sb - sa;
+          } else if (srt === "citations_desc") {
             const ca = a.citation_count !== undefined && a.citation_count !== null ? Number(a.citation_count) : -1;
             const cb = b.citation_count !== undefined && b.citation_count !== null ? Number(b.citation_count) : -1;
             if (cb !== ca) return cb - ca;
@@ -3914,6 +4201,7 @@
                   <span style="font-size:11px; font-weight:600; color:var(--text-secondary);">排序:</span>
                   <select id="selResultSort" style="width:auto; padding:3px 7px; font-size:11.5px;">
                     <option value="default" ${state.resultSort === "default" ? "selected" : ""}>默认顺序</option>
+                    <option value="recommended" ${state.resultSort === "recommended" ? "selected" : ""}>🌟 综合推荐（顶刊+高被引+相关性）</option>
                     <option value="citations_desc" ${state.resultSort === "citations_desc" ? "selected" : ""}>🔥 被引次数 (高→低)</option>
                     <option value="if_desc" ${state.resultSort === "if_desc" ? "selected" : ""}>📈 影响因子 IF (高→低)</option>
                     <option value="year_desc" ${state.resultSort === "year_desc" ? "selected" : ""}>📅 发表年份 (新→旧)</option>
@@ -4137,6 +4425,14 @@
           onAction(btn, "click", async (e) => {
             e.stopPropagation();
             const prov = btn.dataset.prov || "openalex";
+            const activeTopic =
+              (document.getElementById("qAuthorTopic")?.value || "").trim() ||
+              (r.query?.topic ? String(r.query.topic).trim() : "") ||
+              undefined;
+            const activeSort =
+              (document.getElementById("qAuthorSort")?.value || "").trim() ||
+              (r.query?.sort ? String(r.query.sort).trim() : "") ||
+              undefined;
             if (prov === "google-scholar") {
               await callTool(
                 "search_ai4scholar",
@@ -4147,8 +4443,14 @@
             } else {
               await callTool(
                 "search_author",
-                { provider: prov, authorId: btn.dataset.id, limit: 10 },
-                `正在拉取学者 ${btn.dataset.name || btn.dataset.id} 的代表作...`,
+                {
+                  provider: prov,
+                  authorId: btn.dataset.id,
+                  limit: 10,
+                  ...(activeTopic ? { topic: activeTopic } : {}),
+                  ...(activeSort ? { sort: activeSort } : {})
+                },
+                `正在拉取学者 ${btn.dataset.name || btn.dataset.id} 的代表作${activeTopic ? `（方向过滤: ${activeTopic}）` : ""}...`,
                 btn
               );
             }
@@ -4334,7 +4636,10 @@
       function computeNodeRadius(n) {
         if (n.role === "seed") return 16.5;
         const c = Number(n.citationCount || 0);
-        return Math.max(9.5, Math.min(15.5, 9.5 + Math.log10(c + 1) * 2.4));
+        let base = Math.max(9.5, Math.min(15.5, 9.5 + Math.log10(c + 1) * 2.4));
+        if (n.isBridgeNode) base += 2.2;
+        if (n.isCoCitedHub) base += Math.min(3.0, 1.2 + Math.max(0, Number(n.inDegree || 2) - 1) * 0.6);
+        return Math.min(18.5, base);
       }
 
       function clientToGraphWorld(svgEl, clientX, clientY) {
@@ -4864,6 +5169,105 @@
         state.inlineSubRuns.clear();
       });
 
+      function renderGraphIntelligencePanel() {
+        const intelEl = document.getElementById("graphIntelligencePanel");
+        if (!intelEl) return;
+        const nodes = graphSim.nodes || [];
+        if (nodes.length === 0) {
+          intelEl.classList.add("hidden");
+          intelEl.innerHTML = "";
+          return;
+        }
+        const ranked = nodes
+          .filter((n) => n.isCoCitedHub || n.isBridgeNode)
+          .slice()
+          .sort((a, b) => {
+            const sa =
+              (a.isBridgeNode ? 12 : 0) +
+              (a.isCoCitedHub ? 10 : 0) +
+              Number(a.inDegree || 0) * 3 +
+              Number(a.connectedSourcesCount || 0) * 2 +
+              Math.log10(Number(a.citationCount || 0) + 1);
+            const sb =
+              (b.isBridgeNode ? 12 : 0) +
+              (b.isCoCitedHub ? 10 : 0) +
+              Number(b.inDegree || 0) * 3 +
+              Number(b.connectedSourcesCount || 0) * 2 +
+              Math.log10(Number(b.citationCount || 0) + 1);
+            return sb - sa;
+          })
+          .slice(0, 5);
+
+        if (ranked.length === 0) {
+          intelEl.classList.add("hidden");
+          intelEl.innerHTML = "";
+          return;
+        }
+
+        intelEl.classList.remove("hidden");
+        const rowsHtml = ranked
+          .map((n, idx) => {
+            const badges = [];
+            if (n.isBridgeNode) badges.push(`<span class="pill purple static">🌉 桥梁文献</span>`);
+            if (n.isCoCitedHub) badges.push(`<span class="pill warn static">🏛 共被引×${esc(n.inDegree || 2)}</span>`);
+            if (n.connectedSourcesCount >= 2) badges.push(`<span class="pill info static">🕸 跨源连接×${esc(n.connectedSourcesCount)}</span>`);
+            return `
+              <div class="timeline-paper-row intel-paper-row" data-node-id="${esc(n.id)}">
+                <div style="flex:1; min-width:0;">
+                  <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                    <strong style="color:var(--accent); font-size:12.5px;">${idx + 1}. ${esc(n.title)}</strong>
+                    ${badges.join(" ")}
+                  </div>
+                  <div style="font-size:11px; color:var(--text-secondary); margin-top:2px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                    <span>👤 ${esc(n.firstAuthor)}</span>
+                    ${n.year ? `<span>📅 ${esc(n.year)}</span>` : ""}
+                    ${n.journal ? `<span>📘 ${esc(n.journal)}</span>` : ""}
+                    <span class="pill static">🔥 总被引 ${esc(n.citationCount || 0)}</span>
+                    <span class="pill static">⬅ 图内被引 ${esc(n.inDegree || 0)} · ➡ 图内施引 ${esc(n.outDegree || 0)}</span>
+                  </div>
+                </div>
+                <div style="display:flex; gap:4px; flex-shrink:0;">
+                  <button type="button" class="btn sm intel-spotlight-btn" data-node-id="${esc(n.id)}" title="在关系图谱中聚光灯高亮定位该节点">🎯 聚光灯定位</button>
+                  <button type="button" class="btn sm primary intel-detail-btn" data-node-id="${esc(n.id)}" title="打开该关键文献的完整详情">📄 详情 ➔</button>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+
+        intelEl.innerHTML = `
+          <details class="sub-fold" open style="border-style:solid; border-color:var(--accent); background:var(--bg-secondary); padding:8px 10px;">
+            <summary style="font-size:12.5px; color:var(--accent);">🔥 图谱核心情报：共被引基石文献 &amp; 桥梁文献 Top 5（共发现 ${ranked.length} 篇核心枢纽）</summary>
+            <div style="margin-top:6px;">
+              ${rowsHtml}
+            </div>
+          </details>
+        `;
+
+        intelEl.querySelectorAll(".intel-spotlight-btn").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const n = graphSim.nodeById.get(btn.dataset.nodeId);
+            if (!n) return;
+            state.graphSelectedNodeId = n.id;
+            graphSim.hoveredNodeId = n.id;
+            updateGraphVisualHighlights();
+            renderSelectedGraphNodeCard(n);
+          });
+        });
+        intelEl.querySelectorAll(".intel-detail-btn, .intel-paper-row").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const n = graphSim.nodeById.get(el.dataset.nodeId);
+            if (!n) return;
+            state.graphSelectedNodeId = n.id;
+            updateGraphVisualHighlights();
+            renderSelectedGraphNodeCard(n);
+            inspectGraphNodePaper(n);
+          });
+        });
+      }
+
       function renderTimelineChronicle() {
         const chronEl = document.getElementById("graphTimelineChronicle");
         if (!chronEl) return;
@@ -5185,6 +5589,7 @@
           svg.innerHTML = `<text x="360" y="215" text-anchor="middle" fill="var(--text-secondary)" font-size="13">暂无可绘制的文献节点，请先执行一次文献检索或引文网络追踪。</text>`;
           if (selCardEl) selCardEl.innerHTML = "";
           tooltipEl?.classList.add("hidden");
+          document.getElementById("graphIntelligencePanel")?.classList.add("hidden");
           document.getElementById("graphTimelineChronicle")?.classList.add("hidden");
           return;
         }
@@ -5192,6 +5597,30 @@
         const enabledEdgeTypes = new Set(
           [...document.querySelectorAll(".graph-edge-chk:checked")].map((c) => c.value)
         );
+
+        // Compute/normalize topological metrics on incomingNodes from allEdges
+        const inDegCount = new Map();
+        const outDegCount = new Map();
+        const allNeighborSets = new Map();
+        const seedConnSets = new Map();
+        const rawById = new Map(incomingNodes.map((n) => [n.id, n]));
+        for (const n of incomingNodes) {
+          inDegCount.set(n.id, 0);
+          outDegCount.set(n.id, 0);
+          allNeighborSets.set(n.id, new Set());
+          seedConnSets.set(n.id, new Set());
+        }
+        for (const e of allEdges) {
+          if (!rawById.has(e.source) || !rawById.has(e.target) || e.source === e.target) continue;
+          allNeighborSets.get(e.source)?.add(e.target);
+          allNeighborSets.get(e.target)?.add(e.source);
+          if (rawById.get(e.source)?.role === "seed") seedConnSets.get(e.target)?.add(e.source);
+          if (rawById.get(e.target)?.role === "seed") seedConnSets.get(e.source)?.add(e.target);
+          if (e.type === "cites") {
+            outDegCount.set(e.source, (outDegCount.get(e.source) || 0) + 1);
+            inDegCount.set(e.target, (inDegCount.get(e.target) || 0) + 1);
+          }
+        }
 
         // Preserve existing node positions & velocities so the graph flows continuously without jumping!
         const prevNodeMap = graphSim.nodeById;
@@ -5203,12 +5632,35 @@
 
         let addedNewNodes = false;
         const nextNodes = incomingNodes.map((raw, idx) => {
+          const inDegree = raw.inDegree !== undefined ? Number(raw.inDegree) : (inDegCount.get(raw.id) || 0);
+          const outDegree = raw.outDegree !== undefined ? Number(raw.outDegree) : (outDegCount.get(raw.id) || 0);
+          const totalDegree = raw.totalDegree !== undefined ? Number(raw.totalDegree) : (allNeighborSets.get(raw.id)?.size || 0);
+          const seedConns = seedConnSets.get(raw.id)?.size || 0;
+          const connectedSourcesCount =
+            raw.connectedSourcesCount !== undefined ? Math.max(Number(raw.connectedSourcesCount), seedConns) : seedConns;
+          const isCoCitedHub = Boolean(raw.isCoCitedHub || inDegree >= 2);
+          const isBridgeNode = Boolean(
+            raw.isBridgeNode ||
+              (raw.role !== "seed" &&
+                (seedConns >= 2 ||
+                  (connectedSourcesCount >= 2 && totalDegree >= 2) ||
+                  (inDegree >= 1 && outDegree >= 1 && totalDegree >= 3)))
+          );
+          const enrichedRaw = {
+            ...raw,
+            inDegree,
+            outDegree,
+            totalDegree,
+            connectedSourcesCount,
+            isCoCitedHub,
+            isBridgeNode
+          };
           const prev = prevNodeMap.get(raw.id);
-          const r = computeNodeRadius(raw);
+          const r = computeNodeRadius(enrichedRaw);
           if (prev) {
             return {
               ...prev,
-              ...raw,
+              ...enrichedRaw,
               r,
               x: prev.x,
               y: prev.y,
@@ -5222,7 +5674,7 @@
           const angle = (idx / Math.max(1, incomingNodes.length)) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
           const dist = raw.id === centerId ? 0 : 90 + Math.random() * 65;
           return {
-            ...raw,
+            ...enrichedRaw,
             r,
             x: GRAPH_CX + Math.cos(angle) * dist,
             y: GRAPH_CY + Math.sin(angle) * dist,
@@ -5283,12 +5735,31 @@
           .map((n) => {
             const fill = roleColor(n.role);
             const badgeIcon = n.role === "seed" ? "🎯" : n.inBasket ? "⭐" : n.inZotero ? "📚" : "";
+            const intelHaloHtml =
+              n.isBridgeNode && n.isCoCitedHub
+                ? `<circle class="node-intel-halo bridge-halo" r="${(n.r + 3.6).toFixed(1)}" fill="none" stroke="#8250df" stroke-width="1.8" stroke-dasharray="4,2" style="pointer-events:none;" />
+                   <circle class="node-intel-halo hub-halo" r="${(n.r + 6.4).toFixed(1)}" fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="3,2" style="pointer-events:none;" />`
+                : n.isBridgeNode
+                  ? `<circle class="node-intel-halo bridge-halo" r="${(n.r + 3.8).toFixed(1)}" fill="none" stroke="#8250df" stroke-width="1.8" stroke-dasharray="4,2" style="pointer-events:none;" />`
+                  : n.isCoCitedHub
+                    ? `<circle class="node-intel-halo hub-halo" r="${(n.r + 3.8).toFixed(1)}" fill="none" stroke="#d29922" stroke-width="1.8" stroke-dasharray="4,2" style="pointer-events:none;" />`
+                    : "";
+            const intelBadgeText =
+              n.isBridgeNode && n.isCoCitedHub
+                ? `🌉 桥梁 · 🏛 共被引×${n.inDegree}`
+                : n.isBridgeNode
+                  ? "🌉 桥梁"
+                  : n.isCoCitedHub
+                    ? `🏛 共被引×${n.inDegree}`
+                    : "";
             return `
               <g class="graph-node-g" data-node-id="${esc(n.id)}" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">
                 <circle class="node-hit" r="${(n.r + 5).toFixed(1)}" fill="transparent" stroke="none" />
+                ${intelHaloHtml}
                 <circle class="node-ring" r="${(n.r + 5).toFixed(1)}" fill="none" stroke="#0969da" stroke-width="2" opacity="0" style="pointer-events:none;" />
                 <circle class="node-main" r="${n.r.toFixed(1)}" fill="${fill}" stroke="#ffffff" stroke-width="1.6" style="pointer-events:none;" />
                 ${badgeIcon ? `<text x="0" y="3.8" text-anchor="middle" font-size="9.5" fill="#fff" style="pointer-events:none;">${badgeIcon}</text>` : ""}
+                ${intelBadgeText ? `<text class="node-intel-badge" x="0" y="${(-n.r - 5.5).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="700" fill="${n.isBridgeNode ? "var(--purple)" : "var(--warning)"}" style="pointer-events:none;">${esc(intelBadgeText)}</text>` : ""}
                 <text class="node-pin" x="${(n.r + 4).toFixed(1)}" y="${(-n.r + 4).toFixed(1)}" font-size="9" style="pointer-events:none;">${n.pinned ? "📌" : ""}</text>
                 <text class="node-label" x="0" y="${(n.r + 12.5).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="500" fill="var(--text-primary)" style="pointer-events:none;">${esc(n.shortLabel)}</text>
               </g>
@@ -5485,6 +5956,7 @@
 
         updateGraphVisualHighlights();
         syncGraphDomPositions();
+        renderGraphIntelligencePanel();
         renderTimelineChronicle();
         renderSelectedGraphNodeCard(nextNodeById.get(state.graphSelectedNodeId));
         startGraphPhysics(addedNewNodes ? 0.92 : 0.45);
@@ -5544,11 +6016,55 @@
         const basket = data?.basket || [];
         document.getElementById("tabCountBasket").textContent = String(basket.length);
         const container = document.getElementById("basketListContainer");
+        const tagBar = document.getElementById("basketTagFilterBar");
+
+        const tagCounts = new Map();
+        for (const p of basket) {
+          for (const rawTag of p.user_tags || []) {
+            const t = String(rawTag || "").trim();
+            if (!t) continue;
+            tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+          }
+        }
+        if (state.basketTagFilter !== "all" && !tagCounts.has(state.basketTagFilter)) {
+          state.basketTagFilter = "all";
+        }
+
+        if (tagBar) {
+          if (basket.length > 0 && tagCounts.size > 0) {
+            tagBar.classList.remove("hidden");
+            const chips = [
+              `<span class="filter-chip basket-tag-chip ${state.basketTagFilter === "all" ? "active" : ""}" data-tag="all">🏷 全部课题 (${basket.length})</span>`,
+              ...[...tagCounts.entries()].map(
+                ([tag, cnt]) =>
+                  `<span class="filter-chip basket-tag-chip ${state.basketTagFilter === tag ? "active" : ""}" data-tag="${esc(tag)}">🏷 ${esc(tag)} (${cnt})</span>`
+              )
+            ];
+            tagBar.innerHTML = `<span style="font-size:11px; font-weight:600; color:var(--text-secondary);">按课题标签筛选:</span> ${chips.join(" ")}`;
+            tagBar.querySelectorAll(".basket-tag-chip").forEach((chip) => {
+              chip.addEventListener("click", () => {
+                state.basketTagFilter = chip.dataset.tag || "all";
+                renderBasket(state.panelData);
+              });
+            });
+          } else {
+            tagBar.classList.add("hidden");
+            tagBar.innerHTML = "";
+          }
+        }
+
+        const visibleBasket =
+          state.basketTagFilter === "all"
+            ? basket
+            : basket.filter((p) => Array.isArray(p.user_tags) && p.user_tags.includes(state.basketTagFilter));
+
         if (basket.length === 0) {
           container.innerHTML = `<p style="color:var(--text-secondary); margin:0;">收藏篮为空。在检索结果卡片上点击「⭐ 收藏」即可跨检索收集文献，支持一键批量存入本机 Zotero、复制参考文献或发给对话 AI 对比精读。</p>`;
+        } else if (visibleBasket.length === 0) {
+          container.innerHTML = `<p style="color:var(--text-secondary); margin:0;">当前课题标签「${esc(state.basketTagFilter)}」下暂无文献。</p>`;
         } else {
-          container.innerHTML = `<div class="paper-list" id="basketPapersList">${basket.map((p) => renderPaperCardHtml(p)).join("")}</div>`;
-          bindPaperListEvents(container.querySelector("#basketPapersList"), basket);
+          container.innerHTML = `<div class="paper-list" id="basketPapersList">${visibleBasket.map((p) => renderPaperCardHtml(p)).join("")}</div>`;
+          bindPaperListEvents(container.querySelector("#basketPapersList"), visibleBasket);
         }
         updateCitationPreview();
       }
@@ -5691,6 +6207,10 @@
                 handoff_stage_label: STAGE_LABELS_MAP[nextStage] || nextStage,
                 screening_basis: ev.basis || sp.screening_basis,
                 screening_reason: ev.reason ?? sp.screening_reason ?? "",
+                user_tags: Array.isArray(ev.user_tags) ? ev.user_tags : basketHit?.user_tags || sp.user_tags || [],
+                user_note: ev.user_note !== undefined ? ev.user_note : basketHit?.user_note ?? sp.user_note ?? "",
+                ...(ev.epmc_saved_dir || sp.epmc_saved_dir ? { epmc_saved_dir: ev.epmc_saved_dir || sp.epmc_saved_dir } : {}),
+                ...(Array.isArray(ev.epmc_suppl_files) ? { epmc_suppl_files: ev.epmc_suppl_files } : {}),
                 zotero_match: nextZ
               };
             });
@@ -5862,9 +6382,17 @@
           return showBanner("起始年份不能晚于结束年份。", "error");
         }
         const limit = readLimitInput("qSearchLimit");
+        const sort = (document.getElementById("qTopicSort")?.value || "relevance").trim();
         await callTool(
           "search_papers",
-          { query: raw, sources, yearFrom, yearTo, limit },
+          {
+            query: raw,
+            sources,
+            yearFrom,
+            yearTo,
+            limit,
+            ...(sort && sort !== "relevance" ? { sort } : {})
+          },
           `正在多源检索「${raw}」并去重查重...`,
           btnExecSearch
         );
@@ -6010,6 +6538,8 @@
         const query = document.getElementById("qAuthorName").value.trim() || undefined;
         const fromPaper = normalizeDirectId(document.getElementById("qAuthorFromPaper").value) || undefined;
         const authorId = document.getElementById("qAuthorId").value.trim() || undefined;
+        const topic = (document.getElementById("qAuthorTopic")?.value || "").trim() || undefined;
+        const sort = (document.getElementById("qAuthorSort")?.value || "").trim() || undefined;
         const yearFrom = readYearInput("qAuthorYearFrom");
         const limit = readLimitInput("qAuthorLimit");
         if (!query && !fromPaper && !authorId) {
@@ -6017,13 +6547,23 @@
         }
         await callTool(
           "search_author",
-          { provider, query, fromPaper, authorId, yearFrom, limit },
-          `正在检索学者 ${query || authorId || fromPaper} ...`,
+          {
+            provider,
+            query,
+            fromPaper,
+            authorId,
+            yearFrom,
+            limit,
+            ...(topic ? { topic } : {}),
+            ...(sort ? { sort } : {})
+          },
+          `正在检索学者 ${query || authorId || fromPaper}${topic ? ` (方向: ${topic})` : ""} ...`,
           btnExecAuthor
         );
         switchTab("results");
       });
       bindEnterKey(document.getElementById("qAuthorName"), btnExecAuthor);
+      bindEnterKey(document.getElementById("qAuthorTopic"), btnExecAuthor);
       bindEnterKey(document.getElementById("qAuthorFromPaper"), btnExecAuthor);
       bindEnterKey(document.getElementById("qAuthorId"), btnExecAuthor);
 

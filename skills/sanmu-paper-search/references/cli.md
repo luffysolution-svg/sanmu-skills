@@ -34,7 +34,7 @@ python scripts/paper_search.py diff "/path/to/work/runs/seed" "/path/to/work/run
 
 `search --sources` 的来源名是 `openalex`、`semantic-scholar`、`crossref`；Serper、Exa 与 Europe PMC 分别使用独立的 `serper`、`exa`、`epmc` 子命令，见下文。可移植身份格式包括 DOI、`doi:...`、DOI URL、`openalex:W...`、`s2:...`、`pmid:...`、`pmcid:...`、`arxiv:...`。并非所有来源都支持全部 ID，未支持情况需在逐源状态中保留。作者 ID 属于提供者，不能跨库复用。
 
-`search`、`author --author-id` 和 `author --from-paper` 支持 `--year-from 2024 --year-to 2025`；`related` 不支持年份参数，需在关系结果上另做筛选并保留阶段记录。`--limit` 是每源候选预算（1–20），跨源去重后全部保存，三源最多 60 条；保留源序，不宣称跨库相关性已统一排序。作者单源作品和 `oa` 输入处理同样受该预算约束。年份需为 1000–9999，起始年不得晚于结束年；参数校验在请求前完成。已知年份在源端（支持时）和本地过滤，返回的未知年份保留并计数；源端可能不返回缺日期文献，见 `year_filter`。S2 主题搜索发送 `year` 范围，作者作品发送 `publicationDateOrYear` 范围，两者均再本地复筛；OpenAlex/Crossref 使用各自的服务端日期过滤。
+`search`、`author --author-id` 和 `author --from-paper` 支持 `--year-from 2024 --year-to 2025`；`search` 支持 `--sort relevance|cited|date` 上游召回排序；`author --author-id` 与 `author --from-paper` 支持 `--topic KEYWORD` 课题方向过滤与 `--sort cited|date` 排序；`related` 不支持年份参数，需在关系结果上另做筛选并保留阶段记录。`--limit` 是每源候选预算（1–20），跨源去重后全部保存，三源最多 60 条；保留源序，不宣称跨库相关性已统一排序。作者单源作品和 `oa` 输入处理同样受该预算约束。年份需为 1000–9999，起始年不得晚于结束年；参数校验在请求前完成。已知年份在源端（支持时）和本地过滤，返回的未知年份保留并计数；源端可能不返回缺日期文献，见 `year_filter`。S2 主题搜索发送 `year` 范围，作者作品发送 `publicationDateOrYear` 范围，两者均再本地复筛；OpenAlex/Crossref 使用各自的服务端日期过滤。
 
 `author QUERY` 只产生候选；`author --author-id ID` 查询已核对作者的作品，不自动选择同名作者。`author --from-paper ID [NAME]` 先在种子论文作者列表里锚定稳定 ID，再拉取作品；仅在姓名唯一匹配时获取作品；不匹配时该来源记为 `not_found`，有多个匹配时保留歧义与全部作者候选，待核对 ID 后继续。`related` 按关系区分接口，不将普通关键词补搜冒充推荐。`oa` 只定位与记录访问状态，不代表已下载。
 
@@ -144,4 +144,4 @@ stdout 输出结构化 JSON，网络错误保留为独立状态。凭证从环�
 python scripts/fetch_pdf.py "https://publisher.example/article.pdf" --doi "10.xxxx/real-doi" --title "Exact paper title" --out "/path/to/work/runs/pdf"
 ```
 
-示例网址与 DOI 是占位符，实际使用从已核对的 OA 位置取得的真实 URL。输出 `paper.pdf`、`acquisition.json`，记录最终 URL、SHA-256、格式检查和身份状态。可选 PyMuPDF 可做首屏题名区的完整 DOI/标题文字层匹配；身份待核对时继续尝试显式 `--fallback-url`，全部未匹配则保留首个有效 PDF 并标记 `needs_review`。缺依赖时仍保存 PDF，并明确身份未核验。需要下载附件的任务逐项核对，未实现自动 SI 全量发现。
+示例网址与 DOI 是占位符，实际使用从已核对的 OA 位置取得的真实 URL。输出 `paper.pdf`、`acquisition.json`，记录最终 URL、SHA-256、格式检查和身份状态。当遇到出版商 HTTP `403`/`429`/`502`/`503` 或代理异常时，会自动绕过系统代理尝试直连重试（`direct_no_proxy_fallback: true`）。支持 `--check-local /path/to/file.pdf` 对本地浏览器已下载 PDF 执行同样的结构与首屏身份核对。可选 PyMuPDF 可做首屏题名区的完整 DOI/标题文字层匹配；身份待核对时继续尝试显式 `--fallback-url`，全部未匹配则保留首个有效 PDF 并标记 `needs_review`。缺依赖时仍保存 PDF，并明确身份未核验。需要下载附件的任务逐项核对，未实现自动 SI 全量发现。

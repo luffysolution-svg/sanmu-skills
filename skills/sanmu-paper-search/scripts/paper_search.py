@@ -159,6 +159,7 @@ def parser():
         if name == "search":
             cmd.add_argument("--year-from", type=int)
             cmd.add_argument("--year-to", type=int)
+            cmd.add_argument("--sort", choices=("relevance", "cited", "date"), default="relevance")
         if name == "lookup":
             cmd.add_argument("--title", help="Optional exact normalized title validation; mismatches retained as errors")
         if name == "related":
@@ -170,6 +171,8 @@ def parser():
     cmd.add_argument("--from-paper", help="Seed DOI/stable ID; resolve author IDs from its author list")
     cmd.add_argument("--year-from", type=int, help="Paper years; requires --author-id or --from-paper")
     cmd.add_argument("--year-to", type=int, help="Paper years; requires --author-id or --from-paper")
+    cmd.add_argument("--topic", help="Optional topic keyword filter for author works")
+    cmd.add_argument("--sort", choices=("cited", "date"), help="Optional sort order for author works (cited or date)")
     cmd.add_argument("--limit", type=bounded, default=10, help="Per-source candidate budget (1..20); keep all deduplicated results")
     cmd.add_argument("--with-ranks", action="store_true", help="Enrich papers with easyScholar journal ranks when configured")
     cmd.add_argument("--out", required=True)
@@ -318,11 +321,21 @@ def execute(args, client):
     out = prepare_out(args.out)
     papers, statuses, extra = [], {}, {}
     if command in ("search", "lookup", "related"):
-        params = ([args.query, args.limit, year_from, year_to] if command == "search" else [args.id] if command == "lookup"
-                  else [args.id, args.relation, args.limit])
+        search_sort = getattr(args, "sort", "relevance") or "relevance"
+        params = (
+            [args.query, args.limit, year_from, year_to, search_sort]
+            if command == "search" and search_sort != "relevance"
+            else [args.query, args.limit, year_from, year_to]
+            if command == "search"
+            else [args.id]
+            if command == "lookup"
+            else [args.id, args.relation, args.limit]
+        )
         papers, statuses = collect(adapter, args.sources, command, *params)
         query = {"text": args.query} if command == "search" else {"id": args.id}
         query.update(limit=args.limit, sources=args.sources)
+        if command == "search":
+            query["sort"] = search_sort
         if command == "search" and "crossref" in args.sources:
             query["source_query_strategy"] = {"crossref": "title_only"}
             statuses["crossref"]["query_strategy"] = "title_only"
@@ -344,7 +357,13 @@ def execute(args, client):
                     for provenance in paper["provenance"]:
                         statuses[provenance["provider"]]["title_verified"] = True
     elif command == "author":
+        author_topic = (getattr(args, "topic", None) or "").strip() or None
+        author_sort = getattr(args, "sort", None) or None
         query = {"text": args.query, "author_id": args.author_id, "provider": args.provider, "limit": args.limit}
+        if author_topic:
+            query["topic"] = author_topic
+        if author_sort:
+            query["sort"] = author_sort
         extra["author_candidates"] = []
         extra["author_mode"] = "papers" if args.author_id else "candidates"
         if args.from_paper:
@@ -407,7 +426,14 @@ def execute(args, client):
             pass  # Seed paper authored list or name mismatch; nothing further to fetch.
         else:
             try:
-                papers, status, candidates = adapter.authors(args.provider, args.query, args.author_id, args.limit, year_from, year_to)
+                if author_topic or author_sort:
+                    papers, status, candidates = adapter.authors(
+                        args.provider, args.query, args.author_id, args.limit, year_from, year_to, author_topic, author_sort
+                    )
+                else:
+                    papers, status, candidates = adapter.authors(
+                        args.provider, args.query, args.author_id, args.limit, year_from, year_to
+                    )
                 statuses[args.provider] = status
                 if not args.from_paper:
                     extra["author_candidates"] = candidates

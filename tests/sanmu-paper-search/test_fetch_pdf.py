@@ -103,6 +103,47 @@ class PdfTests(unittest.TestCase):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 fetch_pdf.fetch(url, Path(tempfile.gettempdir()) / "unused-pdf-output")
 
+    def test_403_and_proxy_error_fallback_to_direct_no_proxy_and_local_check(self):
+        from email.message import Message
+        import io
+        import json
+        from urllib.error import HTTPError, URLError
+
+        class Response:
+            def __init__(self, payload, url):
+                self.payload, self.url = payload, url
+                self.headers = Message()
+                self.headers["Content-Type"] = "application/pdf"
+            def read(self, size): return self.payload[:size]
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+
+        class DirectOpener:
+            def __init__(self, payload):
+                self.payload = payload
+                self.calls = 0
+            def open(self, req, timeout=40):
+                self.calls += 1
+                return Response(self.payload, req.full_url)
+
+        pdf_bytes = b"%PDF-1.7\n10.1002/adma.202313513 Single Atom Ni Photocatalysis\n%%EOF"
+        with tempfile.TemporaryDirectory() as tmp:
+            direct = DirectOpener(pdf_bytes)
+            def proxy_blocked(req, timeout=40):
+                raise HTTPError(req.full_url, 403, "Forbidden by Cloudflare proxy", {}, io.BytesIO(b"<html>403</html>"))
+            with patch.object(fetch_pdf, "urlopen", side_effect=proxy_blocked), \
+                    patch.object(fetch_pdf, "build_opener", return_value=direct), \
+                    patch.object(fetch_pdf, "identity_check", return_value={"status": "matched", "doi_found": True, "title_found": True}):
+                out_dir = Path(tmp) / "run-403"
+                record = fetch_pdf.fetch("https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/adma.202313513", out_dir, doi="10.1002/adma.202313513")
+                self.assertEqual(direct.calls, 1)
+                self.assertTrue(record.get("direct_no_proxy_fallback"))
+                acq_json = json.loads((out_dir / "acquisition.json").read_text(encoding="utf-8"))
+                self.assertTrue(acq_json.get("direct_no_proxy_fallback"))
+                local_res = fetch_pdf.check_local_pdf(out_dir / "paper.pdf", doi="10.1002/adma.202313513")
+                self.assertTrue(local_res["ok"])
+                self.assertTrue(local_res["format_checks"]["header"])
+
 
 if __name__ == "__main__":
     unittest.main()

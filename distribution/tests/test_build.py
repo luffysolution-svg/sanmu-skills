@@ -110,6 +110,9 @@ class DistributionTests(unittest.TestCase):
                         self.assertFalse(any(Path(name).name == "LICENSE" for name in names))
                     if is_zcode:
                         self.assertIn(".zcode-plugin/plugin.json", names)
+                        self.assertIn(".claude-plugin/plugin.json", names)
+                        self.assertIn("package.json", names)
+                        self.assertIn("cordis.patch.yml", names)
                         self.assertIn("assets/panel.html", names)
                         self.assertIn("scripts/mcp-server.mjs", names)
                         self.assertIn("scripts/paper_search.py", names)

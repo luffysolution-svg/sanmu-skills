@@ -29,7 +29,13 @@ Object.assign(process.env, env);
 const originalFetch = globalThis.fetch;
 let fetchImpl = async () => { throw new Error("offline fixture"); };
 globalThis.fetch = (...args) => fetchImpl(...args);
-const { handleRequest } = await import(pathToFileURL(serverPath).href);
+const {
+  handleRequest,
+  resolveEnvPath,
+  readUserConfigFromEnv,
+  resolveHostPaths,
+  buildRelationshipGraph
+} = await import(pathToFileURL(serverPath).href);
 let id = 1;
 const call = async (name, args = {}) => (await handleRequest({ jsonrpc: "2.0", id: id++, method: "tools/call", params: { name, arguments: args } })).result;
 const json = (path, value) => writeFileSync(path, JSON.stringify(value));
@@ -344,5 +350,229 @@ test("MCP offline regressions", async (t) => {
     assert.equal(undone.isError, undefined);
     assert.equal(deleted, 1);
     assert.equal(JSON.parse(readFileSync(join(data, "state.json"), "utf8")).zoteroImports.ABCD2345, undefined);
+  });
+
+  await t.test("v1.7.0 Req 0: cross-harness env resolution ignores unexpanded ${...} templates and falls back across ZCode/DSH/Claude", async () => {
+    assert.equal(resolveEnvPath(""), "");
+    assert.equal(resolveEnvPath("  "), "");
+    assert.equal(resolveEnvPath("${ZCODE_PROJECT_DIR}"), "");
+    assert.equal(resolveEnvPath("prefix/${user_config.politeEmail}"), "");
+    assert.equal(resolveEnvPath("F:\\knowledge-base"), "F:\\knowledge-base");
+    assert.equal(readUserConfigFromEnv("USER_CONFIG_POLITE_EMAIL", { USER_CONFIG_POLITE_EMAIL: "${user_config.politeEmail}" }), "");
+    assert.equal(readUserConfigFromEnv("USER_CONFIG_POLITE_EMAIL", { USER_CONFIG_POLITE_EMAIL: "real@scau.edu.cn" }), "real@scau.edu.cn");
+
+    const dshPaths = resolveHostPaths({
+      ZCODE_WORKSPACE_ROOT: "${ZCODE_PROJECT_DIR}",
+      DSH_WORKSPACE_ROOT: "/tmp/dsh-workspace",
+      ZCODE_PLUGIN_DATA: "${ZCODE_PLUGIN_DATA}",
+      DSH_HOME: "/tmp/dsh-home"
+    });
+    assert.equal(dshPaths.workspaceRoot, "/tmp/dsh-workspace");
+    assert.equal(dshPaths.pluginData, join("/tmp/dsh-home", "plugin-data", "sanmu-paper-search"));
+
+    const claudePaths = resolveHostPaths({
+      ZCODE_PROJECT_DIR: "${ZCODE_PROJECT_DIR}",
+      CLAUDE_PROJECT_DIR: "/tmp/claude-proj",
+      CLAUDE_PLUGIN_DATA: "/tmp/claude-data"
+    });
+    assert.equal(claudePaths.workspaceRoot, "/tmp/claude-proj");
+    assert.equal(claudePaths.pluginData, "/tmp/claude-data");
+  });
+
+  await t.test("v1.7.0 Req 1 & 2: search_papers --sort and search_author --topic/--sort reach Python CLI", async () => {
+    reset();
+    const sRes = await call("search_papers", { query: "single atom Ni", sort: "cited", limit: 8 });
+    assert.equal(sRes.isError, undefined);
+    const sArgs = sRes.structuredContent.activeRun.run.query.args;
+    assert.equal(sArgs[sArgs.indexOf("--sort") + 1], "cited");
+
+    const aRes = await call("search_author", {
+      provider: "openalex",
+      authorId: "A5047449616",
+      topic: "photocatalytic",
+      sort: "cited",
+      limit: 6
+    });
+    assert.equal(aRes.isError, undefined);
+    const aArgs = aRes.structuredContent.activeRun.run.query.args;
+    assert.equal(aArgs[aArgs.indexOf("--topic") + 1], "photocatalytic");
+    assert.equal(aArgs[aArgs.indexOf("--sort") + 1], "cited");
+  });
+
+  await t.test("v1.7.0 Req 3: claim_browser_pdf claims matched DOI/title PDF and unique recent fallback PDF", async () => {
+    reset();
+    const dlDir = join(root, "mock-downloads");
+    const saveDir = join(workspace, "claimed-pdfs");
+    mkdirSync(dlDir, { recursive: true });
+    process.env.SANMU_BROWSER_DOWNLOAD_DIR = dlDir;
+    try {
+      // 1. Exact DOI/title match in first-page text
+      const matchedFile = join(dlDir, "browser-download-1.pdf");
+      writeFileSync(
+        matchedFile,
+        "%PDF-1.7\nSingle Atom Ni Photocatalytic Hydrogen Evolution\nDOI: 10.1002/adma.202313513\n%%EOF"
+      );
+      const claimRes = await call("resolve_oa_and_pdf", {
+        action: "claim_browser_pdf",
+        doi: "10.1002/adma.202313513",
+        title: "Single Atom Ni Photocatalytic Hydrogen Evolution",
+        year: 2024,
+        paperKey: "doi:10.1002/adma.202313513",
+        saveDir
+      });
+      assert.equal(claimRes.isError, undefined);
+      assert.equal(claimRes.structuredContent.lastDownload.identity_status, "matched");
+      assert.ok(existsSync(claimRes.structuredContent.lastDownload.pdfPath));
+      assert.match(claimRes.structuredContent.lastDownload.pdfPath, /2024-Single Atom Ni Photocatalytic Hydrogen Evolution-02313513\.pdf$/);
+      const savedState = JSON.parse(readFileSync(join(data, "state.json"), "utf8"));
+      assert.equal(savedState.evidenceMap["doi:10.1002/adma.202313513"].stage, "identity_checked");
+
+      // 2. Unique recent (<3 min) scanned/unreadable PDF fallback -> needs_review & file_obtained
+      rmSync(dlDir, { recursive: true, force: true });
+      mkdirSync(dlDir, { recursive: true });
+      const fallbackSaveDir = join(workspace, "claimed-fallback");
+      writeFileSync(join(dlDir, "scanned-only.pdf"), "%PDF-1.7\n<binary-image-stream-only>\n%%EOF");
+      const rpcFallback = await handleRequest({
+        jsonrpc: "2.0",
+        id: id++,
+        method: "_claim_browser_pdf",
+        params: {
+          doi: "10.1021/acscatal.4c00001",
+          title: "Scanned Paper Title",
+          year: 2025,
+          paperKey: "doi:10.1021/acscatal.4c00001",
+          saveDir: fallbackSaveDir
+        }
+      });
+      assert.equal(rpcFallback.result.isError, undefined);
+      assert.equal(rpcFallback.result.structuredContent.lastDownload.identity_status, "needs_review");
+      const savedState2 = JSON.parse(readFileSync(join(data, "state.json"), "utf8"));
+      assert.equal(savedState2.evidenceMap["doi:10.1021/acscatal.4c00001"].stage, "file_obtained");
+    } finally {
+      delete process.env.SANMU_BROWSER_DOWNLOAD_DIR;
+    }
+  });
+
+  await t.test("v1.7.0 Req 5: user_tags and user_note persist, sync to Zotero parent tags + child note, and clean up on undo", async () => {
+    reset();
+    const targetPaper = paper("ni-sac", "Single Atom Ni/NiOx on g-C3N4");
+    await call("manage_basket", { action: "add", paper: targetPaper });
+    const noteRes = await handleRequest({
+      jsonrpc: "2.0",
+      id: id++,
+      method: "_set_paper_note_tags",
+      params: {
+        paperKey: "doi:10.1234/ni-sac",
+        user_tags: ["单原子Ni", "光催化析氢", "单原子Ni"],
+        user_note: "含 XPS Ni 2p 分峰拟合参数与 AQY 波长依赖表"
+      }
+    });
+    assert.equal(noteRes.result.isError, undefined);
+    const basketItem = noteRes.result.structuredContent.basket[0];
+    assert.deepEqual(basketItem.user_tags, ["单原子Ni", "光催化析氢"]);
+    assert.equal(basketItem.user_note, "含 XPS Ni 2p 分峰拟合参数与 AQY 波长依赖表");
+    const rawState = JSON.parse(readFileSync(join(data, "state.json"), "utf8"));
+    assert.deepEqual(rawState.evidence["doi:10.1234/ni-sac"].user_tags, ["单原子Ni", "光催化析氢"]);
+    assert.equal(rawState.evidence["doi:10.1234/ni-sac"].user_note, "含 XPS Ni 2p 分峰拟合参数与 AQY 波长依赖表");
+
+    let parentPayload = null;
+    let notePayload = null;
+    const deletedKeys = [];
+    const parentRec = () => ({
+      key: "PRNT2345",
+      version: 11,
+      data: {
+        itemType: "journalArticle",
+        title: targetPaper.title,
+        DOI: "10.1234/ni-sac",
+        tags: parentPayload?.tags || [{ tag: "sanmu-paper-search" }, { tag: "单原子Ni" }, { tag: "光催化析氢" }]
+      }
+    });
+    const childNoteRec = () => ({
+      key: "NOTE5678",
+      version: 12,
+      data: {
+        itemType: "note",
+        parentItem: "PRNT2345",
+        note: "<p>含 XPS Ni 2p 分峰拟合参数与 AQY 波长依赖表</p>",
+        tags: [{ tag: "单原子Ni" }, { tag: "光催化析氢" }]
+      }
+    });
+    fetchImpl = async (raw, options = {}) => {
+      const url = new URL(raw);
+      const response = (obj, status = 200) =>
+        new Response(JSON.stringify(obj), {
+          status,
+          headers: { "Zotero-Server-ID": "fixture-server", "Zotero-API-Version": "3" }
+        });
+      if (url.pathname === "/api/") return response({});
+      if (url.pathname.endsWith("/collections")) return response([]);
+      if (url.pathname === "/api/local/authorize") return response({ key: "FAKE_ZOTERO_WRITE_KEY", remember: true });
+      if (url.pathname.endsWith("/PRNT2345/children")) return response([childNoteRec()]);
+      if (options.method === "DELETE") {
+        deletedKeys.push(url.pathname.split("/").pop());
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname.endsWith("/PRNT2345")) return response(parentRec());
+      if (url.pathname.endsWith("/NOTE5678")) return response(childNoteRec());
+      if (options.method === "POST" && url.pathname.endsWith("/items")) {
+        const bodyArr = JSON.parse(options.body);
+        if (bodyArr[0].itemType === "note") {
+          notePayload = bodyArr[0];
+          return response({ successful: { "0": childNoteRec() } });
+        }
+        parentPayload = bodyArr[0];
+        return response({ successful: { "0": parentRec() } });
+      }
+      return response(parentPayload ? [parentRec()] : []);
+    };
+
+    const zSave = await call("manage_basket", { action: "save_to_zotero", paper: basketItem });
+    assert.equal(zSave.isError, undefined);
+    assert.ok(parentPayload.tags.some((t) => t.tag === "单原子Ni"));
+    assert.ok(parentPayload.tags.some((t) => t.tag === "光催化析氢"));
+    assert.ok(notePayload);
+    assert.equal(notePayload.parentItem, "PRNT2345");
+    assert.match(notePayload.note, /XPS Ni 2p/);
+    assert.deepEqual(zSave.structuredContent.zoteroSaveResult.createdZoteroItems, ["PRNT2345", "NOTE5678"]);
+
+    const zUndo = await call("manage_basket", { action: "undo_zotero_save", zoteroItemKey: "PRNT2345" });
+    assert.equal(zUndo.isError, undefined);
+    assert.deepEqual(deletedKeys, ["NOTE5678", "PRNT2345"]);
+  });
+
+  await t.test("v1.7.0 Req 6: buildRelationshipGraph identifies Co-cited Hubs and Bridge Papers", async () => {
+    reset();
+    const hubPaper = {
+      paper_key: "doi:10.1000/hub",
+      title: "Foundational Co-Cited Hub Paper",
+      year: 2020,
+      citation_count: 800,
+      identifiers: { doi: ["10.1000/hub"] },
+      authors: [{ name: "Hub Author" }],
+      relations: [
+        { type: "references", seed: "10.1000/seed1" },
+        { type: "references", seed: "10.1000/seed2" }
+      ]
+    };
+    const graph = buildRelationshipGraph(
+      {
+        runId: "rel-test",
+        run: { command: "related", query: { id: "10.1000/seed1", relation: "references" } },
+        papers: [hubPaper]
+      },
+      [],
+      [],
+      { evidenceMap: {} },
+      {}
+    );
+    const hubNode = graph.nodes.find((n) => n.id === "doi:10.1000/hub");
+    assert.ok(hubNode);
+    assert.equal(hubNode.inDegree, 2);
+    assert.equal(hubNode.connectedSourcesCount, 2);
+    assert.equal(hubNode.isCoCitedHub, true);
+    assert.equal(hubNode.isBridgeNode, true);
+    assert.equal(graph.counts.coCitedHubs, 1);
+    assert.equal(graph.counts.bridgeNodes, 1);
   });
 });

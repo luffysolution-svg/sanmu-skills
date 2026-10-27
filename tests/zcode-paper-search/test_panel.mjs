@@ -435,3 +435,146 @@ test('graph docked tooltip prevents hover flicker, caches DOM key, and easySchol
   assert.equal(tools(p).at(-1).params.arguments.id, 'GS_AUTH_1');
   answer(p); await flush();
 });
+
+test('v1.7.0 panel features: topic/author sort & topic filter, comprehensive recommendation sort, claim browser PDF, deep-read handoff, basket tag filter, and graph intelligence', async () => {
+  const p = makePanel();
+  await initialize(p);
+
+  // Req 1: Topic search sort dropdown (#qTopicSort) & Comprehensive Recommendation Sort (#paperSortSelect / #selResultSort)
+  set(p, 'qSearch', 'single atom Ni photocatalytic hydrogen');
+  set(p, 'qTopicSort', 'cited');
+  await click(p, 'btnExecSearch');
+  assert.equal(tools(p).at(-1).params.name, 'search_papers');
+  assert.equal(tools(p).at(-1).params.arguments.sort, 'cited');
+  answer(p); await flush();
+
+  const pOrdinary = {
+    ...paper('ord'),
+    index: 1,
+    title: 'Ordinary Hit First In Raw List',
+    year: 2019,
+    citation_count: 3,
+    venue_rank: { is_top_tier: false, if: 2.1, badges: ['📊 化学4区'] }
+  };
+  const pTopCore = {
+    ...paper('top'),
+    index: 4,
+    title: 'Advanced Materials Core Single Atom Ni Paper',
+    year: 2025,
+    citation_count: 185,
+    local_pdf_path: 'F:/个人知识库/00-收件箱-待整理/文献检索/2025-Advanced Materials Core.pdf',
+    epmc_saved_dir: 'F:/个人知识库/00-收件箱-待整理/文献检索/2025-Advanced_EPMC/supplementary',
+    epmc_suppl_files: ['F:/个人知识库/00-收件箱-待整理/文献检索/2025-Advanced_EPMC/supplementary/si.pdf'],
+    user_tags: ['单原子Ni', '光催化析氢'],
+    user_note: '含 XPS Ni 2p 分峰与 AQY 表',
+    venue_rank: { is_top_tier: true, if: 27.4, cas_up: '材料科学1区', jcr: 'Q1', badges: ['🏆 材料科学1区 TOP', 'JCR Q1', 'IF 27.4'], summary: '中科院1区 TOP' }
+  };
+  assert.ok(p.computePaperRecommendScore(pTopCore) > p.computePaperRecommendScore(pOrdinary));
+
+  // Req 2: Author topic filter (#qAuthorTopic) & sort (#qAuthorSort) + candidate works button carry-over
+  set(p, 'qAuthorName', 'Zhi Yang');
+  set(p, 'qAuthorTopic', 'photocatalytic');
+  set(p, 'qAuthorSort', 'cited');
+  await click(p, 'btnExecAuthor');
+  assert.equal(tools(p).at(-1).params.name, 'search_author');
+  assert.equal(tools(p).at(-1).params.arguments.topic, 'photocatalytic');
+  assert.equal(tools(p).at(-1).params.arguments.sort, 'cited');
+  answer(p, {
+    ...emptyState(),
+    activeRun: {
+      runId: 'auth-cand-run',
+      run: {
+        query: { text: 'Zhi Yang', topic: 'photocatalytic', sort: 'cited' },
+        author_candidates: [{ provider: 'openalex', author_id: 'A5047449616', name: 'Zhi Yang', affiliations: ['ZJU'] }]
+      },
+      papers: []
+    }
+  });
+  await flush();
+  p.document.querySelector('.fetch-author-works-btn').click();
+  await flush();
+  assert.equal(tools(p).at(-1).params.name, 'search_author');
+  assert.equal(tools(p).at(-1).params.arguments.authorId, 'A5047449616');
+  assert.equal(tools(p).at(-1).params.arguments.topic, 'photocatalytic');
+  assert.equal(tools(p).at(-1).params.arguments.sort, 'cited');
+  answer(p); await flush();
+
+  // Populate main run & basket with pOrdinary and pTopCore
+  const pBasket2 = {
+    ...paper('b2'),
+    title: 'DFT Machine Learning Benchmark Paper',
+    user_tags: ['材料AI'],
+    user_note: 'CGCNN 基准对比'
+  };
+  const richState = {
+    ...emptyState(),
+    activeRun: { runId: 'main-170', papers: [pOrdinary, pTopCore] },
+    basket: [pTopCore, pBasket2],
+    graphData: {
+      centerNodeId: 'doi:10.1234/seed1',
+      nodes: [
+        { id: 'doi:10.1234/seed1', paperKey: 'doi:10.1234/seed1', title: 'Seed 1', shortLabel: 'Seed1 (2025)', year: 2025, firstAuthor: 'A', citationCount: 20, role: 'seed', paper: paper('seed1') },
+        { id: 'doi:10.1234/seed2', paperKey: 'doi:10.1234/seed2', title: 'Seed 2', shortLabel: 'Seed2 (2024)', year: 2024, firstAuthor: 'B', citationCount: 30, role: 'seed', paper: paper('seed2') },
+        { id: 'doi:10.1234/top', paperKey: 'doi:10.1234/top', title: pTopCore.title, shortLabel: 'Core (2025)', year: 2025, firstAuthor: 'C', citationCount: 185, role: 'reference', paper: pTopCore }
+      ],
+      edges: [
+        { source: 'doi:10.1234/seed1', target: 'doi:10.1234/top', type: 'cites', label: '引用参考文献' },
+        { source: 'doi:10.1234/seed2', target: 'doi:10.1234/top', type: 'cites', label: '引用参考文献' }
+      ]
+    }
+  };
+  p.updatePanelData(richState);
+
+  // Check #paperSortSelect alias & 'recommended' sort
+  const sortSelect = p.document.getElementById('paperSortSelect');
+  assert.ok(sortSelect);
+  sortSelect.value = 'recommended';
+  sortSelect.dispatchEvent({ type: 'change', target: sortSelect });
+  const mainHtml = p.document.getElementById('mainPapersList').innerHTML;
+  assert.ok(mainHtml.indexOf('Advanced Materials Core Single Atom Ni Paper') < mainHtml.indexOf('Ordinary Hit First In Raw List'));
+
+  // Req 3: Claim browser PDF button on card without local_pdf_path
+  const claimBtn = p.document.querySelector('.claim-browser-pdf-btn');
+  assert.ok(claimBtn);
+  claimBtn.click();
+  await flush();
+  assert.equal(tools(p).at(-1).params.name, 'resolve_oa_and_pdf');
+  assert.equal(tools(p).at(-1).params.arguments.action, 'claim_browser_pdf');
+  answer(p, richState); await flush();
+
+  // Req 4: Deep-read handoff button (.deep-read-handoff-btn) on card with local_pdf_path / epmc_suppl_files
+  const handoffBtn = p.document.querySelector('.deep-read-handoff-btn');
+  assert.ok(handoffBtn);
+  const promptText = p.buildDeepReadHandoffPrompt(pTopCore);
+  assert.match(promptText, /\/sanmu-paper-reader/);
+  assert.match(promptText, /si_probe\.py/);
+  assert.match(promptText, /extract_si_figures\.py/);
+  assert.match(promptText, /2025-Advanced Materials Core\.pdf/);
+  assert.match(promptText, /supplementary\/si\.pdf/);
+  assert.match(promptText, /材料科学1区 TOP/);
+
+  // Req 5: Basket tag filter capsules (#basketTagFilterBar) & inline note/tag editing
+  const tagBar = p.document.getElementById('basketTagFilterBar');
+  assert.ok(!tagBar.classList.contains('hidden'));
+  assert.match(tagBar.innerHTML, /单原子Ni/);
+  assert.match(tagBar.innerHTML, /材料AI/);
+  const aiChip = tagBar.querySelector('.basket-tag-chip[data-tag="材料AI"]');
+  assert.ok(aiChip);
+  aiChip.click();
+  assert.match(p.document.getElementById('basketListContainer').innerHTML, /DFT Machine Learning Benchmark Paper/);
+  assert.ok(!p.document.getElementById('basketListContainer').innerHTML.includes('Advanced Materials Core Single Atom Ni Paper'));
+
+  // Req 6: Graph intelligence (Bridge & Co-cited Hub halos + Top 5 intelligence panel)
+  const coreNode = p.graphSim.nodeById.get('doi:10.1234/top');
+  assert.ok(coreNode);
+  assert.equal(coreNode.inDegree, 2);
+  assert.equal(coreNode.isCoCitedHub, true);
+  assert.equal(coreNode.isBridgeNode, true);
+  assert.match(p.document.getElementById('graphSvg').innerHTML, /桥梁/);
+  assert.match(p.document.getElementById('graphSvg').innerHTML, /共被引×2/);
+  const intelPanel = p.document.getElementById('graphIntelligencePanel');
+  assert.ok(!intelPanel.classList.contains('hidden'));
+  assert.match(intelPanel.innerHTML, /图谱核心情报：共被引基石文献 &amp; 桥梁文献 Top 5/);
+  assert.match(intelPanel.innerHTML, /Advanced Materials Core Single Atom Ni Paper/);
+});
+

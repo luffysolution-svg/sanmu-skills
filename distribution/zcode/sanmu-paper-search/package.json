@@ -1,0 +1,33 @@
+{
+  "name": "sanmu-paper-search",
+  "version": "1.7.0",
+  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI 与 easyScholar 期刊分区/IF 标注，以及 OA PDF / SI 下载与本机 Zotero 双向联动。",
+  "type": "module",
+  "main": "./scripts/mcp-server.mjs",
+  "license": "MIT",
+  "author": "Sanmu (Wu Sen)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luffysolution-svg/sanmu-skills"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "manifestVersion": 1
+  },
+  "files": [
+    ".zcode-plugin",
+    ".claude-plugin",
+    "assets",
+    "commands",
+    "scripts",
+    "skills",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ]
+}

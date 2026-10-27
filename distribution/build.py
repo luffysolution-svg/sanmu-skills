@@ -25,6 +25,9 @@ SKILLHUB_EXCLUDED_FILES = {"LICENSE"}
 ZCODE_SHELL_DIR = "distribution/zcode/sanmu-paper-search"
 ZCODE_SHELL_FILES = (
     ".zcode-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    "package.json",
+    "cordis.patch.yml",
     "assets/panel.html",
     "commands/help.md",
     "scripts/mcp-server.mjs",
@@ -195,9 +198,10 @@ def validate(root=ROOT):
             raise ValueError(f"Missing or invalid ZCode plugin shell file: {ZCODE_SHELL_DIR}/{rel}")
         if f"{ZCODE_SHELL_DIR}/{rel}" not in files:
             raise ValueError(f"ZCode plugin shell file must be tracked in Git: {rel}")
-    zcode_plugin = read_json(zcode_shell_root / ".zcode-plugin/plugin.json")
-    if zcode_plugin.get("name") != "sanmu-paper-search" or zcode_plugin.get("version") != version:
-        raise ValueError("ZCode plugin name/version differs from release manifest")
+    for rel_manifest in (".zcode-plugin/plugin.json", ".claude-plugin/plugin.json", "package.json"):
+        zcode_plugin = read_json(zcode_shell_root / rel_manifest)
+        if zcode_plugin.get("name") != "sanmu-paper-search" or zcode_plugin.get("version") != version:
+            raise ValueError(f"ZCode plugin name/version differs from release manifest: {rel_manifest}")
     server_text = (zcode_shell_root / "scripts/mcp-server.mjs").read_text(encoding="utf-8")
     panel_text = (zcode_shell_root / "assets/panel.html").read_text(encoding="utf-8")
     server_versions = re.findall(r'\bversion:\s*"(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)"', server_text)
