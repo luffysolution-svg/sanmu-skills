@@ -146,6 +146,8 @@ def build(args: argparse.Namespace) -> tuple[int, dict]:
     report_path = contained(research, 'research-report.json')
     # Include code, raw assets and repair bytes in the cache identity; never skip
     # ownership checks because a prior run happened to report success.
+    keep_table_images = bool(getattr(args, 'keep_table_images', True))
+    agent_index = bool(getattr(args, 'agent_index', False))
     fingerprint = {'pdf': preflight['sha256'], 'raw_path': str(item_dir), 'raw': _hash_tree(item_dir),
                    'metadata': fields, 'identity': identity, 'reading_order': args.reading_order,
                    'file': target_file, 'naming': getattr(args, 'naming', 'zotero'),
@@ -153,7 +155,8 @@ def build(args: argparse.Namespace) -> tuple[int, dict]:
                    'auto_repairs': bool(getattr(args, 'auto_repairs', True)),
                    'code': {p.name: sha256_file(p) for p in sorted(SCRIPTS.glob('*.py'))},
                    'math_validator': sha256_file(SCRIPTS / 'validate_math.cjs'),
-                   'keep_table_images': True}
+                   'keep_table_images': keep_table_images,
+                   **({'agent_index': True} if agent_index else {})}
     cache_key = hashlib.sha256(json.dumps(fingerprint, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     previous = json.loads(read_text(report_path)) if safe_path(report_path).is_file() else {}
     cache_hit = previous.get('cache_key') == cache_key and previous.get('automatic_checks') == 'pass' and _outputs_unchanged(publisher)
@@ -173,7 +176,11 @@ def build(args: argparse.Namespace) -> tuple[int, dict]:
         command = [sys.executable, str(SCRIPTS / 'build_markdown.py'), '--raw', str(raw_root),
                    '--out', str(out), '--pdf', str(pdf), '--manifest', str(manifest_path),
                    '--chapters', str(chapters_path), '--metadata-json', str(metadata_path),
-                   '--reading-order', args.reading_order, '--keep-table-images', '--state-dir', str(state)]
+                   '--reading-order', args.reading_order, '--state-dir', str(state)]
+        if keep_table_images:
+            command.append('--keep-table-images')
+        if agent_index:
+            command.append('--agent-index')
         if args.repairs:
             command.extend(['--repairs', str(Path(args.repairs).resolve())])
         elif getattr(args, 'auto_repairs', True):
@@ -224,6 +231,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--repairs', help='Source-verified repairs forwarded unchanged to core')
     parser.add_argument('--auto-repairs', action=argparse.BooleanOptionalAction, default=True,
                         help='Automatically stitch high-confidence multi-panel figures (default enabled)')
+    parser.add_argument('--keep-table-images', action=argparse.BooleanOptionalAction, default=True,
+                        help='Preserve original cropped images alongside parsed Markdown tables (default enabled)')
+    parser.add_argument('--agent-index', action='store_true',
+                        help='Generate agent/ chunk index and page map for RAG retrieval')
     parser.add_argument('--id', help='Stable document ID; required for ambiguous multi-item metadata/OCR roots')
     parser.add_argument('--reading-order', choices=['source', 'geometry'], default='source',
                         help='Default preserves OCR sequence within each physical page')

@@ -3548,17 +3548,31 @@ function formatZoteroBasenameJs(metadata, fallbackStem = "document") {
   if (!rawTitle) {
     rawTitle = String(fallbackStem || "document").trim();
   }
-  const title = rawTitle ? sanitizeDoc2mdTitle(rawTitle, 100) : "";
+  const title = rawTitle ? sanitizeDoc2mdTitle(rawTitle, 68) : "";
   const parts = [firstCreator, year, title].filter(Boolean);
-  if (!parts.length) return sanitizeDoc2mdTitle(fallbackStem || "document", 100);
-  return sanitizeDoc2mdTitle(parts.join(" - "), 180);
+  if (!parts.length) return sanitizeDoc2mdTitle(fallbackStem || "document", 68);
+  return sanitizeDoc2mdTitle(parts.join(" - "), 84);
 }
 
 function isSupplementalFilename(name) {
   const stem = basename(String(name || ""), extname(String(name || ""))).toLowerCase();
-  return ["-si", "_si", ".si", "si.", "supporting", "supplement", "appendix", "mmc1", "补充", "附图"].some((m) =>
-    stem.includes(m)
-  );
+  return [
+    "-si",
+    "_si",
+    ".si",
+    "si.",
+    "supporting",
+    "supplement",
+    "suppl",
+    "supp",
+    "appendix",
+    "mmc1",
+    "moesm",
+    "_esm",
+    "-esm",
+    "补充",
+    "附图"
+  ].some((m) => stem.includes(m));
 }
 
 function inspectLocalDocumentFile(rawPath) {
@@ -3907,8 +3921,10 @@ async function listZoteroPdfItems(input = {}) {
     const readyPdfs = pdfAttachments.filter((a) => a.localPath && existsSync(a.localPath));
     if (onlyWithPdf && readyPdfs.length === 0) continue;
 
-    const mainAtt = readyPdfs.find((a) => a.role === "main") || readyPdfs[0] || null;
-    const siAtt = readyPdfs.find((a) => a !== mainAtt && a.role === "si") || (readyPdfs.length > 1 ? readyPdfs[1] : null);
+    const mainAtt = readyPdfs.find((a) => a.role === "main") || null;
+    const siAtt =
+      readyPdfs.find((a) => a !== mainAtt && a.role === "si") ||
+      (mainAtt && readyPdfs.length > 1 ? readyPdfs.find((a) => a !== mainAtt) : null);
 
     const authors = [];
     for (const c of data.creators || []) {
@@ -4107,7 +4123,8 @@ async function buildLocalNativeRaw(ocrWorkDir, filesSpec, mode = "research") {
     "                        pass",
     "                for b in page.get_text('blocks'):",
     "                    if len(b) >= 7 and b[6] != 0: continue",
-    "                    txt = re.sub(r'[ \\t]+', ' ', str(b[4] or '')).strip()",
+    "                    raw_blk = re.sub(r'[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f]+', ' ', str(b[4] or ''))",
+    "                    txt = re.sub(r'[ \\t]+', ' ', raw_blk).strip()",
     "                    if not txt: continue",
     "                    txt_flat = re.sub(r'\\s*\\n\\s*', ' ', txt).strip()",
     "                    bx = norm_box(b[0], b[1], b[2], b[3], pw, ph)",
@@ -4139,7 +4156,8 @@ async function buildLocalNativeRaw(ocrWorkDir, filesSpec, mode = "research") {
     "                    except Exception:",
     "                        pass",
     "                elif getattr(shape, 'has_text_frame', False) and shape.text_frame.text.strip():",
-    "                    lines = [re.sub(r'[ \\t]+', ' ', ln).strip() for ln in shape.text_frame.text.splitlines() if ln.strip()]",
+    "                    clean_tf = re.sub(r'[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f]+', ' ', shape.text_frame.text)",
+    "                    lines = [re.sub(r'[ \\t]+', ' ', ln).strip() for ln in clean_tf.splitlines() if ln.strip()]",
     "                    if not lines: continue",
     "                    is_title = (shape == getattr(slide.shapes, 'title', None)) or (bx[1] < 160 and len(lines) == 1 and len(lines[0]) <= 60)",
     "                    entry = {'type': 'text', 'text': '\\n'.join(lines), 'page_idx': sno, 'bbox': bx}",
@@ -4203,7 +4221,7 @@ async function autoGenerateBookChapters(pdfPath, manifestPath, outChaptersPath) 
   return res.parsed?.chapters || [];
 }
 
-function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir) {
+function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir, stateSiDir = null) {
   const mdFiles = [];
   let primaryMarkdownPath = null;
   let siMarkdownPath = null;
@@ -4242,6 +4260,9 @@ function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir) {
   if (siOutDir && existsSync(siOutDir)) {
     const siMds = countFilesRec(siOutDir, (n) => n.toLowerCase().endsWith(".md"));
     for (const f of siMds) {
+      const rel = relative(siOutDir, f).replace(/\\/g, "/");
+      if (rel.startsWith("agent/")) continue;
+      mdFiles.push(f);
       if (basename(f) !== "00-目录.md" && !siMarkdownPath) {
         siMarkdownPath = f;
       }
@@ -4249,35 +4270,50 @@ function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir) {
     siImageCount = countFilesRec(join(siOutDir, "images")).length;
   }
 
-  const researchReport = readJsonSafe(join(stateMainDir, "research", "research-report.json"), null);
+  const effectiveStateSiDir = stateSiDir || (jobDir ? join(jobDir, "state-si") : null);
+  const researchReport = stateMainDir ? readJsonSafe(join(stateMainDir, "research", "research-report.json"), null) : null;
+  const siResearchReport = effectiveStateSiDir ? readJsonSafe(join(effectiveStateSiDir, "research", "research-report.json"), null) : null;
   const buildReport = readJsonSafe(join(outDir, "build-report.json"), null);
-  const formulasPath = existsSync(join(stateMainDir, "research", "formulas.json"))
+  const formulasPath = stateMainDir && existsSync(join(stateMainDir, "research", "formulas.json"))
     ? join(stateMainDir, "research", "formulas.json")
     : join(jobDir, "formulas.json");
-  const mathReportPath = existsSync(join(stateMainDir, "research", "math-report.json"))
+  const siFormulasPath = effectiveStateSiDir && existsSync(join(effectiveStateSiDir, "research", "formulas.json"))
+    ? join(effectiveStateSiDir, "research", "formulas.json")
+    : null;
+  const mathReportPath = stateMainDir && existsSync(join(stateMainDir, "research", "math-report.json"))
     ? join(stateMainDir, "research", "math-report.json")
     : join(jobDir, "math-report.json");
+  const siMathReportPath = effectiveStateSiDir && existsSync(join(effectiveStateSiDir, "research", "math-report.json"))
+    ? join(effectiveStateSiDir, "research", "math-report.json")
+    : null;
   const valOutPath = join(jobDir, "validate-output.json");
 
   const formulas = readJsonSafe(formulasPath, []);
+  const siFormulas = siFormulasPath ? readJsonSafe(siFormulasPath, []) : [];
   const mathReport = readJsonSafe(mathReportPath, null);
+  const siMathReport = siMathReportPath ? readJsonSafe(siMathReportPath, null) : null;
   const valOut = readJsonSafe(valOutPath, null);
 
-  const formulaCount = Array.isArray(formulas) ? formulas.length : researchReport?.formula_count ?? 0;
-  const mathErrors =
-    typeof mathReport?.failed === "number"
-      ? mathReport.failed
-      : Array.isArray(mathReport?.failures)
-        ? mathReport.failures.length
+  const mainFormulaCount = Array.isArray(formulas) && formulas.length > 0 ? formulas.length : researchReport?.formula_count ?? 0;
+  const siFormulaCount = Array.isArray(siFormulas) && siFormulas.length > 0 ? siFormulas.length : siResearchReport?.formula_count ?? 0;
+  const formulaCount = mainFormulaCount + siFormulaCount;
+
+  const countMathFailures = (mr) =>
+    typeof mr?.failed === "number"
+      ? mr.failed
+      : Array.isArray(mr?.failures)
+        ? mr.failures.length
         : 0;
-  const mathPassed = researchReport
-    ? researchReport.automatic_checks === "pass" || mathErrors === 0
-    : mathErrors === 0;
-  const outputValidationPassed = researchReport
+  const mathErrors = countMathFailures(mathReport) + countMathFailures(siMathReport);
+  const mathPassed = mathErrors === 0;
+
+  const mainValPassed = researchReport
     ? researchReport.automatic_checks === "pass"
     : valOut
-      ? Boolean(valOut.ok ?? valOut.status === "pass" ?? (!valOut.errors?.length))
+      ? Boolean(valOut.ok ?? (valOut.status === "pass" && !valOut.errors?.length))
       : true;
+  const siValPassed = siResearchReport ? siResearchReport.automatic_checks === "pass" : true;
+  const outputValidationPassed = mainValPassed && siValPassed;
 
   const warnings = [];
   if (buildReport?.review && typeof buildReport.review === "object") {
@@ -4289,9 +4325,38 @@ function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir) {
       }
     }
   }
-  if (Array.isArray(mathReport?.failures)) {
-    for (const f of mathReport.failures.slice(0, 8)) {
-      warnings.push(`公式校验告警 (${f.file || "md"}:${f.line || "?"}): ${f.error || (f.issues || []).join("; ")}`);
+  const collectValidateIssuesFromReport = (rep, tag = "") => {
+    if (!rep || !Array.isArray(rep.commands)) return;
+    for (const cmd of rep.commands) {
+      if (!Array.isArray(cmd?.command) || !cmd.command.some((c) => String(c).includes("validate_output.py"))) continue;
+      if (typeof cmd.stdout === "string" && cmd.stdout.trim().startsWith("{")) {
+        try {
+          const parsedVal = JSON.parse(cmd.stdout.trim());
+          for (const err of (parsedVal.errors || []).slice(0, 8)) {
+            warnings.push(`${tag ? `[${tag}] ` : ""}结构校验错误: ${err}`);
+          }
+          for (const w of (parsedVal.warnings || []).slice(0, 6)) {
+            warnings.push(`${tag ? `[${tag}] ` : ""}结构校验提示: ${w}`);
+          }
+        } catch {}
+      }
+    }
+  };
+  collectValidateIssuesFromReport(researchReport, siResearchReport ? "主文" : "");
+  collectValidateIssuesFromReport(siResearchReport, "SI");
+  if (valOut) {
+    for (const err of (valOut.errors || []).slice(0, 8)) {
+      warnings.push(`结构校验错误: ${err}`);
+    }
+    for (const w of (valOut.warnings || []).slice(0, 6)) {
+      warnings.push(`结构校验提示: ${w}`);
+    }
+  }
+  for (const mr of [mathReport, siMathReport]) {
+    if (Array.isArray(mr?.failures)) {
+      for (const f of mr.failures.slice(0, 8)) {
+        warnings.push(`公式校验告警 (${f.file || "md"}:${f.line || "?"}): ${f.error || (f.issues || []).join("; ")}`);
+      }
     }
   }
 
@@ -4550,6 +4615,8 @@ async function executeDoc2mdJob(jobId, options = {}) {
           rawRootForBuild,
           "--out",
           outDir,
+          "--file",
+          basename(outDir),
           "--state-dir",
           stateMainDir,
           "--reading-order",
@@ -4563,6 +4630,14 @@ async function executeDoc2mdJob(jobId, options = {}) {
         } else {
           a.push("--auto-repairs");
         }
+        if (input.keepTableImages === false) {
+          a.push("--no-keep-table-images");
+        } else {
+          a.push("--keep-table-images");
+        }
+        if (input.agentIndex) {
+          a.push("--agent-index");
+        }
         if (options.repairsJsonPath && existsSync(options.repairsJsonPath)) {
           a.push("--repairs", resolve(options.repairsJsonPath));
         }
@@ -4575,27 +4650,18 @@ async function executeDoc2mdJob(jobId, options = {}) {
         return a;
       };
 
-      let mainRes = await runPython(buildResearchPy, buildMainArgs(true), 300000);
-      if (
-        mainRes.exitCode !== 0 &&
-        metadataJsonPath &&
-        /not corroborated|differ|mismatch/i.test(String(mainRes.stderr || mainRes.stdout || ""))
-      ) {
-        // Fallback without uncorroborated external metadata so custom/cropped PDFs still build cleanly
-        mainRes = await runPython(buildResearchPy, buildMainArgs(false), 300000);
-      }
-      if (mainRes.exitCode !== 0 && !existsSync(join(outDir, "00-目录.md"))) {
-        throw new Error(pythonFailure(mainRes, "科研论文 Markdown 装配失败"));
-      }
-
-      if (siPdf && siOutDir && existsSync(siPdf)) {
-        const siArgs = [
+      const hasSi = Boolean(siPdf && siOutDir && existsSync(siPdf));
+      let siArgs = null;
+      if (hasSi) {
+        siArgs = [
           "--pdf",
           siPdf,
           "--raw",
           rawRootForBuild,
           "--out",
           siOutDir,
+          "--file",
+          basename(siOutDir),
           "--state-dir",
           stateSiDir,
           "--reading-order",
@@ -4611,10 +4677,37 @@ async function executeDoc2mdJob(jobId, options = {}) {
         } else {
           siArgs.push("--auto-repairs");
         }
+        if (input.keepTableImages === false) {
+          siArgs.push("--no-keep-table-images");
+        } else {
+          siArgs.push("--keep-table-images");
+        }
+        if (input.agentIndex) {
+          siArgs.push("--agent-index");
+        }
+        // Build SI first so all #Figure S* / #Table S* anchors exist on disk when main paper runs validate_output.py
         const siRes = await runPython(buildResearchPy, siArgs, 300000);
         if (siRes.exitCode !== 0 && !existsSync(join(siOutDir, "00-目录.md"))) {
           throw new Error(pythonFailure(siRes, "补充材料 (SI) Markdown 装配失败"));
         }
+      }
+
+      let mainRes = await runPython(buildResearchPy, buildMainArgs(true), 300000);
+      if (
+        mainRes.exitCode !== 0 &&
+        metadataJsonPath &&
+        /not corroborated|differ|mismatch/i.test(String(mainRes.stderr || mainRes.stdout || ""))
+      ) {
+        // Fallback without uncorroborated external metadata so custom/cropped PDFs still build cleanly
+        mainRes = await runPython(buildResearchPy, buildMainArgs(false), 300000);
+      }
+      if (mainRes.exitCode !== 0 && !existsSync(join(outDir, "00-目录.md"))) {
+        throw new Error(pythonFailure(mainRes, "科研论文 Markdown 装配失败"));
+      }
+
+      if (hasSi && siArgs) {
+        // Re-run SI validation (cache_hit=true, <0.5s) now that main paper markdown exists on disk
+        await runPython(buildResearchPy, siArgs, 120000);
       }
     } else if (mode === "slides") {
       const slideArgs = [
@@ -4688,7 +4781,7 @@ async function executeDoc2mdJob(jobId, options = {}) {
       await runStandaloneDoc2mdValidators(outDir, jobDir, validateOutputPy, extractFormulasPy, validateMathCjs);
     }
 
-    const stats = collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir);
+    const stats = collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir, stateSiDir);
     const completedJob = saveDoc2mdJob(jobId, {
       ...loadDoc2mdJob(jobId),
       status: "completed",
@@ -4910,14 +5003,15 @@ async function startOrRunDoc2mdJob(input = {}) {
   const fallbackStem = basename(primarySource, extname(primarySource)) || "document";
   const metadata = input.metadata && typeof input.metadata === "object" ? input.metadata : {};
 
-  let folderStem = input.outputFolderName ? sanitizeDoc2mdTitle(input.outputFolderName, 140) : "";
+  const maxSafeStemLen = Math.max(24, Math.min(84, Math.floor((236 - baseSaveDir.length - 16) / 2)));
+  let folderStem = input.outputFolderName ? sanitizeDoc2mdTitle(input.outputFolderName, maxSafeStemLen) : "";
   if (!folderStem) {
     if (mode === "research") {
-      folderStem = formatZoteroBasenameJs(metadata, fallbackStem);
+      folderStem = sanitizeDoc2mdTitle(formatZoteroBasenameJs(metadata, fallbackStem), maxSafeStemLen);
     } else if (mode === "slides") {
-      folderStem = `${sanitizeDoc2mdTitle(metadata.title || fallbackStem, 100)}-课件笔记`;
+      folderStem = `${sanitizeDoc2mdTitle(metadata.title || fallbackStem, Math.max(20, maxSafeStemLen - 6))}-课件笔记`;
     } else {
-      folderStem = `${sanitizeDoc2mdTitle(metadata.title || fallbackStem, 100)}-知识库`;
+      folderStem = `${sanitizeDoc2mdTitle(metadata.title || fallbackStem, Math.max(20, maxSafeStemLen - 5))}-知识库`;
     }
   }
 
@@ -7503,9 +7597,13 @@ const TOOLS = [
     execute: async (input) => {
       const zotRes = await listZoteroPdfItems(input || {});
       const panelState = await getFullPanelState();
+      const itemLines = (zotRes.items || []).map(
+        (it, idx) =>
+          `${idx + 1}. [${it.itemKey}] **${it.title}** (${it.year || "n.d."})${it.doi ? ` | DOI: \`${it.doi}\`` : ""}\n   - 主文 PDF: ${it.mainPdfPath ? `\`${it.mainPdfPath}\`` : "无"}${it.siPdfPath ? `\n   - 补充材料 SI PDF: \`${it.siPdfPath}\`` : ""}`
+      );
       return {
         text: zotRes.zoteroOnline
-          ? `📚 已从本机 Zotero 读取到 ${zotRes.items.length} 条含本地 PDF 的文献条目。`
+          ? `📚 已从本机 Zotero 读取到 ${zotRes.items.length} 条含本地 PDF 的文献条目：\n\n${itemLines.join("\n")}`
           : zotRes.message || "本机 Zotero 未在线。",
         structured: {
           ...panelState,
@@ -7845,7 +7943,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.9.0"
+          version: "1.9.1"
         }
       }
     };

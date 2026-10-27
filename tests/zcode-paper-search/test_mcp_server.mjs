@@ -820,6 +820,8 @@ test("MCP offline regressions", async (t) => {
     assert.ok(existsSync(job.siOutDir));
     assert.ok(job.stats.primaryMarkdownPath && existsSync(job.stats.primaryMarkdownPath));
     assert.equal(job.stats.mathPassed, true);
+    assert.equal(job.stats.outputValidationPassed, true);
+    assert.equal(job.stats.markdownCount, 4);
 
     const mainMdText = readFileSync(job.stats.primaryMarkdownPath, "utf8");
     assert.match(mainMdText, /doi:\s*10\.1002\/adma\.202500001/i);

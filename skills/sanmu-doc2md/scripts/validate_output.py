@@ -52,6 +52,7 @@ LEAK_PATTERNS = [
     (r'\.ocr[-_]work', '临时工作目录路径'),
     (r'疑似(笔误|错误)', '编辑注释残留'),
     (r'\ufffd', '编码替换字符'),
+    (r'[\x00-\x08\x0e-\x1f]', '非法二进制/控制字符残留'),
     (r'The Ground Truth\b', '模型推理/评测说明泄漏'),
     (r'According to Rule\b', '模型系统提示词泄漏'),
     (r'provided OCR content\b', '模型提示词说明泄漏'),

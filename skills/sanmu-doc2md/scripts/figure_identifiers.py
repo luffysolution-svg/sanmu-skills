@@ -8,8 +8,8 @@ import unicodedata
 LABEL_PATTERN = re.compile(
     r'(?<![A-Za-z])(?P<extended>Extended\s+Data\s+)?(?P<suppword>Supplement(?:al|ary)\s+)?'
     r'(?P<label>Figure|Fig\.?|Table|Scheme|Note|附图|附表|图|表|方案)\s*'
-    r'(?P<supp>S\s*)?(?P<number>\d+(?:\s*[.\-－–—．]\s*\d+)*)'
-    r'(?![A-Za-z0-9_]|\s*[.\-－–—．]\s*\d)', re.I)
+    r'(?P<supp>S\s*)?(?P<number>\d+(?:(?:\.\d+|\s*[\-－–—．]\s*\d+)(?![A-Za-z0-9_]))*)'
+    r'(?![A-Za-z0-9_]|(?:\.\d+|\s*[\-－–—．]\s*\d+)(?![A-Za-z0-9_]))', re.I)
 
 
 @dataclass(frozen=True)

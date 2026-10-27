@@ -1,6 +1,6 @@
 # 三木文献检索 (sanmu-paper-search) ZCode 插件
 
-在 ZCode / DeepSeek Harness (`dsh`) / Claude Code 对话侧边栏与 Agent 中使用 **三木文献检索与文档解析 (`sanmu-paper-search` v1.9.0)**：
+在 ZCode / DeepSeek Harness (`dsh`) / Claude Code 对话侧边栏与 Agent 中使用 **三木文献检索与文档解析 (`sanmu-paper-search` v1.9.1)**：
 
 ## 核心特性
 

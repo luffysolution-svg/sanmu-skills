@@ -79,6 +79,37 @@ def clean_document_link(value):
     return value.removesuffix('.md')
 
 
+def ensure_supplemental_anchors(text: str) -> str:
+    """Ensure every supplemental Figure/Table/Scheme mentioned in SI text has a ## heading anchor."""
+    existing = {m.group(1).strip() for m in re.finditer(r'^#{2,6}\s+(.+)$', text, re.M)}
+    blocks = text.split('\n\n')
+    out_blocks = []
+    in_fence = False
+    for blk in blocks:
+        stripped = blk.lstrip()
+        if stripped.startswith(('```', '~~~')):
+            in_fence = not in_fence
+            out_blocks.append(blk)
+            continue
+        if in_fence or stripped.startswith(('>', '![')):
+            out_blocks.append(blk)
+            continue
+        if stripped.startswith('# '):
+            out_blocks.append(blk)
+            continue
+        new_headings = []
+        for match in LABEL_PATTERN.finditer(blk):
+            ident = identifier_from_match(match)
+            if ident.namespace == 'supplemental' and ident.kind in ('Figure', 'Table', 'Scheme'):
+                if ident.heading not in existing:
+                    existing.add(ident.heading)
+                    new_headings.append(f'## {ident.heading}')
+        if new_headings:
+            out_blocks.extend(new_headings)
+        out_blocks.append(blk)
+    return '\n\n'.join(out_blocks)
+
+
 def prepare_research_markdown(text, metadata):
     """Run all research transforms in staging, before Publisher hashes bytes."""
     if metadata.get('has_supplement'):
@@ -87,6 +118,7 @@ def prepare_research_markdown(text, metadata):
         text = text.rstrip() + ('\n\n## 补充材料 (Supporting Information)\n\n'
                                f'- 详见本文补充材料与附图：[[{name}]]\n')
     if metadata.get('supplement_to'):
+        text = ensure_supplemental_anchors(text)
         text = inject_supplement_banner(text, clean_document_link(metadata['supplement_to']))
     return text
 

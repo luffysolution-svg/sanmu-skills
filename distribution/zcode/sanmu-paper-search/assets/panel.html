@@ -863,7 +863,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.9.0</span>
+        <span class="brand-sub">v1.9.1</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -1886,7 +1886,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.9.0" },
+              appInfo: { name: "sanmu-paper-search", version: "1.9.1" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -6870,8 +6870,8 @@
             }
           }
           const yr = meta.year || (String(meta.date || "").match(/\b(19|20)\d{2}\b/)?.[0] || "");
-          const titleClean = String(meta.title || rawStem).replace(/:/g, " - ").replace(/[\\/*?"<>|]+/g, "_").slice(0, 90);
-          return [creator, yr, titleClean].filter(Boolean).join(" - ");
+          const titleClean = String(meta.title || rawStem).replace(/:/g, " - ").replace(/[\\/*?"<>|]+/g, "_").slice(0, 68).replace(/[ .\-_]+$/, "");
+          return [creator, yr, titleClean].filter(Boolean).join(" - ").slice(0, 84).replace(/[ .\-_]+$/, "");
         }
         return rawStem;
       }
@@ -7002,8 +7002,9 @@
         if (modeSel) modeSel.value = "research";
         const mainInput = document.getElementById("doc2mdMainFileInput");
         const siInput = document.getElementById("doc2mdSiFileInput");
-        if (mainInput && zItem.mainPdfPath) mainInput.value = zItem.mainPdfPath;
-        if (siInput) siInput.value = zItem.siPdfPath || "";
+        const onlySi = !zItem.mainPdfPath && zItem.siPdfPath;
+        if (mainInput) mainInput.value = zItem.mainPdfPath || zItem.siPdfPath || "";
+        if (siInput) siInput.value = onlySi ? "" : zItem.siPdfPath || "";
         state.doc2mdBoundZoteroKey = zItem.itemKey || null;
         state.doc2mdBoundPaperKey = zItem.doi ? `doi:${String(zItem.doi).toLowerCase()}` : null;
         state.doc2mdBoundMeta = zItem.metadata || {
@@ -7018,7 +7019,9 @@
         renderDoc2mdBoundMetaBar();
         updateDoc2mdFormVisibility();
         showBanner(
-          `📚 已从 Zotero 选入《${(zItem.title || "").slice(0, 38)}》（含主文 PDF${zItem.siPdfPath ? " + SI 附件" : ""}），可直接点击开始解析！`,
+          onlySi
+            ? `📚 已从 Zotero 选入《${(zItem.title || "").slice(0, 38)}》（该条目本地仅有 SI 附件，已填入主文档框）`
+            : `📚 已从 Zotero 选入《${(zItem.title || "").slice(0, 38)}》（含主文 PDF${zItem.siPdfPath ? " + SI 附件" : ""}），可直接点击开始解析！`,
           "success"
         );
       }
@@ -7186,7 +7189,8 @@
                         <span class="pill ok static">📄 Markdown ${esc(st.markdownCount ?? 1)} 份</span>
                         <span class="pill info static">🖼 提取图片 ${esc(st.totalImageCount ?? 0)} 张</span>
                         <span class="pill ${st.mathPassed !== false ? "ok" : "warn"} static">📐 公式 ${esc(st.formulaCount ?? 0)} 处 (${st.mathPassed !== false ? "KaTeX通过" : `告警×${st.mathErrors || 1}`})</span>
-                        ${warnCount > 0 ? `<span class="pill warn static">⚠ 待复核项×${warnCount}</span>` : `<span class="pill ok static">✓ 0 警告</span>`}
+                        ${st.outputValidationPassed === false ? `<span class="pill warn static">⚠ 结构/双链校验未过</span>` : ""}
+                        ${warnCount > 0 ? `<span class="pill warn static">⚠ 待复核项×${warnCount}</span>` : st.outputValidationPassed !== false ? `<span class="pill ok static">✓ 0 警告</span>` : ""}
                         ${j.previewUrl ? `<span class="pill purple static">🌐 预览运行中: ${esc(j.previewUrl)}</span>` : ""}
                       </div>`
                     : ""
