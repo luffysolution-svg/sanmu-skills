@@ -502,6 +502,31 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(len(papers), 2)
             self.assertEqual([p["citation_count"] for p in papers], [180, 30])
 
+    def test_author_s2_sorts_the_fetched_page_before_applying_output_limit(self):
+        def opener(request, timeout):
+            return Response({"data": [
+                s2(1, title="Single atom low impact", citationCount=2, year=2020),
+                s2(2, title="Single atom highly cited", citationCount=500, year=2025),
+            ]})
+        adapter = Providers(Client({}, opener, lambda _: None))
+        papers, status, _ = adapter.authors("semantic-scholar", None, "12345", 1,
+                                           topic="single atom", sort="cited")
+        self.assertEqual([p["citation_count"] for p in papers], [500])
+        self.assertEqual(status["fetched"], 1)
+        self.assertTrue(status["truncated"])
+        self.assertEqual(status.get("sort_scope"), "retrieved_candidates")
+
+    def test_s2_date_sort_uses_year_when_exact_publication_date_is_missing(self):
+        def opener(request, timeout):
+            return Response({"data": [
+                s2(1, year=2020, publicationDate="2020-12-01"),
+                s2(2, year=2025, publicationDate=None),
+            ], "total": 2})
+        adapter = Providers(Client({}, opener, lambda _: None))
+        papers, status = adapter.search("semantic-scholar", "hydrogen", 2, sort="date")
+        self.assertEqual([p["year"] for p in papers], [2025, 2020])
+        self.assertEqual(status.get("sort_scope"), "retrieved_candidates")
+
 
 if __name__ == "__main__":
     unittest.main()

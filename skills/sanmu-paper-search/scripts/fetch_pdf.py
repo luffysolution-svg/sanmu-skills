@@ -46,9 +46,10 @@ def assess_identity_text(text, doi=None, title=None):
     normalize_doi = lambda s: re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", s.strip(), flags=re.I).casefold().rstrip(".,;:)]>")
     observed = {normalize_doi(s) for s in re.findall(r"10\.\d{4,9}/[^\s<>\"']+", heading, flags=re.I)}
     doi_found = bool(doi and normalize_doi(doi) in observed)
+    has_conflicting_doi = bool(doi and observed and not doi_found)
     title_found = bool(title and clean(title) and clean(title) in clean(heading))
     matched = (doi_found if doi else title_found) and (title_found if title else True)
-    return {"status": "matched" if matched else "needs_review", "method": "first_page_opening_text", "doi_found": doi_found, "title_found": title_found, "scope": "identity_hint_only; not_full_content_or_version_verification"}
+    return {"status": "matched" if matched else "needs_review", "method": "first_page_opening_text", "doi_found": doi_found, "title_found": title_found, "has_conflicting_doi": has_conflicting_doi, "scope": "identity_hint_only; not_full_content_or_version_verification"}
 
 
 def identity_check(path, doi=None, title=None):

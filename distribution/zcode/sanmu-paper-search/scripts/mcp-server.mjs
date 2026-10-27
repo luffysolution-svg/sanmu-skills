@@ -2309,7 +2309,7 @@ function summarizeRunForModel(bundle) {
   if (Object.keys(srcMap).length) {
     const statusParts = Object.entries(srcMap).map(
       ([k, v]) =>
-        `${k}: ${v.status}${v.error ? ` (${v.error})` : ""} [fetched=${v.fetched ?? 0}${v.truncated ? ", truncated" : ""}]`
+        `${k}: ${v.status}${v.error ? ` (${v.error})` : ""} [fetched=${v.fetched ?? 0}${v.truncated ? ", truncated" : ""}]${v.sort_scope === "retrieved_candidates" ? "（仅对已召回候选排序，并非全库排名）" : ""}`
     );
     lines.push(`- **数据源状态**：${statusParts.join(" | ")}`);
   }
@@ -2648,36 +2648,6 @@ function inspectPdfBufferNode(buf) {
   return { header: true, trailer: true, bytes: buf.length };
 }
 
-function assessIdentityTextNode(text, doi = null, title = null) {
-  const heading = String(text || "").split(/^\s*(?:references|bibliography|参考文献)\s*[:：]?\s*$/im)[0].slice(0, 8000);
-  const clean = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-  const normDoi = (s) =>
-    String(s || "")
-      .trim()
-      .replace(/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*)/i, "")
-      .toLowerCase()
-      .replace(/[.,;:)\]>]+$/, "");
-  const rawMatches = heading.match(/10\.\d{4,9}\/[^\s<>"')]+/gi) || [];
-  const observed = new Set(rawMatches.map(normDoi).filter(Boolean));
-  const targetDoi = doi ? normDoi(doi) : "";
-  const targetTitle = title ? clean(title) : "";
-  const doiFound = Boolean(targetDoi && observed.has(targetDoi));
-  const titleFound = Boolean(targetTitle && targetTitle.length >= 6 && clean(heading).includes(targetTitle));
-  const hasConflictingDoi = Boolean(targetDoi && !doiFound && observed.size > 0);
-  const matched = Boolean(
-    (targetDoi || targetTitle) &&
-      !hasConflictingDoi &&
-      (doiFound || titleFound)
-  );
-  return {
-    status: matched ? "matched" : "needs_review",
-    method: "first_page_opening_text",
-    doi_found: doiFound,
-    title_found: titleFound,
-    has_conflicting_doi: hasConflictingDoi
-  };
-}
-
 async function claimBrowserPdf(input = {}) {
   const cleanDoi = input.doi ? String(input.doi).trim() : "";
   const cleanTitle = input.title ? String(input.title).trim() : "";
@@ -2737,32 +2707,16 @@ async function claimBrowserPdf(input = {}) {
     if (cleanDoi) pyArgs.push("--doi", cleanDoi);
     if (cleanTitle) pyArgs.push("--title", cleanTitle);
     const pyRes = await runPython(FETCH_PDF_PY, pyArgs, 25000);
-    const pyIdentity = pyRes.parsed?.identity || null;
-
-    const rawTextHead = buf.subarray(0, Math.min(96 * 1024, buf.length)).toString("utf8");
-    const nodeIdentity = assessIdentityTextNode(rawTextHead, cleanDoi, cleanTitle);
-
-    let identity = pyIdentity && pyIdentity.status === "matched"
-      ? pyIdentity
-      : nodeIdentity.status === "matched"
-        ? nodeIdentity
-        : pyIdentity && pyIdentity.status && pyIdentity.status !== "not_checked"
-          ? { ...nodeIdentity, ...pyIdentity }
-          : nodeIdentity;
-
-    if (
-      (identity.doi_found || (identity.title_found && !nodeIdentity.has_conflicting_doi)) &&
-      !nodeIdentity.has_conflicting_doi
-    ) {
-      identity = { ...identity, status: "matched" };
-    }
+    const pyIdentity = pyRes.exitCode === 0 ? pyRes.parsed?.identity : null;
+    // PDF metadata and later-page streams are not evidence about the first page.
+    const identity = { ...(pyIdentity || {}), status: pyIdentity?.status === "matched" ? "matched" : "needs_review" };
 
     const enrichedCand = {
       ...cand,
       sha256,
       checks: pyRes.parsed?.format_checks || nodeChecks,
       identity,
-      hasConflictingDoi: Boolean(nodeIdentity.has_conflicting_doi)
+      hasConflictingDoi: Boolean(pyIdentity?.has_conflicting_doi)
     };
     validCandidates.push(enrichedCand);
 
@@ -5242,10 +5196,11 @@ function validateToolInput(name, input) {
     if (["remove", "update_evidence", "set_note_tags"].includes(input.action) && !input.paperKey && !input.paper?.paper_key) requiredText("paperKey");
     for (const key of ["paperKey", "zoteroItemKey", "collectionKey"]) if (["__proto__", "prototype", "constructor"].includes(input[key])) throw new Error(`${key} 无效。`);
     if (["zoteroItemKey", "collectionKey"].some((key) => input[key] && !/^[23456789A-Z]{8}$/.test(input[key]))) throw new Error("Zotero 条目或分类 Key 格式无效。");
-    if (input.paper) {
-      if (["__proto__", "prototype", "constructor"].includes(input.paper.paper_key)) throw new Error("paper_key 无效。");
-      for (const key of ["authors", "oa_locations", "provenance", "relations"]) if (input.paper[key] !== undefined && !Array.isArray(input.paper[key])) throw new Error(`paper.${key} 必须为数组。`);
-      if (input.paper.identifiers) for (const ids of Object.values(input.paper.identifiers)) if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("paper.identifiers 必须使用字符串数组。");
+    for (const paper of [...(input.paper ? [input.paper] : []), ...(input.papers || [])]) {
+      if (input.action === "add" && (typeof paper.title !== "string" || !paper.title.trim())) throw new Error("请提供有标题的论文数据。");
+      if (["__proto__", "prototype", "constructor"].includes(paper.paper_key)) throw new Error("paper_key 无效。");
+      for (const key of ["authors", "oa_locations", "provenance", "relations"]) if (paper[key] !== undefined && !Array.isArray(paper[key])) throw new Error(`paper.${key} 必须为数组。`);
+      if (paper.identifiers) for (const ids of Object.values(paper.identifiers)) if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("paper.identifiers 必须使用字符串数组。");
     }
   }
   if (name === "read_run_file") requiredText("relativePath");
@@ -5321,7 +5276,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.7.0"
+          version: "1.7.1"
         }
       }
     };
@@ -5406,6 +5361,14 @@ async function handleRequest(message) {
   }
   if (method === "_set_paper_note_tags") {
     try {
+      validateInput({ type: "object" }, params || {});
+      const input = Object.fromEntries(Object.entries({
+        action: "set_note_tags", paperKey: params?.paperKey, paper: params?.paper,
+        user_tags: params?.user_tags ?? params?.userTags,
+        user_note: params?.user_note ?? params?.userNote
+      }).filter(([, value]) => value !== undefined));
+      validateInput(TOOLS.find((tool) => tool.name === "manage_basket").inputSchema, input);
+      validateToolInput("manage_basket", input);
       const operation = toolQueue.then(async () => {
         const state = loadState();
         const saved = setPaperNoteAndTags(

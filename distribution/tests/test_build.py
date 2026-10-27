@@ -168,6 +168,8 @@ class DistributionTests(unittest.TestCase):
             archives = build.build(Path(temporary) / "out")
             zcode = next(path for path in archives if path.parent.name == "zcode")
             with zipfile.ZipFile(zcode) as archive:
+                self.assertEqual(archive.read('scripts/dsh-plugin.mjs'),
+                                 (build.ROOT / build.ZCODE_SHELL_DIR / 'scripts/dsh-plugin.mjs').read_bytes())
                 for source in (build.ROOT / "skills/sanmu-paper-search/scripts").glob("*.py"):
                     expected = source.read_bytes()
                     self.assertEqual(archive.read(f"scripts/{source.name}"), expected)

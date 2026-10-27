@@ -569,12 +569,15 @@ class Providers:
             if sort == "cited":
                 papers.sort(key=lambda p: (int(p.get("citation_count") if p.get("citation_count") is not None else -1), int(p.get("year") or 0)), reverse=True)
             else:
-                papers.sort(key=lambda p: (str(p.get("publication_date") or ""), int(p.get("year") or 0), int(p.get("citation_count") if p.get("citation_count") is not None else -1)), reverse=True)
+                papers.sort(key=lambda p: (str(p.get("publication_date") or p.get("year") or ""), int(p.get("year") or 0), int(p.get("citation_count") if p.get("citation_count") is not None else -1)), reverse=True)
         status_obj = {"status": "ok", "fetched": len(papers), "pages": pages, "total": total,
                       "truncated": truncated, "limit": limit,
                       "query_strategy": "title_only" if source == "crossref" else "provider_search"}
         if sort and sort != "relevance":
             status_obj["sort"] = sort
+            if source == "semantic-scholar":
+                status_obj["sort_scope"] = "retrieved_candidates"
+                status_obj["note"] = "Sorted within retrieved candidates; not a global citation/date ranking."
         return papers, status_obj
 
     def authors(self, source, query, author_id, limit, year_from=None, year_to=None, topic=None, sort=None):
@@ -640,7 +643,7 @@ class Providers:
                     ]
             if not isinstance(entries, list):
                 raise SourceError("Author papers response has no results array")
-            papers.extend(normalized[:size])
+            papers.extend(normalized if source == "semantic-scholar" and sort in ("cited", "date") else normalized[:size])
             pages += 1
             more = total > len(papers) if isinstance(total, int) else following is not None
             if not entries or not more or following is None or following in (cursor, offset):
@@ -650,13 +653,18 @@ class Providers:
             if sort == "cited":
                 papers.sort(key=lambda p: (int(p.get("citation_count") if p.get("citation_count") is not None else -1), int(p.get("year") or 0)), reverse=True)
             else:
-                papers.sort(key=lambda p: (str(p.get("publication_date") or ""), int(p.get("year") or 0), int(p.get("citation_count") if p.get("citation_count") is not None else -1)), reverse=True)
+                papers.sort(key=lambda p: (str(p.get("publication_date") or p.get("year") or ""), int(p.get("year") or 0), int(p.get("citation_count") if p.get("citation_count") is not None else -1)), reverse=True)
+        more = more or len(papers) > limit
+        papers = papers[:limit]
         status_obj = {"status": "ok", "fetched": len(papers), "pages": pages, "total": total,
                       "truncated": bool(more), "author_id": author_id}
         if clean_topic:
             status_obj["topic"] = clean_topic
         if sort in ("cited", "date"):
             status_obj["sort"] = sort
+            if source == "semantic-scholar":
+                status_obj["sort_scope"] = "retrieved_candidates"
+                status_obj["note"] = "Sorted within retrieved candidates; not a global citation/date ranking."
         return papers, status_obj, []
 
     def _extract_seed_doi(self, identifier):

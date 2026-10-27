@@ -31,6 +31,7 @@ ZCODE_SHELL_FILES = (
     "assets/panel.html",
     "commands/help.md",
     "scripts/mcp-server.mjs",
+    "scripts/dsh-plugin.mjs",
     "README.md",
 )
 FRONTMATTER_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}

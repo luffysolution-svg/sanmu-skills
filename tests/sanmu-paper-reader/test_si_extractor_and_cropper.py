@@ -138,6 +138,39 @@ class CropSubfiguresTests(unittest.TestCase):
         self.src_file.unlink()
         (out_dir / "panel_a.png").unlink()
 
+    def test_crop_protects_existing_outputs_and_source_before_writing(self):
+        out_dir = self.temp_path / "existing"
+        out_dir.mkdir()
+        existing = out_dir / "panel_b.png"
+        existing.write_bytes(b"user-edited image")
+        specs = [{"name": "panel_a", "box": [0, 0, 1, 1]},
+                 {"name": "panel_b", "box": [0, 0, 1, 1]}]
+        with self.assertRaises(CropError):
+            crop_subfigures(self.src_file, out_dir, specs)
+        self.assertEqual(existing.read_bytes(), b"user-edited image")
+        self.assertFalse((out_dir / "panel_a.png").exists())
+
+        source_bytes = self.src_file.read_bytes()
+        with self.assertRaises(CropError):
+            crop_subfigures(self.src_file, self.temp_path,
+                            [{"name": "master_test", "box": [0, 0, .5, .5]}])
+        self.assertEqual(self.src_file.read_bytes(), source_bytes)
+
+    def test_crop_rejects_duplicate_names_and_preserves_manifest(self):
+        out_dir = self.temp_path / "duplicates"
+        specs = [{"name": "Panel_a", "box": [0, 0, .5, .5]},
+                 {"name": "panel_A", "box": [.5, .5, 1, 1]}]
+        with self.assertRaises(CropError):
+            crop_subfigures(self.src_file, out_dir, specs)
+        self.assertFalse(list(out_dir.glob("*.png")))
+        out_dir.mkdir(exist_ok=True)
+        manifest = out_dir / "master_test_crops_manifest.json"
+        manifest.write_text("user notes", encoding="utf-8")
+        with self.assertRaises(CropError):
+            crop_subfigures(self.src_file, out_dir, specs[:1])
+        self.assertEqual(manifest.read_text(encoding="utf-8"), "user notes")
+        self.assertFalse(list(out_dir.glob("*.png")))
+
     def test_crop_rejects_unsafe_names_before_writing(self):
         out_dir = self.temp_path / "subfigs"
         for name in ["../escape", "a/b", "a\\b", "", ".", "..", "x" * 65, "c:evil", "名字", 7]:

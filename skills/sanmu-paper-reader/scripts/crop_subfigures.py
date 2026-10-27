@@ -65,11 +65,22 @@ def crop_subfigures(
     target_dir = Path(out_dir).resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    output_names = set()
+    manifest_file = target_dir / f"{src_path.stem}_crops_manifest.json"
     for spec in crop_specs:
         name = spec.get("name", "subfig")
         # The name becomes a file name: keep it to one portable path component.
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", name) or name in (".", ".."):
             raise CropError(f"Invalid crop name (use 1-64 of A-Z a-z 0-9 . _ -): {name!r}")
+        filename = f"{name}.png"
+        if filename.casefold() in output_names:
+            raise CropError(f"Duplicate crop output name: {name!r}")
+        output_names.add(filename.casefold())
+        out_file = target_dir / filename
+        if out_file.exists() or out_file.is_symlink():
+            raise CropError(f"Output already exists; use a new name or directory: {out_file}")
+    if manifest_file.exists() or manifest_file.is_symlink():
+        raise CropError(f"Manifest already exists; use a new directory: {manifest_file}")
 
     results: List[Dict[str, Any]] = []
     # Context managers release file handles promptly (Windows locks open files).
@@ -84,7 +95,8 @@ def crop_subfigures(
             filename = f"{name}.png"
             out_file = target_dir / filename
             with crop_image_box(master_im, box, normalized=normalized) as cropped_im:
-                cropped_im.save(out_file, "PNG")
+                with out_file.open("xb") as output:
+                    cropped_im.save(output, "PNG")
                 width, height = cropped_im.width, cropped_im.height
 
             results.append({
@@ -99,8 +111,8 @@ def crop_subfigures(
             })
 
     # Save crop manifest
-    manifest_file = target_dir / f"{src_path.stem}_crops_manifest.json"
-    manifest_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    with manifest_file.open("x", encoding="utf-8") as output:
+        output.write(json.dumps(results, ensure_ascii=False, indent=2))
 
     return results
 

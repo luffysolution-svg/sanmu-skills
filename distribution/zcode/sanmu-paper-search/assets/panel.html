@@ -863,7 +863,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.7.0</span>
+        <span class="brand-sub">v1.7.1</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -1611,7 +1611,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.7.0" },
+              appInfo: { name: "sanmu-paper-search", version: "1.7.1" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -2474,8 +2474,6 @@
               .map((s) => s.trim())
               .filter(Boolean);
             const nextNote = noteRaw.trim();
-            paper.user_tags = nextTags;
-            paper.user_note = nextNote;
             await callTool(
               "manage_basket",
               {
@@ -2487,6 +2485,8 @@
               "正在保存课题标签与随手批注...",
               triggerBtn
             );
+            paper.user_tags = nextTags;
+            paper.user_note = nextNote;
             showBanner("✅ 已保存课题标签与随手批注（存入 Zotero 时将自动同步为标签与子笔记）", "success");
           };
           onAction(container.querySelector("#drwSaveNoteTagsBtn"), "click", async (e) => {
@@ -3539,10 +3539,6 @@
             .map((s) => s.trim())
             .filter(Boolean);
           const nextNote = noteEl ? noteEl.value.trim() : (p.user_note || "");
-          const prevTagsStr = (p.user_tags || []).join("|");
-          if (prevTagsStr === nextTags.join("|") && (p.user_note || "") === nextNote) return;
-          p.user_tags = nextTags;
-          p.user_note = nextNote;
           await callTool(
             "manage_basket",
             {
@@ -3553,6 +3549,8 @@
             },
             "正在保存课题标签与随手批注..."
           );
+          p.user_tags = nextTags;
+          p.user_note = nextNote;
           showBanner("✅ 已保存课题标签与随手批注（存入 Zotero 时将自动同步为标签与子笔记）", "success");
         };
         container.querySelectorAll(".inline-note-tags-bar").forEach((barEl) => {
@@ -3925,7 +3923,8 @@
               return `<span class="pill static info" title="该出版商在 Semantic Scholar 隐藏了参考文献，已由 OpenAlex / Crossref 提供">${esc(labelSrc)}: 出版商隐藏引文 (已由开放源提供)</span>`;
             }
             const errSuffix = st.error ? ` · ${st.error}` : "";
-            return `<span class="pill static ${cls}" title="${esc(st.note || JSON.stringify(st))}">${esc(labelSrc)}: ${esc(isOk ? `成功 (${st.fetched ?? 0}条)` : `${st.status || "未知"}${errSuffix}`)}</span>`;
+            const sortScope = st.sort_scope === "retrieved_candidates" ? " · 候选内排序" : "";
+            return `<span class="pill static ${cls}" title="${esc(st.note || JSON.stringify(st))}">${esc(labelSrc)}: ${esc(isOk ? `成功 (${st.fetched ?? 0}条)${sortScope}` : `${st.status || "未知"}${errSuffix}`)}</span>`;
           })
           .join(" ");
 

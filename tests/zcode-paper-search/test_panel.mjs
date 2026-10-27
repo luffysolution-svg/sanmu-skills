@@ -73,6 +73,67 @@ test('failed async UI action reports error without navigation or stuck loading, 
   assert.equal(p.state.activeTab, 'results');
 });
 
+test('failed inline note save preserves the stored note and can retry the same edit', async () => {
+  const p = makePanel();
+  await initialize(p);
+  const item = { ...paper('note-retry'), user_tags: ['original'], user_note: 'Stored note' };
+  const data = { ...emptyState(), activeRun: { runId: 'notes', papers: [item] } };
+  p.updatePanelData(data);
+  const bar = p.document.querySelector('.inline-note-tags-bar');
+  const note = bar.querySelector('.inline-note-input');
+  note.value = 'Revised note';
+  note.dispatchEvent({ type: 'change' });
+  await flush();
+  const failed = tools(p).at(-1);
+  p.reply(failed, { isError: true, structuredContent: { error: { message: 'Disk full' } } });
+  await flush();
+  assert.equal(p.state.panelData.activeRun.papers[0].user_note, 'Stored note');
+  assert.equal(note.value, 'Revised note');
+  note.dispatchEvent({ type: 'change' });
+  await flush();
+  assert.equal(tools(p).length, 2);
+  assert.equal(tools(p).at(-1).params.arguments.user_note, 'Revised note');
+  answer(p, { ...data, activeRun: { runId: 'notes', papers: [{ ...item, user_note: 'Revised note' }] } });
+  await flush();
+  assert.equal(p.state.panelData.activeRun.papers[0].user_note, 'Revised note');
+});
+
+test('failed detail note save does not change the paper used by later actions', async () => {
+  const p = makePanel();
+  await initialize(p);
+  const item = { ...paper('detail-note'), user_tags: ['original'], user_note: 'Stored note' };
+  p.updatePanelData({ ...emptyState(), basket: [item] });
+  p.inspectPaper(item);
+  set(p, 'drwUserNoteInput', 'Unsaved edit');
+  await click(p, 'drwSaveNoteTagsBtn');
+  p.reply(tools(p).at(-1), { isError: true, structuredContent: { error: { message: 'Disk full' } } });
+  await flush();
+  assert.equal(item.user_note, 'Stored note');
+  assert.equal(p.document.getElementById('drwUserNoteInput').value, 'Unsaved edit');
+});
+
+test('inline note revert while a save is pending is queued and persists the latest edit', async () => {
+  const p = makePanel();
+  await initialize(p);
+  const item = { ...paper('note-revert'), user_note: 'Stored note' };
+  const data = { ...emptyState(), activeRun: { runId: 'notes', papers: [item] } };
+  p.updatePanelData(data);
+  const note = p.document.querySelector('.inline-note-input');
+  note.value = 'Temporary edit';
+  note.dispatchEvent({ type: 'change' });
+  await flush();
+  note.value = 'Stored note';
+  note.dispatchEvent({ type: 'change' });
+  await flush();
+  answer(p, { ...data, activeRun: { runId: 'notes', papers: [{ ...item, user_note: 'Temporary edit' }] } });
+  await flush();
+  assert.equal(tools(p).length, 2);
+  assert.equal(tools(p).at(-1).params.arguments.user_note, 'Stored note');
+  answer(p, { ...data, activeRun: { runId: 'notes', papers: [{ ...item, user_note: 'Stored note' }] } });
+  await flush();
+  assert.equal(p.document.querySelector('.inline-note-input').value, 'Stored note');
+});
+
 test('stable IDs and publisher URLs route to lookup with canonical identifiers', async () => {
   const p = makePanel();
   await initialize(p);

@@ -45,6 +45,15 @@ class PdfTests(unittest.TestCase):
         self.assertEqual(check('Expected title\nhttps://doi.org/10.1234/right\nAbstract\nBody', '10.1234/right', 'Expected title')["status"], 'matched')
         self.assertEqual(check('Expected title\nAbstract\nBody text\nFooter DOI: 10.1234/right.', '10.1234/right', 'Expected title')["status"], 'matched')
 
+    def test_identity_exposes_conflicting_doi_for_browser_claim(self):
+        result = fetch_pdf.assess_identity_text('Other study\nDOI: 10.1234/wrong',
+                                                '10.1234/right', 'Expected title')
+        self.assertEqual(result['status'], 'needs_review')
+        self.assertTrue(result.get('has_conflicting_doi'))
+        correct = fetch_pdf.assess_identity_text('Expected title\nDOI: 10.1234/right',
+                                                 '10.1234/right', 'Expected title')
+        self.assertFalse(correct.get('has_conflicting_doi'))
+
     def test_signed_url_redaction_preserves_ports_and_ipv6(self):
         url = fetch_pdf.public_url("https://user:pass@[2001:db8::1]:8443/paper.pdf?api%2Dkey=SECRET&authorization=AUTH&download=1")
         self.assertIn("[2001:db8::1]:8443", url)

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { execFileSync } from 'node:child_process';
 import { after, test } from "node:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,6 +46,24 @@ const reset = () => {
   fetchImpl = async () => { throw new Error("offline fixture"); };
 };
 const paper = (doi = "one", title = "Same title") => ({ title, year: 2025, identifiers: { doi: [`10.1234/${doi}`] }, authors: [{ name: "Alice Lee" }], abstract: "Returned abstract" });
+const writePdf = (path, text, metadata = '') => {
+  const content = `BT /F1 12 Tf 30 700 Td (${text}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Count 1 /Kids [3 0 R] >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Subject (${metadata}) >>`
+  ];
+  let pdf = '%PDF-1.7\n';
+  const offsets = [0];
+  objects.forEach((obj, idx) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${idx + 1} 0 obj\n${obj}\nendobj\n`; });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 7\n0000000000 65535 f \n${offsets.slice(1).map(n => `${String(n).padStart(10, '0')} 00000 n \n`).join('')}`;
+  pdf += `trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  writeFileSync(path, pdf);
+};
 const makeRun = (runId = "fixture-run", papers = [paper()], extra = {}) => {
   const dir = join(data, "runs", runId);
   mkdirSync(dir, { recursive: true });
@@ -111,6 +130,35 @@ test("MCP offline regressions", async (t) => {
     expectError(await call("manage_runs", { operation: "load", runId: "missing" }));
     const deleted = await call("manage_runs", { operation: "delete", runIds: ["fixture-run", "fixture-run"] });
     assert.equal(deleted.structuredContent.deletedCount, 1);
+  });
+
+  await t.test("batch basket additions validate every paper before changing stored state", async () => {
+    for (const invalid of [
+      { title: 'Bad identifiers', identifiers: { doi: '10.1234/not-an-array' } },
+      { title: 'Bad authors', authors: 'Alice' },
+      { title: ' ' },
+      { title: 'Invalid key', paper_key: '__proto__', user_note: 'lost note' }
+    ]) {
+      reset();
+      expectError(await call('manage_basket', { action: 'add', papers: [paper(), invalid] }));
+      assert.equal(existsSync(join(data, 'state.json')), false);
+      const panel = await call('open_panel');
+      assert.equal(panel.isError, undefined);
+      assert.deepEqual(panel.structuredContent.basket, []);
+    }
+  });
+
+  await t.test('legacy note RPC applies the same key and type checks as the public basket tool', async () => {
+    for (const params of [
+      { paperKey: '__proto__', userNote: 'lost note' },
+      { paperKey: 'doi:10.1234/one', userTags: [42] },
+      { paperKey: 'doi:10.1234/one', userNote: { unexpected: true } }
+    ]) {
+      reset();
+      const reply = await handleRequest({ jsonrpc: '2.0', id: id++, method: '_set_paper_note_tags', params });
+      expectError(reply.result);
+      assert.equal(existsSync(join(data, 'state.json')), false);
+    }
   });
 
   await t.test("run files stay inside their run and private state/config/keys never return plaintext", async () => {
@@ -379,6 +427,36 @@ test("MCP offline regressions", async (t) => {
     assert.equal(claudePaths.pluginData, "/tmp/claude-data");
   });
 
+  await t.test('DSH bundle starts outside its package and explicitly passes credentials through the host environment scrub', async () => {
+    const patch = resolve(here, '../../distribution/zcode/sanmu-paper-search/cordis.patch.yml');
+    const row = JSON.parse(execFileSync('python', ['-c',
+      'import json,sys,yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1],encoding="utf-8"))[0]["insert"][0]))', patch], { encoding: 'utf8' }));
+    const hostEnv = { DSH_HOME: join(root, 'dsh-home'), DSH_WORKSPACE_ROOT: workspace,
+      USER_CONFIG_EXA_API_KEY: 'FAKE_DSH_EXA_KEY', USER_CONFIG_POLITE_EMAIL: 'dsh@example.test' };
+    let config = row.config;
+    if (row.name.startsWith('./')) {
+      const adapter = resolve(here, '../../distribution/zcode/sanmu-paper-search', row.name);
+      const localAdapter = join(plugin, 'scripts/dsh-plugin.mjs');
+      copyFileSync(adapter, localAdapter);
+      copyFileSync(serverPath, join(plugin, 'scripts/mcp-server.mjs'));
+      const module = await import(pathToFileURL(localAdapter).href);
+      config = module.createMcpConfig(hostEnv);
+    }
+    const childEnv = Object.fromEntries(Object.keys(process.env).filter(k => /API_KEY|USER_CONFIG|ZCODE_|CLAUDE_|DSH_/.test(k)).map(k => [k, '']));
+    const client = startMcpServer(config.args[0], { env: { ...childEnv, ...config.env }, cwd: config.cwd || workspace });
+    try {
+      await client.request('initialize');
+      const panel = await client.call('open_panel');
+      assert.equal(panel.isError, undefined);
+      assert.equal(panel.structuredContent.settings.workspaceRoot, workspace);
+      assert.equal(panel.structuredContent.settings.runsDir, join(hostEnv.DSH_HOME, 'plugin-data/sanmu-paper-search/runs'));
+      assert.equal(panel.structuredContent.configStatus.exa_api_key.configured, true);
+      assert.equal(JSON.stringify(panel).includes('FAKE_DSH_EXA_KEY'), false);
+      const doctor = await client.call('doctor_status');
+      assert.equal(doctor.structuredContent.doctorReport.doctor.emails.POLITE_EMAIL, 'dsh@example.test');
+    } finally { await client.close(); }
+  });
+
   await t.test("v1.7.0 Req 1 & 2: search_papers --sort and search_author --topic/--sort reach Python CLI", async () => {
     reset();
     const sRes = await call("search_papers", { query: "single atom Ni", sort: "cited", limit: 8 });
@@ -405,12 +483,13 @@ test("MCP offline regressions", async (t) => {
     const saveDir = join(workspace, "claimed-pdfs");
     mkdirSync(dlDir, { recursive: true });
     process.env.SANMU_BROWSER_DOWNLOAD_DIR = dlDir;
+    copyFileSync(resolve(here, '../../skills/sanmu-paper-search/scripts/fetch_pdf.py'), join(plugin, 'scripts/fetch_pdf.py'));
     try {
       // 1. Exact DOI/title match in first-page text
       const matchedFile = join(dlDir, "browser-download-1.pdf");
-      writeFileSync(
+      writePdf(
         matchedFile,
-        "%PDF-1.7\nSingle Atom Ni Photocatalytic Hydrogen Evolution\nDOI: 10.1002/adma.202313513\n%%EOF"
+        "Single Atom Ni Photocatalytic Hydrogen Evolution DOI: 10.1002/adma.202313513"
       );
       const claimRes = await call("resolve_oa_and_pdf", {
         action: "claim_browser_pdf",
@@ -450,6 +529,25 @@ test("MCP offline regressions", async (t) => {
       assert.equal(savedState2.evidenceMap["doi:10.1021/acscatal.4c00001"].stage, "file_obtained");
     } finally {
       delete process.env.SANMU_BROWSER_DOWNLOAD_DIR;
+      copyFileSync(join(here, 'mcp-python-fixture.py'), join(plugin, 'scripts/fetch_pdf.py'));
+    }
+  });
+
+  await t.test('browser PDF claim never verifies raw metadata and refuses a conflicting first-page DOI', async () => {
+    reset();
+    const dlDir = join(root, 'identity-downloads');
+    mkdirSync(dlDir, { recursive: true });
+    process.env.SANMU_BROWSER_DOWNLOAD_DIR = dlDir;
+    copyFileSync(resolve(here, '../../skills/sanmu-paper-search/scripts/fetch_pdf.py'), join(plugin, 'scripts/fetch_pdf.py'));
+    try {
+      writePdf(join(dlDir, 'wrong-paper.pdf'), 'Unrelated study DOI: 10.1234/wrong', 'Expected Paper Title 10.1234/right');
+      const result = await call('resolve_oa_and_pdf', { action: 'claim_browser_pdf', doi: '10.1234/right',
+        title: 'Expected Paper Title', paperKey: 'doi:10.1234/right', saveDir: join(workspace, 'claim-identity') });
+      expectError(result);
+      assert.equal(existsSync(join(data, 'state.json')), false);
+    } finally {
+      delete process.env.SANMU_BROWSER_DOWNLOAD_DIR;
+      copyFileSync(join(here, 'mcp-python-fixture.py'), join(plugin, 'scripts/fetch_pdf.py'));
     }
   });
 
