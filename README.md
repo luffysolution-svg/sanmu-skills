@@ -133,7 +133,7 @@ zcode plugin marketplace add luffysolution-svg/sanmu-skills
 zcode plugin install sanmu-skills@sanmu-skills
 ```
 
-若需在 ZCode 桌面端使用带**右侧常驻可视化面板、Obsidian 物理关系图谱与本机 Zotero 双向联动**的独立插件，可从 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) 下载 `sanmu-paper-search-zcode-plugin-<版本>.zip` 解压后通过本地插件市场安装。
+若需在 ZCode 桌面端使用带**右侧常驻可视化面板、Obsidian 物理关系图谱、本机 Zotero 双向联动与 `sanmu-doc2md` 文档解析工作台**的独立插件，可从 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) 下载 `sanmu-paper-search-zcode-plugin-<版本>.zip` 解压后通过本地插件市场安装。
 
 ### 手动安装
 

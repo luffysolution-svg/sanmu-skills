@@ -64,7 +64,8 @@ def check_environment(require_ocr=False):
     katex = None
     if node_ok:
         katex = run_probe([node, '-e',
-                           "const k=require(require.resolve('katex',{paths:[process.argv[1]]}));"
+                           "const p=require('path'),paths=[process.argv[1],...(process.env.NODE_PATH?process.env.NODE_PATH.split(p.delimiter):[])];"
+                           "const k=require(require.resolve('katex',{paths}));"
                            "k.renderToString('x^2',{throwOnError:true});process.stdout.write(k.version)",
                            str(SCRIPTS)])
     add('katex', bool(katex), katex or 'unavailable; install Node dependencies under scripts/')

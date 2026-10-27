@@ -174,6 +174,13 @@ class DistributionTests(unittest.TestCase):
                     expected = source.read_bytes()
                     self.assertEqual(archive.read(f"scripts/{source.name}"), expected)
                     self.assertEqual(archive.read(f"skills/sanmu-paper-search/scripts/{source.name}"), expected)
+                for source in (build.ROOT / "skills/sanmu-doc2md/scripts").glob("*.py"):
+                    expected = source.read_bytes()
+                    self.assertEqual(archive.read(f"skills/sanmu-doc2md/scripts/{source.name}"), expected)
+                self.assertEqual(archive.read("skills/sanmu-doc2md/SKILL.md"),
+                                 (build.ROOT / "skills/sanmu-doc2md/SKILL.md").read_bytes())
+                self.assertEqual(archive.read("skills/sanmu-doc2md/requirements.txt"),
+                                 (build.ROOT / "skills/sanmu-doc2md/requirements.txt").read_bytes())
                 metadata = json.loads(archive.read(".zcode-plugin/plugin.json"))
                 self.assertEqual(metadata["version"], build.read_json(build.ROOT / "distribution/manifest.json")["version"])
 

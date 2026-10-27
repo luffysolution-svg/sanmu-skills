@@ -863,7 +863,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.8.0</span>
+        <span class="brand-sub">v1.9.0</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -941,6 +941,16 @@
         </div>
         <div class="form-row">
           <div class="field">
+            <label>MinerU API Token (文档解析 PDF/PPTX/教材转 Markdown) <span id="badgeMineruToken" class="pill static"></span></label>
+            <input type="password" id="cfgMineruToken" placeholder="填入 MinerU Token 覆盖，留空保持原配置" />
+          </div>
+          <div class="field">
+            <label>📝 文档解析默认存放目录（支持工作区相对路径或本地绝对路径）</label>
+            <input type="text" id="cfgDoc2mdSubdirInput" value="00-收件箱-待整理/文献解析" placeholder="如 00-收件箱-待整理/文献解析 或 D:\知识库\文献解析" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
             <label>本机 Zotero 服务地址 <span id="badgeZoteroLocal" class="pill static"></span></label>
             <input type="text" id="cfgZoteroUrl" value="http://127.0.0.1:23119" />
           </div>
@@ -970,6 +980,7 @@
         <button class="tab-btn" data-tab="graph">🕸 关系图谱 (<span id="tabCountGraph">0</span>)</button>
         <button class="tab-btn" data-tab="basket">⭐ 收藏篮 (<span id="tabCountBasket">0</span>)</button>
         <button class="tab-btn" data-tab="runs">🕒 搜索历史 (<span id="tabCountRuns">0</span>)</button>
+        <button class="tab-btn" data-tab="doc2md">📝 文档解析 (<span id="tabCountDoc2md">0</span>)</button>
       </div>
 
       <!-- TAB 1: SEARCH & DISCOVERY -->
@@ -1446,6 +1457,219 @@
           <div id="runsListContainer"></div>
         </div>
       </div>
+
+      <!-- TAB 6: DOCUMENT PARSING & OBSIDIAN KNOWLEDGE BASE (sanmu-doc2md) -->
+      <div id="tab-doc2md" class="tab-pane hidden">
+        <div class="card" style="margin-bottom: 10px;">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">📝 学术文档转 Markdown 知识库 (sanmu-doc2md)</h3>
+              <div style="font-size:11.5px; color:var(--text-secondary); margin-top:2px;">
+                把科研论文 (含SI双链)、课程课件 (PPTX/PDF) 与长篇教材整理为保留 LaTeX 公式、高清原图和页码溯源的 Obsidian 知识库
+              </div>
+            </div>
+            <div style="display:flex; gap:5px; flex-wrap:wrap;">
+              <button type="button" class="btn sm exec-btn" id="btnDoc2mdDoctor">🩺 解析环境自检</button>
+            </div>
+          </div>
+
+          <!-- Source Mode Bar: Local File Picker / Zotero Library / Downloaded Papers -->
+          <div class="mode-bar" id="doc2mdSourceBar" style="grid-template-columns: repeat(3, 1fr); margin-bottom:8px;">
+            <button type="button" class="mode-chip active doc2md-src-chip" data-src="local">📂 1. 本地文件管理器选择</button>
+            <button type="button" class="mode-chip doc2md-src-chip" data-src="zotero">📚 2. 从本机 Zotero 文库选</button>
+            <button type="button" class="mode-chip doc2md-src-chip" data-src="papers">⭐ 3. 从已获 PDF / 收藏篮选</button>
+          </div>
+
+          <!-- Zotero Picker Drawer -->
+          <div id="doc2mdZoteroBrowserWrap" class="section-box hidden" style="margin-bottom:10px; background:var(--bg-primary);">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+              <strong style="font-size:12px; color:var(--accent);">📚 从本机 Zotero 挑选文献与本地 PDF 附件（自动带入完整题录与 SI）</strong>
+              <button type="button" class="btn sm primary exec-btn" id="btnLoadZoteroPdfs">🔄 读取 Zotero 文献列表</button>
+            </div>
+            <div class="form-row" style="margin-bottom:6px;">
+              <div class="field" style="flex:1;">
+                <label>按 Zotero 分类筛选</label>
+                <select id="doc2mdZoteroColSelect">
+                  <option value="">全部文库条目</option>
+                </select>
+              </div>
+              <div class="field" style="flex:2;">
+                <label>关键词过滤（标题 / 作者 / 年份 / DOI）</label>
+                <input type="text" id="doc2mdZoteroQueryInput" placeholder="输入关键词后按回车或点击右侧读取..." />
+              </div>
+            </div>
+            <div id="doc2mdZoteroItemsMount" style="max-height:240px; overflow-y:auto;">
+              <div style="font-size:11.5px; color:var(--text-secondary);">点击上方「🔄 读取 Zotero 文献列表」加载本机 Zotero 中带有本地 PDF 的文献条目。</div>
+            </div>
+          </div>
+
+          <!-- Downloaded / Basket Papers Picker Drawer -->
+          <div id="doc2mdLocalPapersWrap" class="section-box hidden" style="margin-bottom:10px; background:var(--bg-primary);">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+              <strong style="font-size:12px; color:var(--accent);">⭐ 从当前检索结果或收藏篮中选择已获取本地 PDF / SI 的文献</strong>
+            </div>
+            <div id="doc2mdLocalPapersMount" style="max-height:220px; overflow-y:auto;"></div>
+          </div>
+
+          <!-- Bound Metadata Banner -->
+          <div id="doc2mdBoundMetaBar" class="notice info hidden" style="margin-bottom:8px;">
+            <span id="doc2mdBoundMetaText" style="flex:1; font-size:11.5px;"></span>
+            <button type="button" class="btn sm" id="btnClearDoc2mdMeta">✕ 清除绑定题录</button>
+          </div>
+
+          <!-- Core Form -->
+          <div class="form-grid">
+            <div class="form-row">
+              <div class="field" style="flex:1;">
+                <label>1. 文档类型与装配模式</label>
+                <select id="doc2mdModeSelect">
+                  <option value="research">🔬 科研论文 / 学位论文 (单篇目录 + 主文与 SI 双向双链 + Zotero 题录 frontmatter)</option>
+                  <option value="slides">📊 课程课件 / 复习讲义 (slides 模式 · PPTX 原文自动校对错字 + 幻灯片配图置顶)</option>
+                  <option value="book">📘 教材 / 专著长篇讲义 (book 模式 · 按页数体积智能切片 + 章节拆分重组)</option>
+                </select>
+              </div>
+              <div class="field" style="flex:1;">
+                <label>2. 解析引擎</label>
+                <select id="doc2mdEngineSelect">
+                  <option value="mineru">☁ MinerU 云端高精度 OCR (推荐 · 公式转 LaTeX / 双栏还原 / 3倍裁图)</option>
+                  <option value="local_fast">⚡ 本地原生文字与内嵌图直提 (免 Token 极速 · 适合原生 PPTX 或数字版 PDF)</option>
+                  <option value="existing_raw">📂 复用已有 MinerU OCR 结果目录 (免重复上传 · 直接重新装配与校验)</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="doc2mdMineruHint" class="notice warn hidden">
+              <span style="flex:1; font-size:11.5px;">⚠ 当前未检测到 MINERU_API_TOKEN 配置。云端高精度公式/双栏 OCR 需要配置 Token，或者您可以切换为免 Token 的本地原生提取模式：</span>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" class="btn sm primary" id="btnJumpConfigFromDoc2md">⚙ 去填写 MinerU Token</button>
+                <button type="button" class="btn sm" id="btnSwitchLocalFastEngine">⚡ 切换为本地原生直提</button>
+              </div>
+            </div>
+
+            <!-- Main File Input -->
+            <div class="field" id="doc2mdMainFileField">
+              <label id="doc2mdMainFileLabel">📄 待解析主文档路径（PDF 或课件 PPTX，可点击右侧按钮从系统文件管理器直接选择）</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="text" id="doc2mdMainFileInput" placeholder="例如: F:\个人知识库\...\paper.pdf（或点击右侧「📂 浏览选文件...」）" style="flex:1;" />
+                <button type="button" class="btn primary sm" id="btnPickDoc2mdMainFile" style="flex-shrink:0;">📂 浏览选文件...</button>
+              </div>
+            </div>
+
+            <!-- SI PDF Input (Research Mode) -->
+            <div class="field" id="doc2mdSiFileField">
+              <label>📎 补充材料 SI PDF 路径（可选 · 填入后自动将正文 Figure S1 / Table S1 转为双向 [[WikiLink]] 并独立构建 SI 知识库）</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="text" id="doc2mdSiFileInput" placeholder="可选：补充材料 SI.pdf 路径（选择主文时若同目录存在 -SI.pdf 会自动填入）" style="flex:1;" />
+                <button type="button" class="btn sm" id="btnPickDoc2mdSiFile" style="flex-shrink:0;">📂 选 SI PDF...</button>
+                <button type="button" class="btn sm" id="btnClearDoc2mdSiFile" style="flex-shrink:0;">清空</button>
+              </div>
+            </div>
+
+            <!-- PPTX Source Input (Slides Mode) -->
+            <div class="field hidden" id="doc2mdPptxFileField">
+              <label>📊 课件源 PPTX 文件路径（可选但推荐 · 用于自动校对替换 OCR 形近错字并直接提取未裁剪高清内嵌原图）</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="text" id="doc2mdPptxFileInput" placeholder="可选：对应的课件 .pptx 源文件路径（若主文档已选 .pptx 会自动填入）" style="flex:1;" />
+                <button type="button" class="btn sm" id="btnPickDoc2mdPptxFile" style="flex-shrink:0;">📂 选 PPTX...</button>
+              </div>
+            </div>
+
+            <!-- Existing Raw OCR Dir Input -->
+            <div class="field hidden" id="doc2mdRawDirField">
+              <label>📂 已有 MinerU OCR 结果目录 (raw 目录或包含 raw/ 的工作目录，免重复上传云端)</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="text" id="doc2mdRawDirInput" placeholder="例如: F:\...\ocr-work\raw" style="flex:1;" />
+                <button type="button" class="btn sm" id="btnPickDoc2mdRawDir" style="flex-shrink:0;">📁 选 raw 目录...</button>
+              </div>
+            </div>
+
+            <!-- Book Mode Extra Options -->
+            <div class="form-row hidden" id="doc2mdBookExtraRow">
+              <div class="field" style="max-width:160px;">
+                <label>单次切片页数 (10-200)</label>
+                <input type="number" id="doc2mdChunkSizeInput" value="96" min="10" max="200" />
+              </div>
+              <div class="field" style="flex:1;">
+                <label>章节定义文件 chapters.json（可选 · 留空则自动从 PDF 目录书签或分片生成）</label>
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <input type="text" id="doc2mdChaptersJsonInput" placeholder="可选：自定义 chapters.json 路径" style="flex:1;" />
+                  <button type="button" class="btn sm" id="btnPickDoc2mdChaptersJson">📂 选 JSON...</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Language, Reading Order & Checkboxes -->
+            <div class="form-row">
+              <div class="field" style="max-width:170px;">
+                <label>OCR 识别语言</label>
+                <select id="doc2mdLangSelect">
+                  <option value="en">英文文献 (en)</option>
+                  <option value="ch">中英文/中文教材课件 (ch)</option>
+                </select>
+              </div>
+              <div class="field" style="max-width:190px;">
+                <label>页面/双栏阅读顺序</label>
+                <select id="doc2mdReadingOrderSelect">
+                  <option value="source">OCR 物理流顺序 (默认)</option>
+                  <option value="geometry">版面几何坐标重排</option>
+                </select>
+              </div>
+              <div class="checkbox-group" style="flex:1; padding-top:16px;">
+                <label class="checkbox-label" title="自动合并同页、同图号或带 (a)/(b) 标记且相邻的多面板碎图"><input type="checkbox" id="chkDoc2mdAutoRepairs" checked /> 自动缝合多面板碎图</label>
+                <label class="checkbox-label" title="保留复杂大表与环状化学结构的原版裁图以便对照核查"><input type="checkbox" id="chkDoc2mdKeepTableImgs" checked /> 保留表格原版裁图</label>
+                <label class="checkbox-label" title="生成 agent/ 分块索引与原页映射供后续 RAG 检索"><input type="checkbox" id="chkDoc2mdAgentIndex" /> 生成 Agent 检索索引</label>
+                <label class="checkbox-label hidden" id="lblDoc2mdBookSplitOnly" title="长教材先切片并完成云端 OCR，预生成章节草稿供核对后再装配"><input type="checkbox" id="chkDoc2mdBookSplitOnly" /> 仅切片与OCR(待核对章节后再装配)</label>
+              </div>
+            </div>
+
+            <!-- Target Output Directory & Folder Name Preview -->
+            <div class="section-box" style="background:var(--bg-primary); margin-top:2px;">
+              <div class="form-row" style="margin-bottom:6px;">
+                <div class="field" style="flex:2;">
+                  <label>📁 解析结果存放父目录（支持工作区相对路径或任意本地绝对路径，可点击右侧按钮直接选择文件夹）</label>
+                  <div style="display:flex; gap:6px; align-items:center;">
+                    <input type="text" id="doc2mdSaveDirInput" value="00-收件箱-待整理/文献解析" placeholder="例如: 00-收件箱-待整理/文献解析 或 F:\个人知识库\01-科研基石" style="flex:1;" />
+                    <button type="button" class="btn primary sm" id="btnPickDoc2mdSaveDir" style="flex-shrink:0;">📁 选存放文件夹...</button>
+                    <button type="button" class="btn sm" id="btnOpenDoc2mdSaveDir" style="flex-shrink:0;" title="在系统资源管理器中打开该存放目录">📂 打开目录</button>
+                  </div>
+                </div>
+                <div class="field" style="flex:1;">
+                  <label>输出子文件夹名称（留空按 Zotero 规范自动命名）</label>
+                  <input type="text" id="doc2mdFolderNameInput" placeholder="自动生成：第一作者 等 - 年份 - 标题" />
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-size:11px;">
+                  <span style="color:var(--text-secondary); font-weight:600;">⚡ 知识库常用位置:</span>
+                  <span class="pill doc2md-quick-dir-chip" data-dir="00-收件箱-待整理/文献解析">📥 00-收件箱/文献解析</span>
+                  <span class="pill doc2md-quick-dir-chip" data-dir="01-科研基石">🔬 01-科研基石</span>
+                  <span class="pill doc2md-quick-dir-chip" data-dir="02-课程笔记">📚 02-课程笔记</span>
+                  <span class="pill doc2md-quick-dir-chip" data-dir="03-项目实战">🗂 03-项目实战</span>
+                </div>
+                <button type="button" class="btn primary exec-btn" id="btnExecDoc2md">🚀 开始解析为 Markdown 知识库</button>
+              </div>
+              <div id="doc2mdOutputPreviewText" style="font-size:11px; color:var(--text-secondary); margin-top:6px; word-break:break-all;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Parsing Jobs Queue & Output Verification -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">📋 解析任务队列与知识库产物验收</h3>
+              <div style="font-size:11.5px; color:var(--text-secondary); margin-top:2px;">
+                支持后台异步运行、MinerU 断点续传 (resume，绝不重复扣额度)、KaTeX 公式渲染预览，以及一键移交 AI 精读或回源修复
+              </div>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button type="button" class="btn sm" id="btnRefreshDoc2mdJobs">🔄 刷新进度</button>
+              <button type="button" class="btn sm danger" id="btnClearDoc2mdJobs">🧹 清空历史记录</button>
+            </div>
+          </div>
+          <div id="doc2mdJobsListContainer"></div>
+        </div>
+      </div>
     </div>
 
     <!-- IN-PANEL FULL-WIDTH DETAIL VIEW -->
@@ -1517,6 +1741,12 @@
         graphZoom: { k: 1, x: 0, y: 0 },
         timelineYearFilter: null,
         timelineSortOrder: "asc",
+        doc2mdSourceMode: "local",
+        doc2mdBoundMeta: null,
+        doc2mdBoundPaperKey: null,
+        doc2mdBoundZoteroKey: null,
+        doc2mdZoteroItems: [],
+        doc2mdPollTimer: null,
         busy: false
       };
 
@@ -1656,7 +1886,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.8.0" },
+              appInfo: { name: "sanmu-paper-search", version: "1.9.0" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -1881,6 +2111,9 @@
         const svFigs = Array.isArray(paper.sciverse_figure_files) ? paper.sciverse_figure_files : [];
         const svExcerpt = paper.sciverse_excerpt_path || "";
         const svMaterials = paper.sciverse_materials_path || "";
+        const doc2mdDir = paper.doc2md_out_dir || "";
+        const doc2mdMd = paper.doc2md_md_path || "";
+        const doc2mdSiDir = paper.doc2md_si_out_dir || "";
         const saveDir = getChosenSaveDir();
 
         const lines = [
@@ -1896,6 +2129,9 @@
           ``,
           `### 2. 本地已落盘全文与补充材料 (SI) 路径`,
           `- **主文 PDF 绝对路径**：\`${pdfPath}\``,
+          ...(doc2mdDir ? [`- **已解析 Markdown 知识库目录 (sanmu-doc2md)**：\`${doc2mdDir}\``] : []),
+          ...(doc2mdMd ? [`- **主文 Markdown 解析稿**：\`${doc2mdMd}\`（可直接读取此解析稿与同目录 \`images/\` 高清图，无需重复 OCR）`] : []),
+          ...(doc2mdSiDir ? [`- **SI 补充材料 Markdown 解析目录**：\`${doc2mdSiDir}\``] : []),
           ...(siDir ? [`- **SI 补充材料目录**：\`${siDir}\``] : []),
           ...(siFiles.length ? [`- **SI 补充材料文件列表**：\n${siFiles.map((f) => `  - \`${f}\``).join("\n")}`] : []),
           ...(svDir ? [`- **SciVerse 原文切片与原图目录**：\`${svDir}\``] : []),
@@ -2057,6 +2293,7 @@
             graph: "← 返回关系图谱",
             basket: "← 返回收藏篮",
             runs: "← 返回搜索历史",
+            doc2md: "← 返回文档解析",
             search: "← 返回检索发现",
             results: "← 返回结果列表"
           };
@@ -2349,7 +2586,9 @@
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:6px; padding-top:8px; border-top:1px dashed var(--border-primary);">
               <button class="btn sm ${paper.in_basket ? "success" : "primary"}" id="drwToggleBasket">${paper.in_basket ? "⭐ 已在收藏篮 (点击移出)" : "⭐ 加入收藏篮"}</button>
-              ${hasDeepReadFiles ? `<button class="btn sm primary deep-read-handoff-btn" id="drwDeepReadHandoff" data-paper-key="${esc(paper.paper_key)}" title="调用 /sanmu-paper-reader 对已落盘 PDF 与 SI 执行双模图文精读和实验复现充分性探针">🔬 启动三木精读 / 复现评估</button>` : ""}
+              <button class="btn sm primary" id="drwJumpToDoc2md" title="将该文献带入「📝 文档解析」工作台，一键转换为保留 LaTeX 公式与高清原图的 Obsidian Markdown 知识库">📝 转 Markdown 知识库</button>
+              ${paper.doc2md_out_dir ? `<button class="btn sm success" id="drwOpenDoc2mdDir" title="打开已解析的 Markdown 知识库目录">📂 打开已解析 Markdown</button>` : ""}
+              ${hasDeepReadFiles || paper.doc2md_out_dir ? `<button class="btn sm primary deep-read-handoff-btn" id="drwDeepReadHandoff" data-paper-key="${esc(paper.paper_key)}" title="调用 /sanmu-paper-reader 对已落盘 PDF/解析稿与 SI 执行双模图文精读和实验复现充分性探针">🔬 启动三木精读 / 复现评估</button>` : ""}
               <button class="btn sm" id="drwCopySingleCite" title="复制该篇文献的 GB/T 7714 标准参考文献格式">📋 复制单篇引用</button>
               ${
                 zMatch?.matched
@@ -2368,6 +2607,7 @@
             </div>
             ${oaLocsHtml ? `<div style="margin-top:8px;"><strong>已发现的全文/来源位置：</strong>${oaLocsHtml}</div>` : ""}
             ${paper.local_pdf_path ? `<div class="notice success" style="margin-top:8px;"><span>✅ 已下载本地 PDF：<code>${esc(paper.local_pdf_path)}</code></span><button class="btn sm primary" id="drwOpenLocalPdf">🖥 打开 PDF</button></div>` : ""}
+            ${paper.doc2md_out_dir ? `<div class="notice success" style="margin-top:6px;"><span>✅ 已解析为 Markdown 知识库：<code>${esc(paper.doc2md_out_dir)}</code></span><button class="btn sm primary" id="drwOpenDoc2mdMd">📄 打开解析稿</button></div>` : ""}
             ${paper.epmc_saved_dir ? `<div class="notice success" style="margin-top:6px;"><span>✅ 已下载 SI 补充材料目录：<code>${esc(paper.epmc_saved_dir)}</code></span></div>` : ""}
             ${paper.sciverse_saved_dir ? `<div class="notice success" style="margin-top:6px;"><span>✅ 已保存 SciVerse 原文切片/原图/材料包目录：<code>${esc(paper.sciverse_saved_dir)}</code></span><button class="btn sm primary" id="drwOpenSciverseDir">📂 打开目录</button></div>` : ""}
           </div>
@@ -2651,6 +2891,16 @@
           });
           onAction(container.querySelector("#drwOpenLocalPdf"), "click", async () => {
             if (paper.local_pdf_path) await openLocalPathInSystem(paper.local_pdf_path, "local");
+          });
+          onAction(container.querySelector("#drwJumpToDoc2md"), "click", async () => {
+            prefillDoc2mdFromPaper(paper);
+          });
+          onAction(container.querySelector("#drwOpenDoc2mdDir"), "click", async () => {
+            if (paper.doc2md_out_dir) await openLocalPathInSystem(paper.doc2md_out_dir, "local");
+          });
+          onAction(container.querySelector("#drwOpenDoc2mdMd"), "click", async () => {
+            const target = paper.doc2md_md_path || paper.doc2md_out_dir;
+            if (target) await openLocalPathInSystem(target, "local");
           });
           onAction(container.querySelector("#drwOpenSciverseDir"), "click", async () => {
             if (paper.sciverse_saved_dir) await openLocalPathInSystem(paper.sciverse_saved_dir, "local");
@@ -3219,6 +3469,7 @@
         const keyItems = [
           { key: "sciverse_api_key", label: "SciVerse", badgeId: "badgeSciverseKey", inputId: "cfgSciverseKey" },
           { key: "ai4scholar_api_key", label: "AI4Scholar", badgeId: "badgeAi4scholarKey", inputId: "cfgAi4scholarKey" },
+          { key: "mineru_api_token", label: "MinerU", badgeId: "badgeMineruToken", inputId: "cfgMineruToken" },
           { key: "easyscholar_secret_key", label: "easyScholar", badgeId: "badgeEasyscholarKey", inputId: "cfgEasyscholarKey" },
           { key: "polite_email", label: "礼貌邮箱", badgeId: "badgePoliteEmail", inputId: "cfgPoliteEmail" },
           { key: "serper_api_key", label: "Serper", badgeId: "badgeSerperKey", inputId: "cfgSerperKey" },
@@ -3426,6 +3677,7 @@
               ${Array.isArray(p.sciverse_chunks) && p.sciverse_chunks.length ? `<span class="pill info static">🎯 原文片段×${p.sciverse_chunks.length}</span>` : ""}
               ${firstOaPdf ? `<span class="pill ok static">🔓 可下PDF</span>` : p.oa_locations?.length ? `<span class="pill static">🔗 含OA页</span>` : ""}
               ${p.local_pdf_path ? `<span class="pill ok static">✅ 已存PDF</span>` : ""}
+              ${p.doc2md_out_dir ? `<span class="pill ok static" title="${esc(p.doc2md_out_dir)}">📝 已转Markdown</span>` : ""}
               ${zMatch?.matched ? `<span class="pill ok static" title="Zotero Key: ${esc(zMatch.itemKey)}">📚 Zotero已收录${esc(zColTag)}</span>` : ""}
               ${p.comment_corrections?.length ? `<span class="pill err static">⚠ 含勘误/撤稿</span>` : ""}
             </div>
@@ -3452,7 +3704,9 @@
             </div>
             <div class="action-bar" onclick="event.stopPropagation();">
               <button class="btn sm basket-toggle-btn ${p.in_basket ? "success" : "primary"}" data-paper-key="${esc(p.paper_key)}">${p.in_basket ? "⭐ 已收藏" : "⭐ 收藏"}</button>
-              ${hasDeepReadFiles ? `<button class="btn sm primary deep-read-handoff-btn" data-paper-key="${esc(p.paper_key)}" title="调用 /sanmu-paper-reader 对已落盘 PDF 与 SI 执行双模图文精读和实验复现充分性探针">🔬 启动三木精读 / 复现评估</button>` : ""}
+              ${p.doc2md_out_dir ? `<button class="btn sm success card-open-doc2md-btn" data-path="${esc(p.doc2md_md_path || p.doc2md_out_dir)}" title="打开已解析的 Markdown 知识库">📂 打开Markdown</button>` : ""}
+              ${(p.local_pdf_path || zMatch?.matched || p.doc2md_out_dir || (Array.isArray(p.epmc_suppl_files) && p.epmc_suppl_files.length)) ? `<button class="btn sm primary card-to-doc2md-btn" data-paper-key="${esc(p.paper_key)}" title="将该文献带入「📝 文档解析」工作台，转换为保留 LaTeX 公式与高清原图的 Obsidian Markdown 知识库">📝 转Markdown入库</button>` : ""}
+              ${hasDeepReadFiles || p.doc2md_out_dir ? `<button class="btn sm primary deep-read-handoff-btn" data-paper-key="${esc(p.paper_key)}" title="调用 /sanmu-paper-reader 对已落盘 PDF 与 SI 执行双模图文精读和实验复现充分性探针">🔬 启动三木精读 / 复现评估</button>` : ""}
               ${
                 zMatch?.matched
                   ? `<button class="btn sm success zotero-open-btn" data-zkey="${esc(zMatch.itemKey)}" title="在 Zotero 桌面端直接定位此文献">📖 Zotero定位</button>
@@ -3802,6 +4056,15 @@
         });
         container.querySelectorAll(".card-open-local-pdf-btn").forEach((btn) => {
           onAction(btn, "click", async () => openLocalPathInSystem(btn.dataset.path, "local"));
+        });
+        container.querySelectorAll(".card-open-doc2md-btn").forEach((btn) => {
+          onAction(btn, "click", async () => openLocalPathInSystem(btn.dataset.path, "local"));
+        });
+        container.querySelectorAll(".card-to-doc2md-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            const p = paperMap.get(btn.dataset.paperKey);
+            if (p) prefillDoc2mdFromPaper(p);
+          });
         });
         container.querySelectorAll(".open-doi-btn").forEach((btn) => {
           onAction(btn, "click", async () => openExternalUrl(btn.dataset.url));
@@ -5590,6 +5853,10 @@
         disposed = true;
         ro?.disconnect();
         stopGraphPhysics();
+        if (state.doc2mdPollTimer) {
+          clearTimeout(state.doc2mdPollTimer);
+          state.doc2mdPollTimer = null;
+        }
         for (const { reject, timer } of pendingRpc.values()) {
           clearTimeout(timer);
           reject(new Error("面板已关闭"));
@@ -6571,6 +6838,498 @@
         });
       }
 
+      // =========================================================================
+      // 4b. Document Parsing (sanmu-doc2md) Workbench & Helpers
+      // =========================================================================
+      function getChosenDoc2mdSaveDir() {
+        const val = document.getElementById("doc2mdSaveDirInput")?.value?.trim();
+        return val || state.panelData?.settings?.doc2mdSubdir || "00-收件箱-待整理/文献解析";
+      }
+
+      function computeClientFolderPreview(meta, fallbackPath = "") {
+        const rawStem = String(fallbackPath || "")
+          .replace(/^.*[/\\]/, "")
+          .replace(/\.[^.]+$/, "")
+          .trim() || "文档名称";
+        const mode = document.getElementById("doc2mdModeSelect")?.value || "research";
+        const customName = document.getElementById("doc2mdFolderNameInput")?.value?.trim();
+        if (customName) return customName;
+        if (mode === "slides") return `${ (meta?.title || rawStem).slice(0, 80) }-课件笔记`;
+        if (mode === "book") return `${ (meta?.title || rawStem).slice(0, 80) }-知识库`;
+        if (meta && (meta.title || (Array.isArray(meta.authors) && meta.authors.length))) {
+          let creator = "";
+          if (Array.isArray(meta.authors) && meta.authors.length > 0) {
+            const first = String(meta.authors[0]?.name || meta.authors[0] || "").trim();
+            if (first) {
+              const last = /[\u4e00-\u9fff]/.test(first)
+                ? first
+                : first.includes(",")
+                  ? first.split(",")[0].trim()
+                  : first.split(/\s+/).pop() || first;
+              creator = meta.authors.length > 1 ? `${last} 等` : last;
+            }
+          }
+          const yr = meta.year || (String(meta.date || "").match(/\b(19|20)\d{2}\b/)?.[0] || "");
+          const titleClean = String(meta.title || rawStem).replace(/:/g, " - ").replace(/[\\/*?"<>|]+/g, "_").slice(0, 90);
+          return [creator, yr, titleClean].filter(Boolean).join(" - ");
+        }
+        return rawStem;
+      }
+
+      function updateDoc2mdOutputPreview() {
+        const prevEl = document.getElementById("doc2mdOutputPreviewText");
+        const folderInput = document.getElementById("doc2mdFolderNameInput");
+        if (!prevEl) return;
+        const baseDir = getChosenDoc2mdSaveDir();
+        const mainPath =
+          document.getElementById("doc2mdMainFileInput")?.value?.trim() ||
+          document.getElementById("doc2mdPptxFileInput")?.value?.trim() ||
+          document.getElementById("doc2mdRawDirInput")?.value?.trim() ||
+          "";
+        const siPath = document.getElementById("doc2mdSiFileInput")?.value?.trim() || "";
+        const mode = document.getElementById("doc2mdModeSelect")?.value || "research";
+        const autoFolder = computeClientFolderPreview(state.doc2mdBoundMeta, mainPath);
+        if (folderInput) {
+          folderInput.placeholder = `自动生成：${autoFolder}`;
+        }
+        const sep = baseDir.includes("\\") ? "\\" : "/";
+        const cleanBase = baseDir.replace(/[/\\]+$/, "");
+        const mainTarget = `${cleanBase}${sep}${autoFolder}`;
+        const siTarget = mode === "research" && siPath ? ` · 补充材料 SI 目录：${mainTarget} - SI` : "";
+        prevEl.innerHTML = `📌 <strong>预计生成知识库路径：</strong><code>${esc(mainTarget)}</code>${siTarget ? `<code>${esc(siTarget)}</code>` : ""}`;
+      }
+
+      function renderDoc2mdBoundMetaBar() {
+        const bar = document.getElementById("doc2mdBoundMetaBar");
+        const txt = document.getElementById("doc2mdBoundMetaText");
+        if (!bar || !txt) return;
+        const meta = state.doc2mdBoundMeta;
+        if (!meta || (!meta.title && !meta.doi)) {
+          bar.classList.add("hidden");
+          txt.textContent = "";
+          return;
+        }
+        const authStr = Array.isArray(meta.authors) && meta.authors.length
+          ? meta.authors.slice(0, 3).map((a) => a?.name || a).join(", ") + (meta.authors.length > 3 ? " 等" : "")
+          : "";
+        txt.innerHTML = `🏷 <strong>已绑定文献题录：</strong>《${esc(meta.title || "Untitled")}》${authStr ? ` · 👤 ${esc(authStr)}` : ""}${meta.year ? ` (${esc(meta.year)})` : ""}${meta.doi ? ` · DOI: <code>${esc(meta.doi)}</code>` : ""}${state.doc2mdBoundZoteroKey ? ` · 📚 Zotero: <code>${esc(state.doc2mdBoundZoteroKey)}</code>` : ""}`;
+        bar.classList.remove("hidden");
+      }
+
+      function updateDoc2mdFormVisibility() {
+        const mode = document.getElementById("doc2mdModeSelect")?.value || "research";
+        const engine = document.getElementById("doc2mdEngineSelect")?.value || "mineru";
+        const mineruConfigured = Boolean(state.panelData?.configStatus?.mineru_api_token?.configured);
+
+        document.getElementById("doc2mdSiFileField")?.classList.toggle("hidden", mode !== "research");
+        document.getElementById("doc2mdPptxFileField")?.classList.toggle("hidden", mode !== "slides");
+        document.getElementById("doc2mdRawDirField")?.classList.toggle("hidden", engine !== "existing_raw");
+        document.getElementById("doc2mdBookExtraRow")?.classList.toggle("hidden", mode !== "book");
+        document.getElementById("lblDoc2mdBookSplitOnly")?.classList.toggle("hidden", mode !== "book" || engine !== "mineru");
+        document.getElementById("doc2mdMineruHint")?.classList.toggle("hidden", engine !== "mineru" || mineruConfigured);
+
+        const mainLbl = document.getElementById("doc2mdMainFileLabel");
+        if (mainLbl) {
+          mainLbl.textContent =
+            mode === "slides"
+              ? "📄 待解析课件 PDF 或 PPTX 路径（可点击右侧按钮直接从系统文件管理器选择）"
+              : mode === "book"
+                ? "📘 待解析整本教材/专著 PDF 路径（超过 200 页自动按分片页数无损切分）"
+                : "📄 待解析论文主文 PDF 路径（可点击右侧按钮从系统文件管理器直接选择）";
+        }
+        updateDoc2mdOutputPreview();
+      }
+
+      function switchDoc2mdSourceMode(srcMode) {
+        state.doc2mdSourceMode = srcMode;
+        document.querySelectorAll("#doc2mdSourceBar .doc2md-src-chip").forEach((c) => {
+          c.classList.toggle("active", c.dataset.src === srcMode);
+        });
+        document.getElementById("doc2mdZoteroBrowserWrap")?.classList.toggle("hidden", srcMode !== "zotero");
+        document.getElementById("doc2mdLocalPapersWrap")?.classList.toggle("hidden", srcMode !== "papers");
+        if (srcMode === "papers") {
+          renderDoc2mdLocalPapersPicker();
+        }
+      }
+
+      function prefillDoc2mdFromPaper(paper) {
+        if (!paper) return;
+        closeDetailView();
+        switchTab("doc2md");
+        const modeSel = document.getElementById("doc2mdModeSelect");
+        if (modeSel) modeSel.value = "research";
+
+        const mainInput = document.getElementById("doc2mdMainFileInput");
+        const siInput = document.getElementById("doc2mdSiFileInput");
+        if (mainInput && paper.local_pdf_path) {
+          mainInput.value = paper.local_pdf_path;
+        }
+        const supplPdfs = (Array.isArray(paper.epmc_suppl_files) ? paper.epmc_suppl_files : []).filter((f) =>
+          String(f || "").toLowerCase().endsWith(".pdf")
+        );
+        if (siInput) {
+          siInput.value = supplPdfs[0] || "";
+        }
+
+        const doi = paper.identifiers?.doi?.[0] || "";
+        const zKey = paper.zotero_match?.itemKey || "";
+        state.doc2mdBoundPaperKey = paper.paper_key || null;
+        state.doc2mdBoundZoteroKey = zKey || null;
+        state.doc2mdBoundMeta = {
+          title: paper.title || "",
+          authors: (paper.authors || []).map((a) => a?.name || a).filter(Boolean),
+          year: paper.year || null,
+          date: paper.publication_date || (paper.year ? String(paper.year) : ""),
+          publication_title: safeJournalStr(paper),
+          doi,
+          abstract: paper.abstract || "",
+          url: paper.url || (doi ? `https://doi.org/${doi}` : ""),
+          ...(zKey ? { zotero_item_uri: `zotero://select/library/items/${zKey}` } : {})
+        };
+        renderDoc2mdBoundMetaBar();
+        updateDoc2mdFormVisibility();
+        showBanner(
+          paper.local_pdf_path
+            ? `📝 已载入《${(paper.title || "").slice(0, 38)}》及其本地 PDF${supplPdfs[0] ? " + SI PDF" : ""}，点击「🚀 开始解析为 Markdown 知识库」即可转换。`
+            : `📝 已绑定《${(paper.title || "").slice(0, 38)}》题录，请点击「📂 浏览选文件...」选择本地 PDF 后开始解析。`,
+          "info"
+        );
+      }
+
+      function prefillDoc2mdFromZoteroItem(zItem) {
+        if (!zItem) return;
+        const modeSel = document.getElementById("doc2mdModeSelect");
+        if (modeSel) modeSel.value = "research";
+        const mainInput = document.getElementById("doc2mdMainFileInput");
+        const siInput = document.getElementById("doc2mdSiFileInput");
+        if (mainInput && zItem.mainPdfPath) mainInput.value = zItem.mainPdfPath;
+        if (siInput) siInput.value = zItem.siPdfPath || "";
+        state.doc2mdBoundZoteroKey = zItem.itemKey || null;
+        state.doc2mdBoundPaperKey = zItem.doi ? `doi:${String(zItem.doi).toLowerCase()}` : null;
+        state.doc2mdBoundMeta = zItem.metadata || {
+          title: zItem.title || "",
+          authors: zItem.authors || [],
+          year: zItem.year || null,
+          date: zItem.date || "",
+          publication_title: zItem.journal || "",
+          doi: zItem.doi || "",
+          zotero_item_uri: zItem.selectUri || ""
+        };
+        renderDoc2mdBoundMetaBar();
+        updateDoc2mdFormVisibility();
+        showBanner(
+          `📚 已从 Zotero 选入《${(zItem.title || "").slice(0, 38)}》（含主文 PDF${zItem.siPdfPath ? " + SI 附件" : ""}），可直接点击开始解析！`,
+          "success"
+        );
+      }
+
+      function renderDoc2mdLocalPapersPicker() {
+        const mount = document.getElementById("doc2mdLocalPapersMount");
+        if (!mount) return;
+        const allCandidates = [];
+        const seen = new Set();
+        for (const p of [...(state.panelData?.activeRun?.papers || []), ...(state.panelData?.basket || [])]) {
+          if (!p?.paper_key || seen.has(p.paper_key)) continue;
+          if (p.local_pdf_path || (Array.isArray(p.epmc_suppl_files) && p.epmc_suppl_files.some((f) => String(f).toLowerCase().endsWith(".pdf")))) {
+            seen.add(p.paper_key);
+            allCandidates.push(p);
+          }
+        }
+        if (allCandidates.length === 0) {
+          mount.innerHTML = `<div style="font-size:11.5px; color:var(--text-secondary);">当前检索结果或收藏篮中暂无已下载本地 PDF 的文献。您可先在检索卡片上下载 OA PDF 或认领浏览器下载的 PDF，或直接点击上方「📂 1. 本地文件管理器选择」。</div>`;
+          return;
+        }
+        mount.innerHTML = `<div class="paper-list">${allCandidates
+          .map((p, idx) => {
+            const hasSiPdf = Array.isArray(p.epmc_suppl_files) && p.epmc_suppl_files.some((f) => String(f).toLowerCase().endsWith(".pdf"));
+            return `
+              <div class="paper-card" style="padding:7px 10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <div style="flex:1; min-width:0;">
+                    <strong style="font-size:12px; color:var(--accent);">${idx + 1}. ${esc(p.title || "Untitled")}</strong>
+                    <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">
+                      📅 ${esc(p.year || "未知")} · ${p.local_pdf_path ? `<span class="pill ok static">📄 已存主文PDF</span>` : ""}${hasSiPdf ? ` <span class="pill info static">📎 含SI PDF</span>` : ""}${p.doc2md_out_dir ? ` <span class="pill ok static">📝 已解析</span>` : ""}
+                    </div>
+                  </div>
+                  <button type="button" class="btn sm primary doc2md-pick-local-paper-btn" data-paper-key="${esc(p.paper_key)}">⚡ 选入解析</button>
+                </div>
+              </div>
+            `;
+          })
+          .join("")}</div>`;
+        const byKey = new Map(allCandidates.map((p) => [p.paper_key, p]));
+        mount.querySelectorAll(".doc2md-pick-local-paper-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const p = byKey.get(btn.dataset.paperKey);
+            if (p) prefillDoc2mdFromPaper(p);
+          });
+        });
+      }
+
+      function renderDoc2mdZoteroItemsList(items) {
+        const mount = document.getElementById("doc2mdZoteroItemsMount");
+        if (!mount) return;
+        state.doc2mdZoteroItems = Array.isArray(items) ? items : [];
+        if (state.doc2mdZoteroItems.length === 0) {
+          mount.innerHTML = `<div style="font-size:11.5px; color:var(--text-secondary);">未找到带有本地 PDF 附件的 Zotero 条目（请确认 Zotero 桌面端已启动且条目已下载本地 PDF）。</div>`;
+          return;
+        }
+        mount.innerHTML = `<div class="paper-list">${state.doc2mdZoteroItems
+          .map(
+            (it, idx) => `
+            <div class="paper-card" style="padding:7px 10px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:0;">
+                  <strong style="font-size:12px; color:var(--accent);">${idx + 1}. ${esc(it.title)}</strong>
+                  <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">
+                    👤 ${esc(it.firstAuthor || "作者未知")} · 📅 ${esc(it.year || "未知")}${it.journal ? ` · 📘 ${esc(it.journal)}` : ""}
+                    ${it.mainPdfPath ? ` <span class="pill ok static">📄 主文PDF</span>` : ""}
+                    ${it.siPdfPath ? ` <span class="pill info static">📎 含SI附件</span>` : ""}
+                  </div>
+                </div>
+                <button type="button" class="btn sm primary doc2md-pick-zotero-btn" data-idx="${idx}">⚡ 选入解析</button>
+              </div>
+            </div>
+          `
+          )
+          .join("")}</div>`;
+        mount.querySelectorAll(".doc2md-pick-zotero-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const zItem = state.doc2mdZoteroItems[Number(btn.dataset.idx)];
+            if (zItem) prefillDoc2mdFromZoteroItem(zItem);
+          });
+        });
+      }
+
+      function scheduleDoc2mdPolling(jobs) {
+        if (state.doc2mdPollTimer) {
+          clearTimeout(state.doc2mdPollTimer);
+          state.doc2mdPollTimer = null;
+        }
+        const hasRunning = (jobs || []).some((j) => j.status === "running");
+        if (!hasRunning || disposed) return;
+        state.doc2mdPollTimer = setTimeout(async () => {
+          state.doc2mdPollTimer = null;
+          if (disposed || state.busy) return;
+          try {
+            const res = await sendRpcRequest("tools/call", {
+              name: "manage_doc2md",
+              arguments: { action: "status" }
+            }, 15000);
+            const sc = res?.structuredContent;
+            if (isPanelState(sc)) updatePanelData(sc);
+          } catch {}
+        }, 2500);
+      }
+
+      function renderDoc2mdJobsList(jobs) {
+        const container = document.getElementById("doc2mdJobsListContainer");
+        const countEl = document.getElementById("tabCountDoc2md");
+        if (countEl) countEl.textContent = String((jobs || []).length);
+        if (!container) return;
+
+        if (!Array.isArray(jobs) || jobs.length === 0) {
+          container.innerHTML = `<p style="color:var(--text-secondary); margin:0;">暂无文档解析记录。在上方选择本地 PDF / PPTX、Zotero 文献或检索卡片后点击「🚀 开始解析为 Markdown 知识库」即可启动。</p>`;
+          return;
+        }
+
+        const modeMap = {
+          research: "🔬 科研论文",
+          slides: "📊 课程课件",
+          book: "📘 教材专著"
+        };
+        const engineMap = {
+          mineru: "☁ MinerU云端OCR",
+          local_fast: "⚡ 本地原生直提",
+          existing_raw: "📂 复用已有OCR"
+        };
+
+        container.innerHTML = `<div class="paper-list">${jobs
+          .map((j) => {
+            const st = j.stats || {};
+            const isRunning = j.status === "running";
+            const isDone = j.status === "completed";
+            const isOcrDone = j.status === "ocr_completed";
+            const isFailed = j.status === "failed";
+            const statusPill = isRunning
+              ? `<span class="pill info static">⏳ 运行中</span>`
+              : isDone
+                ? `<span class="pill ok static">✅ 已完成</span>`
+                : isOcrDone
+                  ? `<span class="pill purple static">📑 OCR就绪(待装配)</span>`
+                  : `<span class="pill err static">❌ 中断/失败</span>`;
+            const timeStr = String(j.completedAt || j.updatedAt || j.createdAt || "").slice(0, 16).replace("T", " ");
+            const warnCount = Array.isArray(st.warnings) ? st.warnings.length : 0;
+
+            return `
+              <div class="paper-card" data-job-id="${esc(j.jobId)}">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+                  <div style="flex:1; min-width:0;">
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                      ${statusPill}
+                      <span class="pill static">${esc(modeMap[j.mode] || j.mode)}</span>
+                      <span class="pill static">${esc(engineMap[j.ocrEngine] || j.ocrEngine)}</span>
+                      <strong style="font-size:13px; color:var(--accent);">${esc(j.title || j.jobId)}</strong>
+                    </div>
+                    <div style="font-size:11.5px; color:var(--text-secondary); margin-top:4px;">
+                      ${esc(j.phaseLabel || "")}
+                      ${timeStr ? ` · <span style="color:var(--text-tertiary);">🕒 ${esc(timeStr)}</span>` : ""}
+                    </div>
+                    <div style="font-size:11px; color:var(--text-tertiary); margin-top:2px; word-break:break-all;">
+                      📁 输出目录：<code>${esc(j.outDir || "")}</code>${j.siOutDir ? ` · SI目录：<code>${esc(j.siOutDir)}</code>` : ""}
+                    </div>
+                  </div>
+                </div>
+                ${
+                  isDone
+                    ? `<div class="paper-meta" style="margin-top:6px;">
+                        <span class="pill ok static">📄 Markdown ${esc(st.markdownCount ?? 1)} 份</span>
+                        <span class="pill info static">🖼 提取图片 ${esc(st.totalImageCount ?? 0)} 张</span>
+                        <span class="pill ${st.mathPassed !== false ? "ok" : "warn"} static">📐 公式 ${esc(st.formulaCount ?? 0)} 处 (${st.mathPassed !== false ? "KaTeX通过" : `告警×${st.mathErrors || 1}`})</span>
+                        ${warnCount > 0 ? `<span class="pill warn static">⚠ 待复核项×${warnCount}</span>` : `<span class="pill ok static">✓ 0 警告</span>`}
+                        ${j.previewUrl ? `<span class="pill purple static">🌐 预览运行中: ${esc(j.previewUrl)}</span>` : ""}
+                      </div>`
+                    : ""
+                }
+                ${
+                  warnCount > 0
+                    ? `<details class="sub-fold" style="margin-top:6px;">
+                        <summary>▸ 查看 ${warnCount} 条结构/公式复核提示</summary>
+                        <div style="font-size:11px; color:var(--text-secondary); margin-top:4px; max-height:120px; overflow-y:auto;">
+                          ${(st.warnings || []).map((w) => `<div>• ${esc(w)}</div>`).join("")}
+                        </div>
+                      </details>`
+                    : ""
+                }
+                <div class="action-bar" style="margin-top:8px;">
+                  ${j.outDir ? `<button type="button" class="btn sm success doc2md-open-dir-btn" data-path="${esc(j.outDir)}">📂 打开输出目录</button>` : ""}
+                  ${j.siOutDir ? `<button type="button" class="btn sm doc2md-open-dir-btn" data-path="${esc(j.siOutDir)}">📎 打开SI目录</button>` : ""}
+                  ${isDone && st.primaryMarkdownPath ? `<button type="button" class="btn sm primary doc2md-view-md-btn" data-path="${esc(st.primaryMarkdownPath)}" data-title="${esc(j.title)}">📄 查看主Markdown</button>` : ""}
+                  ${isDone ? `<button type="button" class="btn sm primary doc2md-katex-preview-btn exec-btn" data-job-id="${esc(j.jobId)}">🌐 KaTeX浏览器渲染预览</button>` : ""}
+                  ${j.previewUrl ? `<button type="button" class="btn sm danger doc2md-stop-preview-btn exec-btn" data-job-id="${esc(j.jobId)}">⏹ 停止预览</button>` : ""}
+                  ${isDone ? `<button type="button" class="btn sm primary doc2md-ai-read-btn" data-job-id="${esc(j.jobId)}" title="调用 /sanmu-paper-reader 基于该 Markdown 解析稿与高清图片执行图文精读">🔬 让AI精读此解析稿</button>` : ""}
+                  ${(isDone && warnCount > 0) || isOcrDone ? `<button type="button" class="btn sm doc2md-ai-repair-btn" data-job-id="${esc(j.jobId)}">🔧 让AI核对/回源精修</button>` : ""}
+                  ${(isFailed && (j.ocrEngine === "mineru" || j.progress?.canResume)) ? `<button type="button" class="btn sm primary doc2md-resume-btn exec-btn" data-job-id="${esc(j.jobId)}" title="调用 mineru_ocr.py resume 断点续传原批次，不重复消耗额度">🔄 断点续传 (resume)</button>` : ""}
+                  ${(isDone || isOcrDone || isFailed) ? `<button type="button" class="btn sm doc2md-rebuild-btn exec-btn" data-job-id="${esc(j.jobId)}" title="不重新上传 OCR，直接重新执行 Markdown 装配与 KaTeX 校验">🔄 重新装配校验</button>` : ""}
+                  ${!isRunning ? `<button type="button" class="btn sm danger doc2md-del-job-btn exec-btn" data-job-id="${esc(j.jobId)}">🗑 移除记录</button>` : ""}
+                </div>
+              </div>
+            `;
+          })
+          .join("")}</div>`;
+
+        const jobById = new Map(jobs.map((j) => [j.jobId, j]));
+        container.querySelectorAll(".doc2md-open-dir-btn").forEach((btn) => {
+          onAction(btn, "click", async () => openLocalPathInSystem(btn.dataset.path, "local"));
+        });
+        container.querySelectorAll(".doc2md-view-md-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            await inspectRunFile("local", btn.dataset.path);
+          });
+        });
+        container.querySelectorAll(".doc2md-katex-preview-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            const res = await callTool(
+              "manage_doc2md",
+              { action: "preview", jobId: btn.dataset.jobId, openInBrowser: true },
+              "正在启动本地 KaTeX 渲染预览服务...",
+              btn
+            );
+            if (res?.previewServer?.url) {
+              showBanner(`🌐 KaTeX 渲染预览已启动：${res.previewServer.url}`, "success");
+            }
+          });
+        });
+        container.querySelectorAll(".doc2md-stop-preview-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            await callTool("manage_doc2md", { action: "stop_preview", jobId: btn.dataset.jobId }, "正在停止预览服务...", btn);
+            showBanner("⏹ 已停止本地 KaTeX 预览服务", "info");
+          });
+        });
+        container.querySelectorAll(".doc2md-resume-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            await callTool(
+              "manage_doc2md",
+              { action: "resume", jobId: btn.dataset.jobId, async: true },
+              "正在断点续传 MinerU OCR 批次（不新建批次）...",
+              btn
+            );
+            showBanner("🔄 已启动断点续传任务！", "info");
+          });
+        });
+        container.querySelectorAll(".doc2md-rebuild-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            await callTool(
+              "manage_doc2md",
+              { action: "rebuild", jobId: btn.dataset.jobId, async: true },
+              "正在重新装配 Markdown 并运行 KaTeX 校验...",
+              btn
+            );
+            showBanner("✅ 已启动重新装配与校验！", "success");
+          });
+        });
+        container.querySelectorAll(".doc2md-del-job-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            await callTool("manage_doc2md", { action: "delete", jobId: btn.dataset.jobId }, "正在移除任务记录...", btn);
+            showBanner("已移除该条解析任务记录（已生成的知识库文件保持不变）", "info");
+          });
+        });
+        container.querySelectorAll(".doc2md-ai-read-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            const j = jobById.get(btn.dataset.jobId);
+            if (!j) return;
+            const prompt = [
+              `请调用 \`/sanmu-paper-reader\` 技能，对以下刚刚由 \`sanmu-doc2md\` 解析完成的 Markdown 知识库执行深度图文精读：`,
+              `- **文档标题**：${j.title}`,
+              `- **主文 Markdown 知识库目录**：\`${j.outDir}\``,
+              ...(j.stats?.primaryMarkdownPath ? [`- **主文 Markdown 文件**：\`${j.stats.primaryMarkdownPath}\``] : []),
+              ...(j.siOutDir ? [`- **补充材料 (SI) 知识库目录**：\`${j.siOutDir}\``] : []),
+              ...(j.input?.pdfPath ? [`- **源 PDF 路径**：\`${j.input.pdfPath}\``] : []),
+              `请直接基于已解析的 Markdown 与 \`images/\` 高清原图生成结构化图文对照精读笔记。`
+            ].join("\n");
+            await sendToChat(prompt, j);
+          });
+        });
+        container.querySelectorAll(".doc2md-ai-repair-btn").forEach((btn) => {
+          onAction(btn, "click", async () => {
+            const j = jobById.get(btn.dataset.jobId);
+            if (!j) return;
+            const prompt = [
+              `请调用 \`/sanmu-doc2md\` 技能，协助核对并精修以下文档解析产物：`,
+              `- **任务 ID**：\`${j.jobId}\` (${j.mode} 模式)`,
+              `- **输出目录**：\`${j.outDir}\``,
+              ...(j.input?.pdfPath ? [`- **源 PDF 路径**：\`${j.input.pdfPath}\``] : []),
+              ...(j.chaptersDraftPath ? [`- **待核对章节草稿 chapters.json**：\`${j.chaptersDraftPath}\``] : []),
+              ...(j.stats?.warnings?.length ? [`- **待复核告警列表**：\n${j.stats.warnings.map((w) => `  - ${w}`).join("\n")}`] : []),
+              `请对照源 PDF 原页核实这些告警或章节边界，按需编写 repairs.json / chapters.json 并完成终验。`
+            ].join("\n");
+            await sendToChat(prompt, j);
+          });
+        });
+      }
+
+      function renderDoc2mdTab(data) {
+        const jobs = data?.doc2mdJobs || [];
+        renderDoc2mdJobsList(jobs);
+        scheduleDoc2mdPolling(jobs);
+
+        // Sync Zotero collection dropdown inside doc2md Zotero browser
+        const zColSel = document.getElementById("doc2mdZoteroColSelect");
+        const cols = data?.settings?.zoteroCollections || [];
+        if (zColSel) {
+          const prev = zColSel.value;
+          zColSel.innerHTML =
+            `<option value="">全部文库条目</option>` +
+            cols.map((c) => `<option value="${esc(c.key)}">${esc(c.fullName || c.name)}</option>`).join("");
+          if (prev && cols.some((c) => c.key === prev)) zColSel.value = prev;
+        }
+        if (state.doc2mdSourceMode === "papers") {
+          renderDoc2mdLocalPapersPicker();
+        }
+        updateDoc2mdFormVisibility();
+      }
+
+
       function updatePanelData(data) {
         if (disposed || !data) return;
         const isFirstLoad = !state.panelData;
@@ -6640,6 +7399,9 @@
                 user_note: ev.user_note !== undefined ? ev.user_note : basketHit?.user_note ?? sp.user_note ?? "",
                 ...(ev.epmc_saved_dir || sp.epmc_saved_dir ? { epmc_saved_dir: ev.epmc_saved_dir || sp.epmc_saved_dir } : {}),
                 ...(Array.isArray(ev.epmc_suppl_files) ? { epmc_suppl_files: ev.epmc_suppl_files } : {}),
+                ...(ev.doc2md_out_dir || sp.doc2md_out_dir ? { doc2md_out_dir: ev.doc2md_out_dir || sp.doc2md_out_dir } : {}),
+                ...(ev.doc2md_md_path || sp.doc2md_md_path ? { doc2md_md_path: ev.doc2md_md_path || sp.doc2md_md_path } : {}),
+                ...(ev.doc2md_si_out_dir || sp.doc2md_si_out_dir ? { doc2md_si_out_dir: ev.doc2md_si_out_dir || sp.doc2md_si_out_dir } : {}),
                 zotero_match: nextZ
               };
             });
@@ -6651,8 +7413,15 @@
         renderRelationshipGraph(data);
         renderBasket(data);
         renderRunsManager(data);
+        renderDoc2mdTab(data);
         if (data.settings?.exportSubdir && isFirstLoad) {
           document.getElementById("globalSaveDirInput").value = data.settings.exportSubdir;
+        }
+        if (data.settings?.doc2mdSubdir && isFirstLoad) {
+          const dSub = data.settings.doc2mdSubdir;
+          if (document.getElementById("cfgDoc2mdSubdirInput")) document.getElementById("cfgDoc2mdSubdirInput").value = dSub;
+          if (document.getElementById("doc2mdSaveDirInput")) document.getElementById("doc2mdSaveDirInput").value = dSub;
+          updateDoc2mdOutputPreview();
         }
         if (data.settings?.politeEmail !== undefined && isFirstLoad) {
           document.getElementById("cfgPoliteEmail").value = data.settings.politeEmail || "";
@@ -6684,37 +7453,45 @@
 
       onAction(document.getElementById("btnSaveConfig"), "click", async (e) => {
         const exportSubdir = getChosenSaveDir();
+        const doc2mdSubdir = document.getElementById("cfgDoc2mdSubdirInput")?.value?.trim() || getChosenDoc2mdSaveDir();
         await callTool(
           "save_config",
           {
             politeEmail: document.getElementById("cfgPoliteEmail").value,
             sciverseApiKey: document.getElementById("cfgSciverseKey").value,
             ai4scholarApiKey: document.getElementById("cfgAi4scholarKey").value,
+            mineruApiToken: document.getElementById("cfgMineruToken")?.value || "",
             easyscholarSecretKey: document.getElementById("cfgEasyscholarKey").value,
             openalexApiKey: document.getElementById("cfgOpenalexKey").value,
             s2ApiKey: document.getElementById("cfgS2Key").value,
             exaApiKey: document.getElementById("cfgExaKey").value,
             serperApiKey: document.getElementById("cfgSerperKey").value,
             zoteroUrl: document.getElementById("cfgZoteroUrl").value,
-            exportSubdir
+            exportSubdir,
+            doc2mdSubdir
           },
           "正在保存配置...",
           e.currentTarget
         );
         document.getElementById("cfgSciverseKey").value = "";
         document.getElementById("cfgAi4scholarKey").value = "";
+        if (document.getElementById("cfgMineruToken")) document.getElementById("cfgMineruToken").value = "";
         document.getElementById("cfgEasyscholarKey").value = "";
         document.getElementById("cfgOpenalexKey").value = "";
         document.getElementById("cfgS2Key").value = "";
         document.getElementById("cfgExaKey").value = "";
         document.getElementById("cfgSerperKey").value = "";
+        if (document.getElementById("doc2mdSaveDirInput") && doc2mdSubdir) {
+          document.getElementById("doc2mdSaveDirInput").value = doc2mdSubdir;
+          updateDoc2mdOutputPreview();
+        }
         showBanner("✅ 设置已保存并立即生效！", "success");
       });
 
       onAction(document.getElementById("btnClearSavedKeys"), "click", async (e) => {
         await callTool(
           "save_config",
-          { clearKeys: ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey", "sciverseApiKey"] },
+          { clearKeys: ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey", "sciverseApiKey", "mineruApiToken"] },
           "正在重置面板自定义 Key...",
           e.currentTarget
         );
@@ -7168,6 +7945,271 @@
           e.currentTarget
         );
         switchTab("results");
+      });
+
+      // =========================================================================
+      // 6. Document Parsing (sanmu-doc2md) Form & Picker Event Listeners
+      // =========================================================================
+      document.querySelectorAll("#doc2mdSourceBar .doc2md-src-chip").forEach((chip) => {
+        chip.addEventListener("click", () => switchDoc2mdSourceMode(chip.dataset.src));
+      });
+      document.getElementById("doc2mdModeSelect")?.addEventListener("change", () => {
+        const m = document.getElementById("doc2mdModeSelect").value;
+        const langSel = document.getElementById("doc2mdLangSelect");
+        if (langSel) langSel.value = m === "research" ? "en" : "ch";
+        updateDoc2mdFormVisibility();
+      });
+      document.getElementById("doc2mdEngineSelect")?.addEventListener("change", updateDoc2mdFormVisibility);
+      for (const id of ["doc2mdMainFileInput", "doc2mdSiFileInput", "doc2mdPptxFileInput", "doc2mdRawDirInput", "doc2mdSaveDirInput", "doc2mdFolderNameInput"]) {
+        document.getElementById(id)?.addEventListener("input", updateDoc2mdOutputPreview);
+      }
+      document.querySelectorAll(".doc2md-quick-dir-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          const inp = document.getElementById("doc2mdSaveDirInput");
+          if (inp && chip.dataset.dir) {
+            inp.value = chip.dataset.dir;
+            updateDoc2mdOutputPreview();
+          }
+        });
+      });
+      document.getElementById("btnClearDoc2mdMeta")?.addEventListener("click", () => {
+        state.doc2mdBoundMeta = null;
+        state.doc2mdBoundPaperKey = null;
+        state.doc2mdBoundZoteroKey = null;
+        renderDoc2mdBoundMetaBar();
+        updateDoc2mdOutputPreview();
+      });
+      document.getElementById("btnClearDoc2mdSiFile")?.addEventListener("click", () => {
+        const siInput = document.getElementById("doc2mdSiFileInput");
+        if (siInput) siInput.value = "";
+        updateDoc2mdOutputPreview();
+      });
+      document.getElementById("btnJumpConfigFromDoc2md")?.addEventListener("click", () => {
+        document.getElementById("configPanel")?.classList.remove("hidden");
+        document.getElementById("cfgMineruToken")?.focus();
+      });
+      document.getElementById("btnSwitchLocalFastEngine")?.addEventListener("click", () => {
+        const engSel = document.getElementById("doc2mdEngineSelect");
+        if (engSel) engSel.value = "local_fast";
+        updateDoc2mdFormVisibility();
+      });
+
+      onAction(document.getElementById("btnPickDoc2mdMainFile"), "click", async (e) => {
+        const mode = document.getElementById("doc2mdModeSelect")?.value || "research";
+        const filter = mode === "slides" ? "pdf_pptx" : "pdf";
+        const res = await callTool(
+          "pick_system_path",
+          { mode: "file", filter, title: "选择待解析的主文档 (PDF / PPTX)" },
+          "正在打开系统文件选择窗口...",
+          e.currentTarget
+        );
+        if (res && !res.canceled && res.path) {
+          document.getElementById("doc2mdMainFileInput").value = res.path;
+          if (res.inspected?.ext === ".pptx") {
+            document.getElementById("doc2mdModeSelect").value = "slides";
+            document.getElementById("doc2mdPptxFileInput").value = res.path;
+            if (res.siblingPdfPath) {
+              document.getElementById("doc2mdMainFileInput").value = res.siblingPdfPath;
+              showBanner(`📂 已选入课件 PPTX，并自动配对同目录 PDF：${res.siblingPdfPath}`, "success");
+            } else {
+              showBanner(`📂 已选入课件 PPTX：${res.path}`, "success");
+            }
+          } else {
+            if (mode === "research" && res.siblingSiPdfPath && !document.getElementById("doc2mdSiFileInput").value) {
+              document.getElementById("doc2mdSiFileInput").value = res.siblingSiPdfPath;
+              showBanner(`📂 已选择主文 PDF，并自动检测到同目录补充材料 SI：${res.siblingSiPdfPath}`, "success");
+            } else if (mode === "slides" && res.siblingPptxPath && !document.getElementById("doc2mdPptxFileInput").value) {
+              document.getElementById("doc2mdPptxFileInput").value = res.siblingPptxPath;
+              showBanner(`📂 已选择课件 PDF，并自动配对同目录源 PPTX：${res.siblingPptxPath}`, "success");
+            } else {
+              showBanner(`📂 已选择文件：${res.path}`, "success");
+            }
+          }
+          updateDoc2mdFormVisibility();
+        }
+      });
+
+      onAction(document.getElementById("btnPickDoc2mdSiFile"), "click", async (e) => {
+        const res = await callTool(
+          "pick_system_path",
+          { mode: "file", filter: "pdf", title: "选择补充材料 (SI) PDF 文件" },
+          "正在打开系统文件选择窗口...",
+          e.currentTarget
+        );
+        if (res && !res.canceled && res.path) {
+          document.getElementById("doc2mdSiFileInput").value = res.path;
+          updateDoc2mdOutputPreview();
+          showBanner(`📎 已选择补充材料 SI PDF：${res.path}`, "success");
+        }
+      });
+
+      onAction(document.getElementById("btnPickDoc2mdPptxFile"), "click", async (e) => {
+        const res = await callTool(
+          "pick_system_path",
+          { mode: "file", filter: "pptx", title: "选择课件源 PPTX 文件" },
+          "正在打开系统文件选择窗口...",
+          e.currentTarget
+        );
+        if (res && !res.canceled && res.path) {
+          document.getElementById("doc2mdPptxFileInput").value = res.path;
+          updateDoc2mdOutputPreview();
+          showBanner(`📊 已选择课件源 PPTX：${res.path}`, "success");
+        }
+      });
+
+      onAction(document.getElementById("btnPickDoc2mdRawDir"), "click", async (e) => {
+        const res = await callTool(
+          "pick_system_path",
+          { mode: "folder", title: "选择已有的 MinerU OCR raw 目录" },
+          "正在打开系统文件夹选择窗口...",
+          e.currentTarget
+        );
+        if (res && !res.canceled && res.path) {
+          document.getElementById("doc2mdRawDirInput").value = res.path;
+          updateDoc2mdOutputPreview();
+          showBanner(`📁 已选择 OCR 目录：${res.path}`, "success");
+        }
+      });
+
+      onAction(document.getElementById("btnPickDoc2mdChaptersJson"), "click", async (e) => {
+        const res = await callTool(
+          "pick_system_path",
+          { mode: "file", filter: "json", title: "选择教材章节定义 chapters.json 文件" },
+          "正在打开系统文件选择窗口...",
+          e.currentTarget
+        );
+        if (res && !res.canceled && res.path) {
+          document.getElementById("doc2mdChaptersJsonInput").value = res.path;
+          showBanner(`📂 已选择章节定义文件：${res.path}`, "success");
+        }
+      });
+
+      onAction(document.getElementById("btnPickDoc2mdSaveDir"), "click", async (e) => {
+        const curDir = getChosenDoc2mdSaveDir();
+        const res = await callTool(
+          "pick_system_path",
+          { mode: "folder", title: "选择 Markdown 知识库存放父目录", initialDir: curDir },
+          "正在打开系统文件夹选择窗口...",
+          e.currentTarget
+        );
+        if (res && !res.canceled && res.path) {
+          document.getElementById("doc2mdSaveDirInput").value = res.path;
+          updateDoc2mdOutputPreview();
+          showBanner(`📁 已设置存放父目录：${res.path}`, "success");
+        }
+      });
+
+      onAction(document.getElementById("btnOpenDoc2mdSaveDir"), "click", async () => {
+        const dirVal = getChosenDoc2mdSaveDir();
+        await callTool("read_run_file", {
+          runId: "__custom_dir__",
+          relativePath: dirVal,
+          openInSystem: true
+        });
+      });
+
+      const btnLoadZoteroPdfs = document.getElementById("btnLoadZoteroPdfs");
+      onAction(btnLoadZoteroPdfs, "click", async () => {
+        const collectionKey = document.getElementById("doc2mdZoteroColSelect")?.value || "";
+        const query = document.getElementById("doc2mdZoteroQueryInput")?.value?.trim() || "";
+        const res = await callTool(
+          "list_zotero_pdf_items",
+          { collectionKey: collectionKey || undefined, query: query || undefined, limit: 25, onlyWithPdf: true },
+          "正在从本机 Zotero 读取含本地 PDF 附件的文献...",
+          btnLoadZoteroPdfs
+        );
+        if (res?.zoteroPdfList) {
+          renderDoc2mdZoteroItemsList(res.zoteroPdfList.items || []);
+          showBanner(`📚 已从 Zotero 加载 ${(res.zoteroPdfList.items || []).length} 条含本地 PDF 的文献条目`, "success");
+        }
+      });
+      bindEnterKey(document.getElementById("doc2mdZoteroQueryInput"), btnLoadZoteroPdfs);
+
+      onAction(document.getElementById("btnDoc2mdDoctor"), "click", async (e) => {
+        const res = await callTool("manage_doc2md", { action: "doctor" }, "正在检查文档解析环境...", e.currentTarget);
+        if (res?.doc2mdDoctor) {
+          openDetailView(
+            "解析环境自检",
+            "sanmu-doc2md 依赖与 KaTeX / MinerU 状态自检",
+            `<div class="section-box"><pre class="pre-viewer">${esc(JSON.stringify(res.doc2mdDoctor, null, 2))}</pre></div>`
+          );
+        }
+      });
+
+      onAction(document.getElementById("btnRefreshDoc2mdJobs"), "click", async (e) => {
+        await callTool("manage_doc2md", { action: "status" }, "正在刷新解析任务状态...", e.currentTarget);
+      });
+
+      onAction(document.getElementById("btnClearDoc2mdJobs"), "click", async (e) => {
+        await callTool("manage_doc2md", { action: "clear_all" }, "正在清空已完成的历史任务记录...", e.currentTarget);
+        showBanner("🧹 已清空历史解析记录（已生成的知识库 Markdown 文件保持不变）", "success");
+      });
+
+      const btnExecDoc2md = document.getElementById("btnExecDoc2md");
+      onAction(btnExecDoc2md, "click", async () => {
+        const mode = document.getElementById("doc2mdModeSelect")?.value || "research";
+        const ocrEngine = document.getElementById("doc2mdEngineSelect")?.value || "mineru";
+        const pdfPath = document.getElementById("doc2mdMainFileInput")?.value?.trim() || "";
+        const siPdfPath = mode === "research" ? (document.getElementById("doc2mdSiFileInput")?.value?.trim() || "") : "";
+        const pptxPath = mode === "slides" ? (document.getElementById("doc2mdPptxFileInput")?.value?.trim() || "") : "";
+        const existingRawDir = ocrEngine === "existing_raw" ? (document.getElementById("doc2mdRawDirInput")?.value?.trim() || "") : "";
+        const chaptersJsonPath = mode === "book" ? (document.getElementById("doc2mdChaptersJsonInput")?.value?.trim() || "") : "";
+        const language = document.getElementById("doc2mdLangSelect")?.value || (mode === "research" ? "en" : "ch");
+        const readingOrder = document.getElementById("doc2mdReadingOrderSelect")?.value || "source";
+        const autoRepairs = Boolean(document.getElementById("chkDoc2mdAutoRepairs")?.checked);
+        const keepTableImages = Boolean(document.getElementById("chkDoc2mdKeepTableImgs")?.checked);
+        const agentIndex = Boolean(document.getElementById("chkDoc2mdAgentIndex")?.checked);
+        const bookSplitOnly = mode === "book" && Boolean(document.getElementById("chkDoc2mdBookSplitOnly")?.checked);
+        const chunkSize = mode === "book" ? readIntegerInput("doc2mdChunkSizeInput", "单次切片页数", 96, 10, 200) : 96;
+        const saveDir = getChosenDoc2mdSaveDir();
+        const outputFolderName = document.getElementById("doc2mdFolderNameInput")?.value?.trim() || undefined;
+
+        if (ocrEngine === "existing_raw") {
+          if (!existingRawDir) return showBanner("请先填写或选择已有的 MinerU OCR raw 目录路径", "error");
+        } else if (mode === "slides") {
+          if (!pdfPath && !pptxPath) return showBanner("请先选择或填写待解析的课件 PDF 或 PPTX 文件路径", "error");
+        } else {
+          if (!pdfPath) return showBanner("请先点击「📂 浏览选文件...」或从 Zotero/检索文献中选择待解析的 PDF 文件", "error");
+        }
+
+        const res = await callTool(
+          "run_doc2md",
+          {
+            mode,
+            ocrEngine,
+            pdfPath: pdfPath || undefined,
+            siPdfPath: siPdfPath || undefined,
+            pptxPath: pptxPath || undefined,
+            existingRawDir: existingRawDir || undefined,
+            chaptersJsonPath: chaptersJsonPath || undefined,
+            language,
+            readingOrder,
+            autoRepairs,
+            keepTableImages,
+            agentIndex,
+            chunkSize,
+            bookSplitOnly,
+            saveDir,
+            outputFolderName,
+            paperKey: state.doc2mdBoundPaperKey || undefined,
+            zoteroItemKey: state.doc2mdBoundZoteroKey || undefined,
+            metadata: state.doc2mdBoundMeta || undefined,
+            async: true
+          },
+          `正在启动文档解析任务 (${mode} / ${ocrEngine})...`,
+          btnExecDoc2md
+        );
+        const activeJob = res?.activeDoc2mdJob;
+        if (activeJob?.status === "completed") {
+          showBanner(
+            `✅ 文档《${activeJob.title}》已完成 Markdown 解析与 KaTeX 校验！`,
+            "success",
+            activeJob.outDir,
+            "📂 打开知识库目录"
+          );
+        } else if (activeJob) {
+          showBanner(`⏳ 已启动解析任务：${activeJob.phaseLabel || activeJob.jobId}`, "info");
+        }
       });
 
       // Bootstrapping on load

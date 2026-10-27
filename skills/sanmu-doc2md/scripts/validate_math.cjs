@@ -8,8 +8,10 @@ const fs = require('fs');
 const path = require('path');
 
 function loadKatex() {
+  const extraPaths = process.env.NODE_PATH ? process.env.NODE_PATH.split(path.delimiter).filter(Boolean) : [];
   for (const candidate of ['katex', path.join(__dirname, 'node_modules', 'katex'),
-    path.join(process.cwd(), 'node_modules', 'katex')]) {
+    path.join(process.cwd(), 'node_modules', 'katex'),
+    ...extraPaths.map(p => path.join(p, 'katex'))]) {
     try { return require(candidate); } catch (_) { /* next location */ }
   }
   throw new Error('找不到 katex；请用 NODE_PATH 指向已有的 node_modules。');

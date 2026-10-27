@@ -313,6 +313,13 @@ def build(output, root=ROOT):
             elif rel.startswith("scripts/"):
                 zcode_entries[rel] = data
                 zcode_entries[f"skills/sanmu-paper-search/{rel}"] = data
+        doc2md_prefix = "skills/sanmu-doc2md/"
+        for path, data in bundle.items():
+            if not path.startswith(doc2md_prefix):
+                continue
+            rel = path[len(doc2md_prefix):]
+            if rel in {"SKILL.md", "requirements.txt", "LICENSE"} or rel.startswith(("references/", "scripts/")):
+                zcode_entries[f"skills/sanmu-doc2md/{rel}"] = data
         for rel, data in zcode_entries.items():
             dest = zcode_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)

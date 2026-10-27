@@ -1,6 +1,6 @@
 # 三木文献检索 (sanmu-paper-search) ZCode 插件
 
-在 ZCode / DeepSeek Harness (`dsh`) / Claude Code 对话侧边栏与 Agent 中使用 **三木文献检索 (`sanmu-paper-search` v1.8.0)**：
+在 ZCode / DeepSeek Harness (`dsh`) / Claude Code 对话侧边栏与 Agent 中使用 **三木文献检索与文档解析 (`sanmu-paper-search` v1.9.0)**：
 
 ## 核心特性
 
@@ -17,9 +17,13 @@
 3. **Obsidian 风格实时物理关系图谱与图谱情报**：
    - 内置 60fps 物理弹簧力导向引文/共著星系图谱与年份演进时间轴，自动识别 **共被引基石文献 (Co-cited Hub)** 与 **跨源桥梁文献 (Bridge Paper)** Top 5 情报，支持拖拽节点牵引邻居自由流动、悬停聚光灯高亮与多跳引文融合。
 4. **双通道 API 配置（免重启即配即用）**：
-   - 可在 ZCode **设置 → 插件** 中配置 `politeEmail`、`sciverseApiKey`、`ai4scholarApiKey`、`easyscholarSecretKey`、`openalexApiKey`、`s2ApiKey`、`exaApiKey`、`serperApiKey` 与默认下载目录；
+   - 可在 ZCode **设置 → 插件** 中配置 `politeEmail`、`mineruApiToken`、`sciverseApiKey`、`ai4scholarApiKey`、`easyscholarSecretKey`、`openalexApiKey`、`s2ApiKey`、`exaApiKey`、`serperApiKey` 与默认下载/解析目录；
    - 也可直接在右侧面板顶部点击 **「⚙ 设置」** 随时修改保存，自动继承本机已有环境变量，保存后立即生效。
 5. **本机 Zotero 双向联动、浏览器 PDF 认领与三木精读交接**：
    - 自动探测本机 Zotero（`127.0.0.1:23119`）标出已收录论文及所属分类；
    - 支持单篇或批量一键存入指定 Zotero 分类（自动上传附加已下载的本地 PDF，并将课题标签 `user_tags` 写入标签、随手批注 `user_note` 创建为 Zotero 子笔记）、**一键撤销导入（`undo_zotero_save`）**及桌面端直接定位打开；
    - 支持一键认领浏览器刚下载到本机 `Downloads` 的 PDF（`claim_browser_pdf`，校验首屏 DOI/标题后重命名归档），以及一键唤起 `/sanmu-paper-reader` 执行图文精读与 SI 复现评估。
+6. **学术文档解析与 Obsidian 知识库入库工作台 (`sanmu-doc2md`)**：
+   - 面板内置第 6 个主导航 Tab **「📝 文档解析」**，并在论文卡片与详情页提供 **「📝 转 Markdown 入库」** 一键联动；
+   - 支持三路输入源：**系统文件管理器原生弹窗选择任意 PDF / PPTX**（`pick_system_path`，自动探测同目录关联的 `-SI.pdf` 或 `.pptx`）、**从本机 Zotero 文库直接点选文献与本地 PDF/SI 附件**（`list_zotero_pdf_items`）、**从已获 PDF 检索卡片一键带入**；
+   - 支持三种文档模式与三类引擎（`run_doc2md` / `manage_doc2md`）：**科研论文 + SI 双向 `[[WikiLink]]` 双链入库**、**PPTX/PDF 课件讲义转笔记（PPTX 原文自动校对错字 + 内嵌原图提取）**、**长篇教材智能切片与按章拆分**；支持自由选择或弹窗指定存放目录、MinerU 断点续传（`resume`）、全量 KaTeX 公式校验、一键启动本地 KaTeX 浏览器渲染预览（`preview_server.py`）以及一键移交 AI 精读或回源修复。

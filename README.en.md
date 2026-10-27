@@ -133,7 +133,7 @@ zcode plugin marketplace add luffysolution-svg/sanmu-skills
 zcode plugin install sanmu-skills@sanmu-skills
 ```
 
-To use the standalone `sanmu-paper-search` ZCode Desktop plugin with its interactive side panel, live physics citation graph and local Zotero integration, download `sanmu-paper-search-zcode-plugin-<version>.zip` from the latest [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest).
+To use the standalone `sanmu-paper-search` ZCode Desktop plugin with its interactive side panel, live physics citation graph, local Zotero integration and built-in `sanmu-doc2md` document parsing workbench, download `sanmu-paper-search-zcode-plugin-<version>.zip` from the latest [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest).
 
 ### Manual installation
 

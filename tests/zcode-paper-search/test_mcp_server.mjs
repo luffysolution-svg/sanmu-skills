@@ -714,4 +714,169 @@ test("MCP offline regressions", async (t) => {
     assert.ok(existsSync(sm.exported_materials_path));
     assert.ok(!JSON.stringify(matRes).includes("sci_secret_unit_key_777"));
   });
+
+  await t.test("v1.9.0 doc2md: pick_system_path, list_zotero_pdf_items, run_doc2md research+SI & preview server", async () => {
+    reset();
+    process.env.SANMU_TEST_NO_BROWSER = "1";
+    await call("save_config", {
+      mineruApiToken: "mineru_secret_token_999",
+      doc2mdSubdir: "custom-kb-out"
+    });
+
+    const docsDir = join(workspace, "source-docs");
+    mkdirSync(docsDir, { recursive: true });
+    const mainPdfPath = join(docsDir, "Photocatalytic-Ni.pdf");
+    const siPdfPath = join(docsDir, "Photocatalytic-Ni-SI.pdf");
+    writePdf(mainPdfPath, "Single Atom Ni Photocatalyst. See Figure S1 and formula $E = h\\nu$.");
+    writePdf(siPdfPath, "Supporting Information. Figure S1 TEM image of single atom Ni.");
+
+    // 1. Test pick_system_path with automatic sibling SI detection
+    process.env.SANMU_TEST_PICK_PATH = mainPdfPath;
+    const picked = await call("pick_system_path", { mode: "file", filter: "pdf" });
+    delete process.env.SANMU_TEST_PICK_PATH;
+    assert.equal(picked.isError, undefined);
+    assert.equal(picked.structuredContent.canceled, false);
+    assert.equal(picked.structuredContent.path, mainPdfPath);
+    assert.equal(picked.structuredContent.siblingSiPdfPath, siPdfPath);
+
+    // 2. Test list_zotero_pdf_items with main + SI PDF redirect resolution
+    fetchImpl = async (url) => {
+      const u = String(url);
+      if (u.endsWith("/api/")) {
+        return new Response("", { status: 200, headers: { "zotero-server-id": "zot-doc2md", "zotero-api-version": "3" } });
+      }
+      if (u.includes("/collections?")) {
+        return Response.json([{ key: "COL12345", data: { name: "Photocatalysis", parentCollection: false } }]);
+      }
+      if (u.includes("/items/top")) {
+        return Response.json([
+          {
+            key: "ZITEM001",
+            data: {
+              key: "ZITEM001",
+              itemType: "journalArticle",
+              title: "Single Atom Ni Photocatalyst",
+              creators: [
+                { creatorType: "author", firstName: "Sen", lastName: "Lin" },
+                { creatorType: "author", firstName: "Alice", lastName: "Wang" }
+              ],
+              date: "2025-05",
+              publicationTitle: "Advanced Materials",
+              DOI: "10.1002/adma.202500001",
+              collections: ["COL12345"],
+              tags: [{ tag: "Ni-SAC" }]
+            }
+          }
+        ]);
+      }
+      if (u.includes("/items/ZITEM001/children")) {
+        return Response.json([
+          {
+            key: "ZATTMAIN",
+            data: { key: "ZATTMAIN", itemType: "attachment", contentType: "application/pdf", title: "Full Text PDF", filename: "main.pdf" }
+          },
+          {
+            key: "ZATTSI01",
+            data: { key: "ZATTSI01", itemType: "attachment", contentType: "application/pdf", title: "Supporting Information", filename: "main-SI.pdf" }
+          }
+        ]);
+      }
+      if (u.endsWith("/items/ZATTMAIN/file")) {
+        return new Response("", { status: 302, headers: { location: pathToFileURL(mainPdfPath).href } });
+      }
+      if (u.endsWith("/items/ZATTSI01/file")) {
+        return new Response("", { status: 302, headers: { location: pathToFileURL(siPdfPath).href } });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const zotList = await call("list_zotero_pdf_items", { onlyWithPdf: true });
+    assert.equal(zotList.isError, undefined);
+    const zItems = zotList.structuredContent.zoteroPdfList.items;
+    assert.equal(zItems.length, 1);
+    assert.equal(zItems[0].itemKey, "ZITEM001");
+    assert.equal(zItems[0].mainPdfPath, mainPdfPath);
+    assert.equal(zItems[0].siPdfPath, siPdfPath);
+    assert.match(zItems[0].suggestedFolderName, /Lin 等 - 2025 - Single Atom Ni Photocatalyst/);
+
+    // 3. Test run_doc2md (research mode + SI + metadata binding + custom saveDir)
+    const customSaveDir = join(workspace, "01-科研基石", "光催化");
+    const docRes = await call("run_doc2md", {
+      mode: "research",
+      ocrEngine: "local_fast",
+      pdfPath: mainPdfPath,
+      siPdfPath,
+      saveDir: customSaveDir,
+      paperKey: "doi:10.1002/adma.202500001",
+      zoteroItemKey: "ZITEM001",
+      metadata: zItems[0].metadata
+    });
+    assert.equal(docRes.isError, undefined);
+    assert.ok(!JSON.stringify(docRes).includes("mineru_secret_token_999"));
+    const job = docRes.structuredContent.activeDoc2mdJob;
+    assert.ok(job);
+    assert.equal(job.status, "completed");
+    assert.ok(existsSync(job.outDir));
+    assert.ok(existsSync(job.siOutDir));
+    assert.ok(job.stats.primaryMarkdownPath && existsSync(job.stats.primaryMarkdownPath));
+    assert.equal(job.stats.mathPassed, true);
+
+    const mainMdText = readFileSync(job.stats.primaryMarkdownPath, "utf8");
+    assert.match(mainMdText, /doi:\s*10\.1002\/adma\.202500001/i);
+    assert.match(mainMdText, /\[\[.*- SI#Figure S1\|Figure S1\]\]/);
+    const siMdText = readFileSync(job.stats.siMarkdownPath, "utf8");
+    assert.match(siMdText, /关联主文/);
+
+    // Check paper evidenceMap automatically updated with doc2md_out_dir
+    const ev = docRes.structuredContent.evidenceMap["doi:10.1002/adma.202500001"];
+    assert.ok(ev);
+    assert.equal(ev.doc2md_out_dir, job.outDir);
+    assert.equal(ev.stage, "identity_checked");
+
+    // 4. Test manage_doc2md preview & stop_preview, doctor, rebuild & slides/book modes
+    const docDoctor = await call("manage_doc2md", { action: "doctor" });
+    assert.equal(docDoctor.isError, undefined);
+    assert.equal(docDoctor.structuredContent.doc2mdDoctor.status, "pass");
+
+    const prevRes = await call("manage_doc2md", { action: "preview", jobId: job.jobId, openInBrowser: false });
+    assert.equal(prevRes.isError, undefined);
+    assert.ok(prevRes.structuredContent.previewServer?.url?.startsWith("http://127.0.0.1:"));
+    const stopRes = await call("manage_doc2md", { action: "stop_preview", jobId: job.jobId });
+    assert.equal(stopRes.isError, undefined);
+    assert.equal(stopRes.structuredContent.stoppedPreviews, 1);
+
+    // 5. Test slides mode with real .pptx generated via python-pptx
+    const pptxPath = join(docsDir, "Lecture-01.pptx");
+    execFileSync("python", [
+      "-c",
+      "import sys; from pptx import Presentation; prs = Presentation(); slide = prs.slides.add_slide(prs.slide_layouts[0]); slide.shapes.title.text = 'Photocatalysis Lecture 1'; slide.placeholders[1].text = 'Bandgap formula $E_g = 2.7\\\\text{ eV}$'; prs.save(sys.argv[1])",
+      pptxPath
+    ]);
+    const slideRes = await call("run_doc2md", {
+      mode: "slides",
+      ocrEngine: "local_fast",
+      pptxPath,
+      saveDir: customSaveDir
+    });
+    assert.equal(slideRes.isError, undefined);
+    const slideJob = slideRes.structuredContent.activeDoc2mdJob;
+    assert.equal(slideJob.status, "completed");
+    assert.ok(existsSync(slideJob.stats.primaryMarkdownPath));
+    assert.match(readFileSync(slideJob.stats.primaryMarkdownPath, "utf8"), /Photocatalysis Lecture 1/);
+
+    // 6. Test book mode
+    const bookRes = await call("run_doc2md", {
+      mode: "book",
+      ocrEngine: "local_fast",
+      pdfPath: mainPdfPath,
+      saveDir: customSaveDir
+    });
+    assert.equal(bookRes.isError, undefined);
+    assert.equal(bookRes.structuredContent.activeDoc2mdJob.status, "completed");
+
+    // 7. Test delete job record preserves delivered Markdown
+    const delRes = await call("manage_doc2md", { action: "delete", jobId: slideJob.jobId });
+    assert.equal(delRes.isError, undefined);
+    assert.equal(existsSync(slideJob.stats.primaryMarkdownPath), true);
+  });
 });

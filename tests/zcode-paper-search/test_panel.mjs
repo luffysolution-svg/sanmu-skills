@@ -702,5 +702,71 @@ test('v1.7.0 panel features: topic/author sort & topic filter, comprehensive rec
   const svPrompt = p.buildDeepReadHandoffPrompt(svPaper);
   assert.match(svPrompt, /SciVerse 原文 Markdown 切片/);
   assert.match(svPrompt, /01_fig1\.jpg/);
+
+  // 8. v1.9.0 Document Parsing (sanmu-doc2md) workbench, paper card jump, Zotero picker & folder selection
+  const docPaper = {
+    ...paper('doc2md-1'),
+    title: 'Single Atom Ni Photocatalysis',
+    year: 2025,
+    authors: [{ name: 'Alice Lee' }],
+    local_pdf_path: 'F:\\个人知识库\\00-收件箱-待整理\\2025-Ni.pdf',
+    epmc_suppl_files: ['F:\\个人知识库\\00-收件箱-待整理\\2025-Ni-SI.pdf']
+  };
+  p.prefillDoc2mdFromPaper(docPaper);
+  assert.equal(p.state.activeTab, 'doc2md');
+  assert.equal(p.document.getElementById('doc2mdMainFileInput').value, 'F:\\个人知识库\\00-收件箱-待整理\\2025-Ni.pdf');
+  assert.equal(p.document.getElementById('doc2mdSiFileInput').value, 'F:\\个人知识库\\00-收件箱-待整理\\2025-Ni-SI.pdf');
+  assert.match(p.document.getElementById('doc2mdOutputPreviewText').textContent, /Lee - 2025 - Single Atom Ni Photocatalysis/);
+
+  // Pick custom save directory via system dialog
+  await click(p, 'btnPickDoc2mdSaveDir');
+  assert.equal(tools(p).at(-1).params.name, 'pick_system_path');
+  assert.equal(tools(p).at(-1).params.arguments.mode, 'folder');
+  p.reply(tools(p).at(-1), {
+    structuredContent: {
+      canceled: false,
+      mode: 'folder',
+      path: 'F:\\个人知识库\\01-科研基石\\光催化'
+    }
+  });
+  await flush();
+  assert.equal(p.document.getElementById('doc2mdSaveDirInput').value, 'F:\\个人知识库\\01-科研基石\\光催化');
+
+  // Execute doc2md job
+  await click(p, 'btnExecDoc2md');
+  const docCall = tools(p).at(-1);
+  assert.equal(docCall.params.name, 'run_doc2md');
+  assert.equal(docCall.params.arguments.mode, 'research');
+  assert.equal(docCall.params.arguments.pdfPath, 'F:\\个人知识库\\00-收件箱-待整理\\2025-Ni.pdf');
+  assert.equal(docCall.params.arguments.siPdfPath, 'F:\\个人知识库\\00-收件箱-待整理\\2025-Ni-SI.pdf');
+  assert.equal(docCall.params.arguments.saveDir, 'F:\\个人知识库\\01-科研基石\\光催化');
+  p.reply(docCall, {
+    structuredContent: {
+      ...emptyState(),
+      doc2mdJobs: [
+        {
+          jobId: 'doc2md-research-1',
+          mode: 'research',
+          ocrEngine: 'local_fast',
+          title: 'Single Atom Ni Photocatalysis',
+          status: 'completed',
+          phaseLabel: '✅ 解析完成',
+          outDir: 'F:\\个人知识库\\01-科研基石\\光催化\\Lee - 2025 - Single Atom Ni Photocatalysis',
+          siOutDir: 'F:\\个人知识库\\01-科研基石\\光催化\\Lee - 2025 - Single Atom Ni Photocatalysis - SI',
+          stats: {
+            markdownCount: 2,
+            totalImageCount: 6,
+            formulaCount: 15,
+            mathPassed: true,
+            warnings: [],
+            primaryMarkdownPath: 'F:\\个人知识库\\01-科研基石\\光催化\\Lee - 2025 - Single Atom Ni Photocatalysis\\Lee - 2025 - Single Atom Ni Photocatalysis.md'
+          }
+        }
+      ]
+    }
+  });
+  await flush();
+  assert.equal(p.document.getElementById('tabCountDoc2md').textContent, '1');
+  assert.match(p.document.getElementById('doc2mdJobsListContainer').innerHTML, /KaTeX浏览器渲染预览/);
 });
 

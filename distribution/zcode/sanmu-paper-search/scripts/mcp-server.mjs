@@ -14,7 +14,7 @@ import {
   rmSync
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { delimiter as pathDelimiter, basename, dirname, extname, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -57,6 +57,7 @@ function resolveHostPaths(envObj = process.env) {
 const { pluginRoot: PLUGIN_ROOT, workspaceRoot: WORKSPACE_ROOT, pluginData: PLUGIN_DATA } = resolveHostPaths(process.env);
 
 const RUNS_DIR = join(PLUGIN_DATA, "runs");
+const DOC2MD_JOBS_DIR = join(PLUGIN_DATA, "doc2md-jobs");
 const CONFIG_PATH = join(PLUGIN_DATA, "config.json");
 const STATE_PATH = join(PLUGIN_DATA, "state.json");
 const EASYSCHOLAR_CACHE_PATH = join(PLUGIN_DATA, "easyscholar-cache.json");
@@ -70,6 +71,49 @@ const PAPER_SEARCH_PY = join(PLUGIN_ROOT, "scripts", "paper_search.py");
 const FETCH_PDF_PY = join(PLUGIN_ROOT, "scripts", "fetch_pdf.py");
 
 mkdirSync(RUNS_DIR, { recursive: true });
+mkdirSync(DOC2MD_JOBS_DIR, { recursive: true });
+
+function resolveDoc2mdScriptsDir() {
+  const candidates = [
+    join(PLUGIN_ROOT, "skills", "sanmu-doc2md", "scripts"),
+    resolve(PLUGIN_ROOT, "..", "..", "skills", "sanmu-doc2md", "scripts"),
+    resolve(__dirname, "..", "..", "..", "..", "skills", "sanmu-doc2md", "scripts"),
+    join(WORKSPACE_ROOT, ".agents", "skills", "sanmu-doc2md", "scripts"),
+    join(WORKSPACE_ROOT, ".agents", "repos", "wusen-skills", "skills", "sanmu-doc2md", "scripts"),
+    join(homedir(), ".agents", "skills", "sanmu-doc2md", "scripts"),
+    join(homedir(), ".agents", "repos", "wusen-skills", "skills", "sanmu-doc2md", "scripts")
+  ];
+  for (const dir of candidates) {
+    try {
+      if (existsSync(join(dir, "build_markdown.py"))) return dir;
+    } catch {}
+  }
+  return candidates[0];
+}
+
+function resolveKatexNodeModules(doc2mdScriptsDir = resolveDoc2mdScriptsDir()) {
+  const candidates = [
+    join(doc2mdScriptsDir, "node_modules"),
+    join(resolve(__dirname, "..", "..", "..", "..", "skills", "sanmu-doc2md", "scripts"), "node_modules"),
+    join(WORKSPACE_ROOT, ".agents", "skills", "sanmu-doc2md", "scripts", "node_modules"),
+    join(WORKSPACE_ROOT, ".agents", "repos", "wusen-skills", "skills", "sanmu-doc2md", "scripts", "node_modules"),
+    join(homedir(), ".agents", "skills", "sanmu-doc2md", "scripts", "node_modules"),
+    join(homedir(), ".agents", "repos", "wusen-skills", "skills", "sanmu-doc2md", "scripts", "node_modules"),
+    join(PLUGIN_DATA, "doc2md-node", "node_modules")
+  ];
+  for (const nmDir of candidates) {
+    try {
+      if (existsSync(join(nmDir, "katex", "package.json"))) {
+        const distDir = join(nmDir, "katex", "dist");
+        return {
+          nodeModulesDir: nmDir,
+          katexDistDir: existsSync(distDir) ? distDir : null
+        };
+      }
+    } catch {}
+  }
+  return { nodeModulesDir: null, katexDistDir: null };
+}
 
 const STAGE_LABELS = {
   discovered: "待初筛",
@@ -173,7 +217,9 @@ function savePanelConfig(patch) {
     "serperApiKey",
     "easyscholarSecretKey",
     "ai4scholarApiKey",
-    "sciverseApiKey"
+    "sciverseApiKey",
+    "mineruApiToken",
+    "mineruApiKey"
   ]);
   for (const [k, v] of Object.entries(patch || {})) {
     if (k === "clearKeys" || v === undefined || v === null) continue;
@@ -289,7 +335,7 @@ function uniqueDestination(dir, filename, shortIdHint = "") {
 function redactSecrets(value) {
   const cfg = readJsonSafe(CONFIG_PATH, {}) || {};
   const secrets = new Set();
-  for (const key of ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey", "sciverseApiKey"]) {
+  for (const key of ["openalexApiKey", "s2ApiKey", "exaApiKey", "serperApiKey", "easyscholarSecretKey", "ai4scholarApiKey", "sciverseApiKey", "mineruApiToken", "mineruApiKey"]) {
     if (typeof cfg[key] === "string" && cfg[key].trim()) {
       secrets.add(cfg[key].trim());
       secrets.add(cfg[key].replace(/\s+/g, "").trim());
@@ -467,8 +513,16 @@ function getEffectiveConfig() {
       sciverse = { value: credObj.token.trim(), source: "systemEnv" };
     }
   }
+  const mineru = resolveCredential(
+    cfg.mineruApiToken || cfg.mineruApiKey,
+    "USER_CONFIG_MINERU_API_TOKEN",
+    ["MINERU_API_TOKEN"]
+  );
   const zoteroUrl = validateZoteroUrl(resolveCredential(cfg.zoteroUrl, "USER_CONFIG_ZOTERO_URL", []).value || "http://127.0.0.1:23119");
   const exportSubdir = resolveCredential(cfg.exportSubdir, "USER_CONFIG_EXPORT_SUBDIR", []).value || "00-收件箱-待整理/文献检索";
+  const doc2mdSubdir = resolveCredential(cfg.doc2mdSubdir, "USER_CONFIG_DOC2MD_SUBDIR", []).value || "00-收件箱-待整理/文献解析";
+  const doc2mdScriptsDir = resolveDoc2mdScriptsDir();
+  const katexInfo = resolveKatexNodeModules(doc2mdScriptsDir);
 
   const childEnv = {
     ...process.env,
@@ -477,6 +531,11 @@ function getEffectiveConfig() {
     PYTHONDONTWRITEBYTECODE: "1",
     EASYSCHOLAR_CACHE_PATH
   };
+  if (katexInfo.nodeModulesDir) {
+    childEnv.NODE_PATH = childEnv.NODE_PATH
+      ? `${katexInfo.nodeModulesDir}${pathDelimiter}${childEnv.NODE_PATH}`
+      : katexInfo.nodeModulesDir;
+  }
   if (polite.value) {
     childEnv.POLITE_EMAIL = polite.value;
     for (const name of ["OPENALEX_EMAIL", "CROSSREF_EMAIL", "UNPAYWALL_EMAIL"]) {
@@ -499,6 +558,9 @@ function getEffectiveConfig() {
     childEnv.SCIVERSE_API_KEY = sciverse.value;
     childEnv.SCIVERSE_API_TOKEN = sciverse.value;
   }
+  if (mineru.value) {
+    childEnv.MINERU_API_TOKEN = mineru.value;
+  }
 
   const pyRt = resolvePythonRuntime();
 
@@ -517,6 +579,8 @@ function getEffectiveConfig() {
       easyscholar_secret_key: { configured: Boolean(easyscholar.value), source: easyscholar.source },
       ai4scholar_api_key: { configured: Boolean(ai4scholar.value), source: ai4scholar.source },
       sciverse_api_key: { configured: Boolean(sciverse.value), source: sciverse.source },
+      mineru_api_token: { configured: Boolean(mineru.value), source: mineru.source },
+      katex_validator: { configured: Boolean(katexInfo.nodeModulesDir), source: katexInfo.nodeModulesDir ? "local" : "missing" },
       europepmc_public_access: { configured: true, source: "public" }
     },
     settings: {
@@ -528,9 +592,14 @@ function getEffectiveConfig() {
       resolvedExportDir: isAbsolutePath(exportSubdir)
         ? resolve(exportSubdir)
         : resolve(WORKSPACE_ROOT, exportSubdir.replace(/^[/\\]+/, "")),
+      doc2mdSubdir,
+      resolvedDoc2mdDir: isAbsolutePath(doc2mdSubdir)
+        ? resolve(doc2mdSubdir)
+        : resolve(WORKSPACE_ROOT, doc2mdSubdir.replace(/^[/\\]+/, "")),
       defaultSources: cfg.defaultSources || ["openalex", "semantic-scholar", "crossref"],
       defaultLimit: cfg.defaultLimit || 10,
       runsDir: RUNS_DIR,
+      doc2mdJobsDir: DOC2MD_JOBS_DIR,
       workspaceRoot: WORKSPACE_ROOT
     }
   };
@@ -1702,6 +1771,25 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
         : [];
     const sciverseExcerptPath = savedEv.sciverse_excerpt_path || p.sciverse_excerpt_path || null;
     const sciverseMaterialsPath = savedEv.sciverse_materials_path || p.sciverse_materials_path || null;
+    const doc2mdOutDir =
+      savedEv.doc2md_out_dir && existsSync(savedEv.doc2md_out_dir)
+        ? savedEv.doc2md_out_dir
+        : p.doc2md_out_dir && existsSync(p.doc2md_out_dir)
+          ? p.doc2md_out_dir
+          : null;
+    const doc2mdMdPath =
+      savedEv.doc2md_md_path && existsSync(savedEv.doc2md_md_path)
+        ? savedEv.doc2md_md_path
+        : p.doc2md_md_path && existsSync(p.doc2md_md_path)
+          ? p.doc2md_md_path
+          : null;
+    const doc2mdSiOutDir =
+      savedEv.doc2md_si_out_dir && existsSync(savedEv.doc2md_si_out_dir)
+        ? savedEv.doc2md_si_out_dir
+        : p.doc2md_si_out_dir && existsSync(p.doc2md_si_out_dir)
+          ? p.doc2md_si_out_dir
+          : null;
+    const doc2mdJobId = savedEv.doc2md_job_id || p.doc2md_job_id || null;
     const { versions, conflicts, ...cleanP } = p;
 
     return {
@@ -1733,6 +1821,10 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
       ...(sciverseFigureFiles.length ? { sciverse_figure_files: sciverseFigureFiles } : {}),
       ...(sciverseExcerptPath ? { sciverse_excerpt_path: sciverseExcerptPath } : {}),
       ...(sciverseMaterialsPath ? { sciverse_materials_path: sciverseMaterialsPath } : {}),
+      ...(doc2mdOutDir ? { doc2md_out_dir: doc2mdOutDir } : {}),
+      ...(doc2mdMdPath ? { doc2md_md_path: doc2mdMdPath } : {}),
+      ...(doc2mdSiOutDir ? { doc2md_si_out_dir: doc2mdSiOutDir } : {}),
+      ...(doc2mdJobId ? { doc2md_job_id: doc2mdJobId } : {}),
       in_basket: basketKeys.has(key),
       zotero_match: zMatch
     };
@@ -3388,6 +3480,1698 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
   };
 }
 
+function resolveTargetDoc2mdDir(customDir) {
+  const { settings } = getEffectiveConfig();
+  const raw = String(customDir || settings.doc2mdSubdir || "00-收件箱-待整理/文献解析").trim();
+  const destDir = isAbsolutePath(raw)
+    ? resolve(raw)
+    : resolve(WORKSPACE_ROOT, raw.replace(/^[/\\]+/, ""));
+  mkdirSync(destDir, { recursive: true });
+  return destDir;
+}
+
+function sanitizeDoc2mdTitle(title, maxLen = 100) {
+  let t = String(title || "").replace(/:/g, " - ");
+  t = t.replace(/[\\/*?"<>|\r\n\t]+/g, "_").replace(/\s+/g, " ").trim();
+  if (t.length > maxLen) {
+    t = t.slice(0, maxLen).replace(/[ .\-_]+$/, "");
+  }
+  return t;
+}
+
+function formatZoteroBasenameJs(metadata, fallbackStem = "document") {
+  let firstCreator = "";
+  let year = "";
+  let rawTitle = "";
+  if (metadata && typeof metadata === "object") {
+    let data = metadata.metadata || metadata;
+    if (data && typeof data === "object" && data.data && typeof data.data === "object") {
+      data = data.data;
+    }
+    const creators =
+      (Array.isArray(data.creators)
+        ? data.creators.filter((c) => c && typeof c === "object" && (c.creatorType || "author") === "author")
+        : null) ||
+      (Array.isArray(data.authors) ? data.authors : null) ||
+      (Array.isArray(metadata.authors) ? metadata.authors : []);
+    if (Array.isArray(creators) && creators.length > 0) {
+      const first = creators[0];
+      const multi = creators.length > 1;
+      let name = "";
+      if (first && typeof first === "object") {
+        name = first.lastName || first.name || first.firstName || "";
+        if (!first.lastName && name && !/[\u4e00-\u9fff]/.test(name)) {
+          const s = String(name).trim();
+          name = s.includes(",") ? s.split(",")[0].trim() : s.split(/\s+/).pop() || s;
+        }
+      } else if (typeof first === "string") {
+        const s = first.trim();
+        if (s.includes(",")) {
+          name = s.split(",")[0].trim();
+        } else if (/[\u4e00-\u9fff]/.test(s)) {
+          name = s;
+        } else {
+          const parts = s.split(/\s+/);
+          name = parts[parts.length - 1] || s;
+        }
+      }
+      name = String(name || "").trim();
+      if (name) {
+        firstCreator = multi ? `${name} 等` : name;
+      }
+    }
+    const dateStr = String(data.date || metadata.date || data.year || metadata.year || "");
+    const mYear = dateStr.match(/(?:19|20)\d{2}/);
+    if (mYear) year = mYear[0];
+    rawTitle = String(data.title || metadata.title || "").trim();
+  }
+  if (!rawTitle) {
+    rawTitle = String(fallbackStem || "document").trim();
+  }
+  const title = rawTitle ? sanitizeDoc2mdTitle(rawTitle, 100) : "";
+  const parts = [firstCreator, year, title].filter(Boolean);
+  if (!parts.length) return sanitizeDoc2mdTitle(fallbackStem || "document", 100);
+  return sanitizeDoc2mdTitle(parts.join(" - "), 180);
+}
+
+function isSupplementalFilename(name) {
+  const stem = basename(String(name || ""), extname(String(name || ""))).toLowerCase();
+  return ["-si", "_si", ".si", "si.", "supporting", "supplement", "appendix", "mmc1", "补充", "附图"].some((m) =>
+    stem.includes(m)
+  );
+}
+
+function inspectLocalDocumentFile(rawPath) {
+  if (!rawPath || typeof rawPath !== "string" || !rawPath.trim()) return null;
+  const fullPath = isAbsolutePath(rawPath.trim())
+    ? resolve(rawPath.trim())
+    : resolve(WORKSPACE_ROOT, rawPath.trim());
+  assertReadablePath(fullPath);
+  if (!existsSync(fullPath)) return null;
+  const st = statSync(fullPath);
+  if (st.isDirectory()) {
+    return {
+      path: fullPath,
+      name: basename(fullPath),
+      isDirectory: true,
+      size: 0
+    };
+  }
+  const ext = extname(fullPath).toLowerCase();
+  const stem = basename(fullPath, ext);
+  const dir = dirname(fullPath);
+  let siblingPdfPath = null;
+  let siblingPptxPath = null;
+  let siblingSiPdfPath = null;
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const candPath = join(dir, entry.name);
+      if (candPath === fullPath) continue;
+      const candExt = extname(entry.name).toLowerCase();
+      const candStem = basename(entry.name, candExt);
+      if (ext === ".pptx" && candExt === ".pdf" && candStem.toLowerCase() === stem.toLowerCase()) {
+        siblingPdfPath = candPath;
+      } else if (ext === ".pdf" && candExt === ".pptx" && candStem.toLowerCase() === stem.toLowerCase()) {
+        siblingPptxPath = candPath;
+      } else if (
+        ext === ".pdf" &&
+        candExt === ".pdf" &&
+        !isSupplementalFilename(entry.name) === false &&
+        (candStem.toLowerCase().startsWith(stem.toLowerCase()) ||
+          stem.toLowerCase().startsWith(candStem.toLowerCase().replace(/[-_.\s]*(?:si|suppl|supporting|supplement|appendix|补充|附图).*$/i, "")))
+      ) {
+        siblingSiPdfPath = candPath;
+      }
+    }
+  } catch {}
+  return {
+    path: fullPath,
+    name: basename(fullPath),
+    stem,
+    ext,
+    size: st.size,
+    isDirectory: false,
+    dir,
+    siblingPdfPath,
+    siblingPptxPath,
+    siblingSiPdfPath
+  };
+}
+
+function pickSystemPath(input = {}) {
+  const mode = ["file", "files", "folder"].includes(input.mode) ? input.mode : "file";
+  const filterKey = input.filter || "pdf_pptx";
+  const filterMap = {
+    pdf_pptx: "Academic Documents (*.pdf;*.pptx)|*.pdf;*.pptx|PDF Files (*.pdf)|*.pdf|PowerPoint Slides (*.pptx)|*.pptx|All Files (*.*)|*.*",
+    pdf: "PDF Documents (*.pdf)|*.pdf|All Files (*.*)|*.*",
+    pptx: "PowerPoint Slides (*.pptx)|*.pptx|All Files (*.*)|*.*",
+    json: "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
+    all: "All Files (*.*)|*.*"
+  };
+  const winFilter = filterMap[filterKey] || filterMap.pdf_pptx;
+  const dialogTitle = String(
+    input.title || (mode === "folder" ? "选择存放文件夹" : "选择待解析的学术文档 (PDF / PPTX)")
+  ).slice(0, 120);
+  const rawInitDir = input.initialDir ? String(input.initialDir).trim() : "";
+  const initialDir = rawInitDir
+    ? isAbsolutePath(rawInitDir)
+      ? resolve(rawInitDir)
+      : resolve(WORKSPACE_ROOT, rawInitDir)
+    : WORKSPACE_ROOT;
+
+  let chosenPaths = [];
+  let canceled = false;
+
+  const testOverride = resolveEnvPath(process.env.SANMU_TEST_PICK_PATH);
+  if (testOverride) {
+    if (testOverride === "__CANCEL__") {
+      canceled = true;
+    } else if (testOverride.startsWith("[")) {
+      try {
+        chosenPaths = JSON.parse(testOverride).map((p) => String(p));
+      } catch {
+        chosenPaths = [testOverride];
+      }
+    } else {
+      chosenPaths = [testOverride];
+    }
+  } else if (process.platform === "win32") {
+    const psScript = [
+      "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+      "Add-Type -AssemblyName System.Windows.Forms",
+      "$top = New-Object System.Windows.Forms.Form",
+      "$top.TopMost = $true",
+      "$top.ShowInTaskbar = $false",
+      "$top.WindowState = 'Minimized'",
+      "$mode = $env:SANMU_DLG_MODE",
+      "if ($mode -eq 'folder') {",
+      "  $dlg = New-Object System.Windows.Forms.FolderBrowserDialog",
+      "  $dlg.Description = $env:SANMU_DLG_TITLE",
+      "  $dlg.ShowNewFolderButton = $true",
+      "  if ($env:SANMU_DLG_INIT_DIR -and (Test-Path -LiteralPath $env:SANMU_DLG_INIT_DIR)) {",
+      "    $dlg.SelectedPath = $env:SANMU_DLG_INIT_DIR",
+      "  }",
+      "  $res = $dlg.ShowDialog($top)",
+      "  if ($res -eq [System.Windows.Forms.DialogResult]::OK -and $dlg.SelectedPath) {",
+      "    Write-Output (@{ canceled = $false; paths = @($dlg.SelectedPath) } | ConvertTo-Json -Compress)",
+      "  } else {",
+      "    Write-Output '{\"canceled\":true,\"paths\":[]}'",
+      "  }",
+      "} else {",
+      "  $dlg = New-Object System.Windows.Forms.OpenFileDialog",
+      "  $dlg.Title = $env:SANMU_DLG_TITLE",
+      "  $dlg.Multiselect = ($mode -eq 'files')",
+      "  $dlg.Filter = $env:SANMU_DLG_FILTER",
+      "  if ($env:SANMU_DLG_INIT_DIR -and (Test-Path -LiteralPath $env:SANMU_DLG_INIT_DIR)) {",
+      "    $dlg.InitialDirectory = $env:SANMU_DLG_INIT_DIR",
+      "  }",
+      "  $res = $dlg.ShowDialog($top)",
+      "  if ($res -eq [System.Windows.Forms.DialogResult]::OK -and $dlg.FileNames.Count -gt 0) {",
+      "    Write-Output (@{ canceled = $false; paths = @($dlg.FileNames) } | ConvertTo-Json -Compress)",
+      "  } else {",
+      "    Write-Output '{\"canceled\":true,\"paths\":[]}'",
+      "  }",
+      "}",
+      "$top.Dispose()"
+    ].join("\n");
+
+    const res = spawnSync("powershell.exe", ["-NoProfile", "-STA", "-Command", psScript], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 180000,
+      env: {
+        ...process.env,
+        SANMU_DLG_MODE: mode,
+        SANMU_DLG_FILTER: winFilter,
+        SANMU_DLG_TITLE: dialogTitle,
+        SANMU_DLG_INIT_DIR: existsSync(initialDir) ? initialDir : WORKSPACE_ROOT
+      }
+    });
+    const outText = String(res.stdout || "").trim().split(/\r?\n/).pop() || "";
+    if (outText) {
+      try {
+        const parsed = JSON.parse(outText);
+        canceled = Boolean(parsed.canceled);
+        chosenPaths = Array.isArray(parsed.paths) ? parsed.paths.map((p) => String(p)).filter(Boolean) : [];
+      } catch {
+        canceled = true;
+      }
+    } else {
+      canceled = true;
+    }
+  } else if (process.platform === "darwin") {
+    const osa =
+      mode === "folder"
+        ? `POSIX path of (choose folder with prompt ${JSON.stringify(dialogTitle)})`
+        : `POSIX path of (choose file with prompt ${JSON.stringify(dialogTitle)})`;
+    const res = spawnSync("osascript", ["-e", osa], { encoding: "utf8", timeout: 180000 });
+    if (res.status === 0 && res.stdout && res.stdout.trim()) {
+      chosenPaths = [res.stdout.trim()];
+    } else {
+      canceled = true;
+    }
+  } else {
+    const zArgs =
+      mode === "folder"
+        ? ["--file-selection", "--directory", `--title=${dialogTitle}`]
+        : ["--file-selection", `--title=${dialogTitle}`];
+    const res = spawnSync("zenity", zArgs, { encoding: "utf8", timeout: 180000 });
+    if (res.status === 0 && res.stdout && res.stdout.trim()) {
+      chosenPaths = res.stdout.trim().split("\n").filter(Boolean);
+    } else {
+      canceled = true;
+    }
+  }
+
+  if (canceled || chosenPaths.length === 0) {
+    return {
+      canceled: true,
+      mode,
+      path: null,
+      paths: [],
+      inspected: null
+    };
+  }
+
+  const resolvedPaths = chosenPaths.map((p) => (isAbsolutePath(p) ? resolve(p) : resolve(WORKSPACE_ROOT, p)));
+  for (const rp of resolvedPaths) {
+    assertReadablePath(rp);
+  }
+  const primary = resolvedPaths[0];
+  const inspected = mode === "folder"
+    ? { path: primary, name: basename(primary), isDirectory: true, size: 0 }
+    : inspectLocalDocumentFile(primary);
+
+  let secondPdf = resolvedPaths[1] || null;
+  if (!secondPdf && inspected && !inspected.isDirectory && inspected.siblingSiPdfPath) {
+    secondPdf = inspected.siblingSiPdfPath;
+  }
+
+  return {
+    canceled: false,
+    mode,
+    path: primary,
+    paths: resolvedPaths,
+    inspected,
+    siblingPdfPath: inspected?.siblingPdfPath || null,
+    siblingPptxPath: inspected?.siblingPptxPath || null,
+    siblingSiPdfPath: secondPdf || null
+  };
+}
+
+function resolveZoteroRedirectLocation(locationHeader) {
+  if (!locationHeader || typeof locationHeader !== "string") return null;
+  const trimmed = locationHeader.trim();
+  if (!trimmed.toLowerCase().startsWith("file://")) return null;
+  try {
+    const filePath = fileURLToPath(trimmed);
+    if (filePath && existsSync(filePath)) return resolve(filePath);
+  } catch {}
+  return null;
+}
+
+async function listZoteroPdfItems(input = {}) {
+  const { settings } = getEffectiveConfig();
+  const baseUrl = (settings.zoteroUrl || "http://127.0.0.1:23119").replace(/\/+$/, "");
+  const colKey = input?.collectionKey && /^[23456789A-Z]{8}$/.test(String(input.collectionKey).trim())
+    ? String(input.collectionKey).trim()
+    : "";
+  const query = input?.query ? String(input.query).trim() : "";
+  const limit = Math.min(Math.max(Number(input?.limit) || 20, 1), 50);
+  const onlyWithPdf = input?.onlyWithPdf !== false;
+
+  let zoteroOnline = false;
+  try {
+    const ping = await fetch(`${baseUrl}/api/`, {
+      headers: { "Zotero-Allowed-Request": "1" },
+      signal: AbortSignal.timeout(1500)
+    });
+    zoteroOnline = ping.ok && Boolean(ping.headers.get("zotero-server-id") || ping.headers.get("zotero-api-version"));
+  } catch {
+    zoteroOnline = false;
+  }
+  if (!zoteroOnline) {
+    return {
+      zoteroOnline: false,
+      collections: [],
+      items: [],
+      message: "未检测到本机 Zotero 桌面端在线（请确认 Zotero 已启动且开启本地通信）。"
+    };
+  }
+
+  const { colMap, collections } = await fetchZoteroCollectionsMap(baseUrl);
+  const endpoint = colKey
+    ? `${baseUrl}/api/users/0/collections/${colKey}/items/top`
+    : `${baseUrl}/api/users/0/items/top`;
+  const params = new URLSearchParams({
+    limit: String(Math.min(limit * 2, 60)),
+    sort: "dateModified",
+    direction: "desc"
+  });
+  if (query) {
+    params.set("q", query);
+    params.set("qmode", "everything");
+  }
+
+  const listResp = await fetch(`${endpoint}?${params.toString()}`, {
+    headers: { "Zotero-Allowed-Request": "1" },
+    signal: AbortSignal.timeout(4000)
+  });
+  if (!listResp.ok) {
+    throw new Error(`读取 Zotero 条目列表失败 (HTTP ${listResp.status})`);
+  }
+  const rawItems = await listResp.json();
+  const topPapers = (Array.isArray(rawItems) ? rawItems : []).filter((it) => {
+    const d = it?.data || {};
+    return !d.deleted && !["attachment", "note", "annotation"].includes(d.itemType);
+  });
+
+  const results = [];
+  for (const item of topPapers) {
+    if (results.length >= limit) break;
+    const data = item?.data || {};
+    const itemKey = item.key;
+    if (!itemKey || !/^[A-Z0-9]{8}$/.test(itemKey)) continue;
+
+    let children = [];
+    try {
+      const childResp = await fetch(`${baseUrl}/api/users/0/items/${itemKey}/children?limit=25`, {
+        headers: { "Zotero-Allowed-Request": "1" },
+        signal: AbortSignal.timeout(2000)
+      });
+      if (childResp.ok) {
+        const rawChildren = await childResp.json();
+        if (Array.isArray(rawChildren)) children = rawChildren;
+      }
+    } catch {}
+
+    const pdfAttachments = [];
+    for (const child of children) {
+      const cd = child?.data || {};
+      if (cd.deleted || cd.itemType !== "attachment") continue;
+      const isPdf =
+        String(cd.contentType || "").toLowerCase() === "application/pdf" ||
+        String(cd.filename || cd.title || "").toLowerCase().endsWith(".pdf");
+      if (!isPdf || !child.key) continue;
+
+      let localPath = null;
+      if (typeof cd.path === "string" && isAbsolutePath(cd.path) && existsSync(cd.path)) {
+        localPath = resolve(cd.path);
+      } else {
+        try {
+          const fileResp = await fetch(`${baseUrl}/api/users/0/items/${child.key}/file`, {
+            method: "GET",
+            headers: { "Zotero-Allowed-Request": "1" },
+            redirect: "manual",
+            signal: AbortSignal.timeout(1500)
+          });
+          if (fileResp.status === 302 || fileResp.status === 301) {
+            localPath = resolveZoteroRedirectLocation(fileResp.headers.get("location"));
+          }
+        } catch {}
+      }
+
+      const labelName = cd.filename || cd.title || `${child.key}.pdf`;
+      const isSi = isSupplementalFilename(labelName) || isSupplementalFilename(cd.title || "");
+      pdfAttachments.push({
+        attachmentKey: child.key,
+        title: cd.title || labelName,
+        filename: labelName,
+        localPath,
+        role: isSi ? "si" : "main"
+      });
+    }
+
+    const readyPdfs = pdfAttachments.filter((a) => a.localPath && existsSync(a.localPath));
+    if (onlyWithPdf && readyPdfs.length === 0) continue;
+
+    const mainAtt = readyPdfs.find((a) => a.role === "main") || readyPdfs[0] || null;
+    const siAtt = readyPdfs.find((a) => a !== mainAtt && a.role === "si") || (readyPdfs.length > 1 ? readyPdfs[1] : null);
+
+    const authors = [];
+    for (const c of data.creators || []) {
+      if ((c.creatorType || "author") !== "author") continue;
+      const full = c.name || [c.firstName, c.lastName].filter(Boolean).join(" ").trim();
+      if (full) authors.push(full);
+    }
+    const yearMatch = String(data.date || "").match(/\b(19|20)\d{2}\b/);
+    const year = yearMatch ? Number(yearMatch[0]) : null;
+    const doi = data.DOI ? normalizeDoi(data.DOI) : "";
+    const colNames = (data.collections || []).map((ck) => colMap.get(ck) || ck).filter(Boolean);
+    const tags = (data.tags || []).map((t) => t?.tag).filter(Boolean);
+
+    const metadata = {
+      title: data.title || "",
+      authors,
+      date: data.date || (year ? String(year) : ""),
+      year,
+      publication_title: data.publicationTitle || "",
+      volume: data.volume ? String(data.volume) : "",
+      issue: data.issue ? String(data.issue) : "",
+      pages: data.pages ? String(data.pages) : "",
+      doi,
+      abstract: data.abstractNote || "",
+      url: data.url || (doi ? `https://doi.org/${doi}` : ""),
+      zotero_item_uri: `zotero://select/library/items/${itemKey}`
+    };
+
+    results.push({
+      itemKey,
+      title: data.title || `Zotero Item ${itemKey}`,
+      itemType: data.itemType || "journalArticle",
+      authors,
+      firstAuthor: authors[0] || "",
+      year,
+      date: data.date || "",
+      journal: data.publicationTitle || "",
+      doi,
+      collections: colNames,
+      tags,
+      selectUri: `zotero://select/library/items/${itemKey}`,
+      mainPdfPath: mainAtt?.localPath || null,
+      siPdfPath: siAtt?.localPath || null,
+      attachments: pdfAttachments,
+      suggestedFolderName: formatZoteroBasenameJs(metadata, data.title || itemKey),
+      metadata,
+      rawZoteroItem: item
+    });
+  }
+
+  return {
+    zoteroOnline: true,
+    collections,
+    items: results
+  };
+}
+
+const activeDoc2mdPromises = new Map();
+const activePreviewServers = new Map();
+
+function resolveDoc2mdJobDir(jobId, mustExist = true) {
+  if (typeof jobId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(jobId)) {
+    throw new Error("无效的解析任务 ID。");
+  }
+  const target = join(DOC2MD_JOBS_DIR, jobId);
+  if (mustExist && (!existsSync(target) || !statSync(target).isDirectory())) {
+    throw new Error(`未找到指定的文档解析任务: ${jobId}`);
+  }
+  if (existsSync(target) && !isWithin(realpathSync(DOC2MD_JOBS_DIR), realpathSync(target))) {
+    throw new Error("解析任务路径越出插件数据目录。");
+  }
+  return target;
+}
+
+function readDoc2mdLiveProgress(jobDir, baseProgress = {}) {
+  const ocrWorkDir = join(jobDir, "ocr-work");
+  const jobJson = readJsonSafe(join(ocrWorkDir, "job.json"), null);
+  const statusList = readJsonSafe(join(ocrWorkDir, "status.json"), null);
+  if (!jobJson && !statusList) return baseProgress;
+  const totalFiles = Array.isArray(jobJson?.files) ? jobJson.files.length : baseProgress.totalFiles || 1;
+  let doneFiles = baseProgress.doneFiles || 0;
+  let extractedPages = baseProgress.extractedPages || 0;
+  let totalPages =
+    (Array.isArray(jobJson?.files) ? jobJson.files.reduce((acc, f) => acc + (Number(f?.pages) || 0), 0) : 0) ||
+    baseProgress.totalPages ||
+    0;
+  if (Array.isArray(statusList) && statusList.length > 0) {
+    doneFiles = statusList.filter((s) => s?.state === "done").length;
+    const ep = statusList.reduce((acc, s) => acc + (Number(s?.extract_progress?.extracted_pages) || 0), 0);
+    const tp = statusList.reduce((acc, s) => acc + (Number(s?.extract_progress?.total_pages) || 0), 0);
+    if (ep > 0) extractedPages = ep;
+    if (tp > 0) totalPages = tp;
+  } else if (jobJson?.state === "complete") {
+    doneFiles = totalFiles;
+    extractedPages = totalPages;
+  }
+  return {
+    ...baseProgress,
+    batchId: jobJson?.batch_id || baseProgress.batchId || null,
+    ocrState: jobJson?.state || baseProgress.ocrState || null,
+    totalFiles,
+    doneFiles,
+    extractedPages,
+    totalPages,
+    canResume: Boolean(jobJson?.batch_id && jobJson?.state !== "complete")
+  };
+}
+
+function loadDoc2mdJob(jobId) {
+  const jobDir = resolveDoc2mdJobDir(jobId, true);
+  const meta = readJsonSafe(join(jobDir, "job-meta.json"), null);
+  if (!meta) throw new Error(`解析任务元数据损坏或不存在: ${jobId}`);
+  const progress = readDoc2mdLiveProgress(jobDir, meta.progress || {});
+  const previewEntry = meta.outDir ? activePreviewServers.get(resolve(meta.outDir)) : null;
+  const previewAlive = Boolean(previewEntry && previewEntry.child && previewEntry.child.exitCode === null);
+  return {
+    ...meta,
+    progress,
+    previewUrl: previewAlive ? previewEntry.url : null
+  };
+}
+
+function saveDoc2mdJob(jobId, meta) {
+  const jobDir = resolveDoc2mdJobDir(jobId, false);
+  mkdirSync(jobDir, { recursive: true });
+  const next = {
+    ...meta,
+    jobId,
+    updatedAt: new Date().toISOString()
+  };
+  writeJsonSafe(join(jobDir, "job-meta.json"), next);
+  return next;
+}
+
+function listRecentDoc2mdJobs(limit = 25) {
+  if (!existsSync(DOC2MD_JOBS_DIR)) return [];
+  const entries = [];
+  for (const d of readdirSync(DOC2MD_JOBS_DIR, { withFileTypes: true })) {
+    if (!d.isDirectory() || d.name.startsWith(".")) continue;
+    const metaPath = join(DOC2MD_JOBS_DIR, d.name, "job-meta.json");
+    if (!existsSync(metaPath)) continue;
+    try {
+      entries.push(loadDoc2mdJob(d.name));
+    } catch {}
+  }
+  entries.sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+  return entries.slice(0, limit);
+}
+
+async function buildLocalNativeRaw(ocrWorkDir, filesSpec, mode = "research") {
+  const pyCode = [
+    "import hashlib, json, os, re, sys",
+    "from pathlib import Path",
+    "cfg = json.loads(sys.argv[1])",
+    "out_root = Path(cfg['ocrWorkDir']).resolve()",
+    "raw_root = out_root / 'raw'",
+    "raw_root.mkdir(parents=True, exist_ok=True)",
+    "CAP_RE = re.compile(r'^\\s*(?:图|表|(?:Extended\\s+Data\\s+)?(?:Fig(?:ure)?\\.?|Table|Scheme)|(?:Supplemental|Supplementary)\\s+(?:Figure|Table|Note)|附图)\\s*[S]?[\\d一二三四五六七八九十]+', re.I)",
+    "HEAD_RE = re.compile(r'^(?:Abstract|Introduction|Results?(?:\\s+and\\s+Discussion)?|Discussion|Conclusions?|Methods?|Experimental(?:\\s+Section)?|Supporting\\s+Information|Supplementary\\s+Information|References|Acknowledgments?|摘要|引言|实验部分|结果与讨论|结论|参考文献|\\d+(?:\\.\\d+)*\\s+\\S.{1,70})$', re.I)",
+    "def norm_box(x0, y0, x1, y1, w, h):",
+    "    if w <= 0 or h <= 0: return [0, 0, 1000, 1000]",
+    "    clamp = lambda v: max(0, min(1000, int(round(v))))",
+    "    return [clamp(x0 * 1000.0 / w), clamp(y0 * 1000.0 / h), clamp(x1 * 1000.0 / w), clamp(y1 * 1000.0 / h)]",
+    "manifest_parts = []",
+    "total_pages_all = 0",
+    "for item in cfg['files']:",
+    "    fpath = Path(item['path']).resolve()",
+    "    did = item['data_id']",
+    "    ext = fpath.suffix.lower()",
+    "    item_dir = raw_root / did",
+    "    img_dir = item_dir / 'images'",
+    "    img_dir.mkdir(parents=True, exist_ok=True)",
+    "    content_list = []",
+    "    if ext == '.pdf':",
+    "        import fitz",
+    "        with fitz.open(fpath) as doc:",
+    "            total_pages_all = max(total_pages_all, len(doc))",
+    "            for pno, page in enumerate(doc):",
+    "                pw, ph = float(page.rect.width or 612), float(page.rect.height or 792)",
+    "                page_imgs = []",
+    "                for idx_img, img_info in enumerate(page.get_images(full=True)):",
+    "                    xref = img_info[0]",
+    "                    try:",
+    "                        base_img = doc.extract_image(xref)",
+    "                        raw_bytes = base_img.get('image')",
+    "                        img_ext = base_img.get('ext', 'png')",
+    "                        if not raw_bytes or base_img.get('width', 0) < 36 or base_img.get('height', 0) < 36: continue",
+    "                        rects = page.get_image_rects(xref)",
+    "                        r = rects[0] if rects else fitz.Rect(pw*0.1, ph*0.1, pw*0.9, ph*0.5)",
+    "                        fname = f'p{pno+1}_img{idx_img+1}.{img_ext}'",
+    "                        (img_dir / fname).write_bytes(raw_bytes)",
+    "                        blk = {'type': 'image', 'img_path': f'images/{fname}', 'image_caption': [], 'image_footnote': [], 'page_idx': pno, 'bbox': norm_box(r.x0, r.y0, r.x1, r.y1, pw, ph)}",
+    "                        page_imgs.append(blk)",
+    "                        content_list.append(blk)",
+    "                    except Exception:",
+    "                        pass",
+    "                for b in page.get_text('blocks'):",
+    "                    if len(b) >= 7 and b[6] != 0: continue",
+    "                    txt = re.sub(r'[ \\t]+', ' ', str(b[4] or '')).strip()",
+    "                    if not txt: continue",
+    "                    txt_flat = re.sub(r'\\s*\\n\\s*', ' ', txt).strip()",
+    "                    bx = norm_box(b[0], b[1], b[2], b[3], pw, ph)",
+    "                    if CAP_RE.match(txt_flat) and page_imgs:",
+    "                        nearest = min(page_imgs, key=lambda im: abs(im['bbox'][3] - bx[1]))",
+    "                        if not nearest['image_caption']:",
+    "                            nearest['image_caption'].append(txt_flat)",
+    "                            continue",
+    "                    entry = {'type': 'text', 'text': txt_flat, 'page_idx': pno, 'bbox': bx}",
+    "                    if (pno == 0 and len(content_list) == 0 and len(txt_flat) < 220) or HEAD_RE.match(txt_flat):",
+    "                        entry['text_level'] = 1",
+    "                    content_list.append(entry)",
+    "            if cfg.get('mode') == 'book':",
+    "                manifest_parts.append({'id': did, 'start_page': 1, 'end_page': len(doc), 'pages': len(doc), 'bytes': fpath.stat().st_size, 'path': str(fpath)})",
+    "    elif ext == '.pptx':",
+    "        from pptx import Presentation",
+    "        from pptx.enum.shapes import MSO_SHAPE_TYPE",
+    "        prs = Presentation(fpath)",
+    "        sw, sh = float(prs.slide_width or 9144000), float(prs.slide_height or 5143500)",
+    "        for sno, slide in enumerate(prs.slides):",
+    "            for idx_sh, shape in enumerate(slide.shapes):",
+    "                bx = norm_box(float(shape.left or 0), float(shape.top or 0), float((shape.left or 0) + (shape.width or 0)), float((shape.top or 0) + (shape.height or 0)), sw, sh)",
+    "                if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:",
+    "                    try:",
+    "                        ext_img = shape.image.ext or 'png'",
+    "                        fname = f's{sno+1}_img{idx_sh+1}.{ext_img}'",
+    "                        (img_dir / fname).write_bytes(shape.image.blob)",
+    "                        content_list.append({'type': 'image', 'img_path': f'images/{fname}', 'image_caption': [], 'image_footnote': [], 'page_idx': sno, 'bbox': bx})",
+    "                    except Exception:",
+    "                        pass",
+    "                elif getattr(shape, 'has_text_frame', False) and shape.text_frame.text.strip():",
+    "                    lines = [re.sub(r'[ \\t]+', ' ', ln).strip() for ln in shape.text_frame.text.splitlines() if ln.strip()]",
+    "                    if not lines: continue",
+    "                    is_title = (shape == getattr(slide.shapes, 'title', None)) or (bx[1] < 160 and len(lines) == 1 and len(lines[0]) <= 60)",
+    "                    entry = {'type': 'text', 'text': '\\n'.join(lines), 'page_idx': sno, 'bbox': bx}",
+    "                    if is_title: entry['text_level'] = 1",
+    "                    content_list.append(entry)",
+    "    cl_path = item_dir / 'content_list.json'",
+    "    cl_bytes = (json.dumps(content_list, ensure_ascii=False, indent=2) + '\\n').encode('utf-8')",
+    "    cl_path.write_bytes(cl_bytes)",
+    "    hashes = {'content_list.json': hashlib.sha256(cl_bytes).hexdigest()}",
+    "    for im_f in sorted(img_dir.glob('*')):",
+    "        if im_f.is_file(): hashes[f'images/{im_f.name}'] = hashlib.sha256(im_f.read_bytes()).hexdigest()",
+    "    (item_dir / '_ok').write_text(json.dumps({'sha256': hashes}, ensure_ascii=False, indent=2) + '\\n', encoding='utf-8')",
+    "if cfg.get('mode') == 'book' and manifest_parts:",
+    "    (out_root / 'manifest.json').write_text(json.dumps({'source': cfg['files'][0]['path'], 'pages': total_pages_all, 'chunk_size': total_pages_all, 'parts': manifest_parts}, ensure_ascii=False, indent=2) + '\\n', encoding='utf-8')",
+    "print(json.dumps({'status': 'ok', 'items': len(cfg['files'])}))"
+  ].join("\n");
+
+  const payload = JSON.stringify({ ocrWorkDir, files: filesSpec, mode });
+  const res = await runPython("-c", [pyCode, payload], 120000);
+  if (res.exitCode !== 0) {
+    throw new Error(pythonFailure(res, "本地原生文字/图片提取失败"));
+  }
+  return res.parsed;
+}
+
+async function autoGenerateBookChapters(pdfPath, manifestPath, outChaptersPath) {
+  const pyCode = [
+    "import json, re, sys",
+    "from pathlib import Path",
+    "import fitz",
+    "pdf_path, manifest_path, out_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])",
+    "manifest = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.is_file() else {}",
+    "with fitz.open(pdf_path) as doc:",
+    "    total = len(doc)",
+    "    toc = doc.get_toc() or []",
+    "top_entries = [t for t in toc if len(t) >= 3 and t[0] == 1 and 1 <= int(t[2]) <= total]",
+    "chapters = []",
+    "if len(top_entries) >= 2:",
+    "    for idx, entry in enumerate(top_entries):",
+    "        start = int(entry[2])",
+    "        end = int(top_entries[idx + 1][2]) - 1 if idx + 1 < len(top_entries) else total",
+    "        if end < start: end = start",
+    "        cid = f'ch{idx+1:02d}'",
+    "        raw_title = re.sub(r'[\\\\/*?\"<>|:\\r\\n\\t]+', ' ', str(entry[1] or cid)).strip()[:60] or cid",
+    "        chapters.append({'id': cid, 'title': raw_title, 'file': f'{cid}-{raw_title}.md', 'start': start, 'end': end})",
+    "elif manifest.get('parts'):",
+    "    for idx, part in enumerate(manifest['parts']):",
+    "        cid = part.get('id') or f'part{idx+1:02d}'",
+    "        s, e = int(part.get('start_page', 1)), int(part.get('end_page', total))",
+    "        title = f'第 {idx+1} 部分 (P.{s}-{e})'",
+    "        chapters.append({'id': cid, 'title': title, 'file': f'{cid}.md', 'start': s, 'end': e})",
+    "else:",
+    "    chapters.append({'id': 'ch01', 'title': pdf_path.stem, 'file': f'01-{pdf_path.stem[:60]}.md', 'start': 1, 'end': total})",
+    "out_path.write_text(json.dumps(chapters, ensure_ascii=False, indent=2) + '\\n', encoding='utf-8')",
+    "print(json.dumps({'status': 'ok', 'chapters': chapters}, ensure_ascii=False))"
+  ].join("\n");
+  const res = await runPython("-c", [pyCode, pdfPath, manifestPath, outChaptersPath], 30000);
+  if (res.exitCode !== 0) {
+    throw new Error(pythonFailure(res, "自动生成教材章节表失败"));
+  }
+  return res.parsed?.chapters || [];
+}
+
+function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir) {
+  const mdFiles = [];
+  let primaryMarkdownPath = null;
+  let siMarkdownPath = null;
+  let imageCount = 0;
+  let siImageCount = 0;
+
+  const countFilesRec = (dir, extFilter = null) => {
+    if (!dir || !existsSync(dir)) return [];
+    const found = [];
+    const walk = (cur) => {
+      for (const entry of readdirSync(cur, { withFileTypes: true })) {
+        if (entry.name.startsWith(".")) continue;
+        const full = join(cur, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (!extFilter || extFilter(entry.name)) found.push(full);
+      }
+    };
+    try { walk(dir); } catch {}
+    return found;
+  };
+
+  if (outDir && existsSync(outDir)) {
+    const allMds = countFilesRec(outDir, (n) => n.toLowerCase().endsWith(".md") && !isWithin(join(outDir, "agent"), join(outDir, n)));
+    for (const f of allMds) {
+      const rel = relative(outDir, f).replace(/\\/g, "/");
+      if (rel.startsWith("agent/")) continue;
+      mdFiles.push(f);
+      if (basename(f) !== "00-目录.md" && !primaryMarkdownPath) {
+        primaryMarkdownPath = f;
+      }
+    }
+    if (!primaryMarkdownPath && mdFiles.length > 0) primaryMarkdownPath = mdFiles[0];
+    imageCount = countFilesRec(join(outDir, "images")).length;
+  }
+
+  if (siOutDir && existsSync(siOutDir)) {
+    const siMds = countFilesRec(siOutDir, (n) => n.toLowerCase().endsWith(".md"));
+    for (const f of siMds) {
+      if (basename(f) !== "00-目录.md" && !siMarkdownPath) {
+        siMarkdownPath = f;
+      }
+    }
+    siImageCount = countFilesRec(join(siOutDir, "images")).length;
+  }
+
+  const researchReport = readJsonSafe(join(stateMainDir, "research", "research-report.json"), null);
+  const buildReport = readJsonSafe(join(outDir, "build-report.json"), null);
+  const formulasPath = existsSync(join(stateMainDir, "research", "formulas.json"))
+    ? join(stateMainDir, "research", "formulas.json")
+    : join(jobDir, "formulas.json");
+  const mathReportPath = existsSync(join(stateMainDir, "research", "math-report.json"))
+    ? join(stateMainDir, "research", "math-report.json")
+    : join(jobDir, "math-report.json");
+  const valOutPath = join(jobDir, "validate-output.json");
+
+  const formulas = readJsonSafe(formulasPath, []);
+  const mathReport = readJsonSafe(mathReportPath, null);
+  const valOut = readJsonSafe(valOutPath, null);
+
+  const formulaCount = Array.isArray(formulas) ? formulas.length : researchReport?.formula_count ?? 0;
+  const mathErrors =
+    typeof mathReport?.failed === "number"
+      ? mathReport.failed
+      : Array.isArray(mathReport?.failures)
+        ? mathReport.failures.length
+        : 0;
+  const mathPassed = researchReport
+    ? researchReport.automatic_checks === "pass" || mathErrors === 0
+    : mathErrors === 0;
+  const outputValidationPassed = researchReport
+    ? researchReport.automatic_checks === "pass"
+    : valOut
+      ? Boolean(valOut.ok ?? valOut.status === "pass" ?? (!valOut.errors?.length))
+      : true;
+
+  const warnings = [];
+  if (buildReport?.review && typeof buildReport.review === "object") {
+    for (const [chId, revList] of Object.entries(buildReport.review)) {
+      if (Array.isArray(revList)) {
+        for (const item of revList.slice(0, 10)) {
+          warnings.push(typeof item === "string" ? `[${chId}] ${item}` : `[${chId}] ${JSON.stringify(item)}`);
+        }
+      }
+    }
+  }
+  if (Array.isArray(mathReport?.failures)) {
+    for (const f of mathReport.failures.slice(0, 8)) {
+      warnings.push(`公式校验告警 (${f.file || "md"}:${f.line || "?"}): ${f.error || (f.issues || []).join("; ")}`);
+    }
+  }
+
+  let previewExcerpt = "";
+  if (primaryMarkdownPath && existsSync(primaryMarkdownPath)) {
+    try {
+      const rawMd = readFileSync(primaryMarkdownPath, "utf8");
+      previewExcerpt = rawMd.slice(0, 1200);
+    } catch {}
+  }
+
+  return {
+    markdownFiles: mdFiles,
+    markdownCount: mdFiles.length,
+    primaryMarkdownPath,
+    indexMarkdownPath: outDir && existsSync(join(outDir, "00-目录.md")) ? join(outDir, "00-目录.md") : null,
+    siMarkdownPath,
+    imageCount,
+    siImageCount,
+    totalImageCount: imageCount + siImageCount,
+    formulaCount,
+    mathPassed,
+    mathErrors,
+    outputValidationPassed,
+    warnings: warnings.slice(0, 20),
+    chapters: Array.isArray(buildReport?.chapters) ? buildReport.chapters : [],
+    previewExcerpt
+  };
+}
+
+function runDoc2mdPythonWithProgress(scriptPath, args, jobId, phaseLabelPrefix, timeoutMs = 1800000) {
+  const jobDir = resolveDoc2mdJobDir(jobId, true);
+  const pollTimer = setInterval(() => {
+    try {
+      const cur = readJsonSafe(join(jobDir, "job-meta.json"), null);
+      if (!cur || cur.status !== "running") return;
+      const liveProg = readDoc2mdLiveProgress(jobDir, cur.progress || {});
+      const pageStr =
+        liveProg.totalPages > 0
+          ? ` (${liveProg.extractedPages || 0}/${liveProg.totalPages} 页 · 分片 ${liveProg.doneFiles || 0}/${liveProg.totalFiles || 1})`
+          : liveProg.totalFiles > 0
+            ? ` (已完成 ${liveProg.doneFiles || 0}/${liveProg.totalFiles} 份文档)`
+            : "";
+      saveDoc2mdJob(jobId, {
+        ...cur,
+        progress: liveProg,
+        phaseLabel: `${phaseLabelPrefix}${pageStr}`
+      });
+    } catch {}
+  }, 1500);
+
+  return runPython(scriptPath, args, timeoutMs).finally(() => {
+    clearInterval(pollTimer);
+  });
+}
+
+async function executeDoc2mdJob(jobId, options = {}) {
+  const scriptsDir = resolveDoc2mdScriptsDir();
+  const mineruPy = join(scriptsDir, "mineru_ocr.py");
+  const buildResearchPy = join(scriptsDir, "build_research_document.py");
+  const buildMarkdownPy = join(scriptsDir, "build_markdown.py");
+  const validateOutputPy = join(scriptsDir, "validate_output.py");
+  const extractFormulasPy = join(scriptsDir, "extract_formulas.py");
+  const validateMathCjs = join(scriptsDir, "validate_math.cjs");
+
+  let job = loadDoc2mdJob(jobId);
+  const jobDir = resolveDoc2mdJobDir(jobId, true);
+  const ocrWorkDir = join(jobDir, "ocr-work");
+  const stateMainDir = join(jobDir, "state-main");
+  const stateSiDir = join(jobDir, "state-si");
+  const sourceStagingDir = join(jobDir, "source-staging");
+  mkdirSync(ocrWorkDir, { recursive: true });
+
+  const input = job.input || {};
+  const mode = input.mode || "research";
+  const ocrEngine = input.ocrEngine || "mineru";
+  const lang = input.language || (mode === "research" ? "en" : "ch");
+  const outDir = resolve(job.outDir);
+  const siOutDir = job.siOutDir ? resolve(job.siOutDir) : null;
+
+  try {
+    // Prepare safe source PDF paths outside outDir so build_research_document containment check always passes
+    let mainPdf = input.pdfPath ? resolve(input.pdfPath) : null;
+    let siPdf = input.siPdfPath ? resolve(input.siPdfPath) : null;
+    const pptxFile = input.pptxPath ? resolve(input.pptxPath) : null;
+
+    if (mainPdf && isWithin(outDir, mainPdf)) {
+      mkdirSync(sourceStagingDir, { recursive: true });
+      const stagedMain = join(sourceStagingDir, basename(mainPdf));
+      copyFileSync(mainPdf, stagedMain);
+      mainPdf = stagedMain;
+    }
+    if (siPdf && siOutDir && (isWithin(outDir, siPdf) || isWithin(siOutDir, siPdf))) {
+      mkdirSync(sourceStagingDir, { recursive: true });
+      const stagedSi = join(sourceStagingDir, `si-${basename(siPdf)}`);
+      copyFileSync(siPdf, stagedSi);
+      siPdf = stagedSi;
+    }
+
+    let rawRootForBuild = join(ocrWorkDir, "raw");
+
+    // Step 1: Obtain OCR / Raw content_list.json unless rebuildOnly or existing_raw
+    if (options.rebuildOnly) {
+      if (ocrEngine === "existing_raw" && input.existingRawDir) {
+        rawRootForBuild = resolve(input.existingRawDir);
+      }
+    } else if (ocrEngine === "existing_raw") {
+      if (!input.existingRawDir || !existsSync(input.existingRawDir)) {
+        throw new Error("未找到指定的已有 OCR 结果目录 (existingRawDir)。");
+      }
+      rawRootForBuild = resolve(input.existingRawDir);
+    } else if (ocrEngine === "local_fast" || (mode === "slides" && !mainPdf && pptxFile)) {
+      job = saveDoc2mdJob(jobId, {
+        ...job,
+        status: "running",
+        phase: "ocr_polling",
+        phaseLabel: "⚡ 正在提取本地原生文字层与内嵌高清图表..."
+      });
+      const filesSpec = [];
+      if (mode === "research") {
+        filesSpec.push({ path: mainPdf, data_id: "main" });
+        if (siPdf) filesSpec.push({ path: siPdf, data_id: "si" });
+      } else if (mode === "slides") {
+        const slideId = sanitizeDoc2mdTitle(basename(pptxFile || mainPdf, extname(pptxFile || mainPdf)), 40).replace(/[^A-Za-z0-9_-]+/g, "_") || "slides01";
+        filesSpec.push({ path: mainPdf || pptxFile, data_id: slideId });
+      } else {
+        filesSpec.push({ path: mainPdf, data_id: "part01" });
+      }
+      await buildLocalNativeRaw(ocrWorkDir, filesSpec, mode);
+    } else {
+      // Cloud MinerU OCR
+      const eff = getEffectiveConfig();
+      if (!eff.status.mineru_api_token?.configured) {
+        throw new Error(
+          "尚未配置 MINERU_API_TOKEN：请在右上角「⚙ 设置与API」中填入 MinerU Token，或将解析引擎切换为「⚡ 本地原生提取 (免Token)」。"
+        );
+      }
+      if (!mainPdf || !existsSync(mainPdf)) {
+        throw new Error("MinerU 云端 OCR 需要提供有效的 PDF 文件路径。");
+      }
+
+      if (mode === "book" && !existsSync(join(ocrWorkDir, "manifest.json"))) {
+        job = saveDoc2mdJob(jobId, {
+          ...job,
+          status: "running",
+          phase: "splitting",
+          phaseLabel: `✂ 正在按每片 ${input.chunkSize || 96} 页拆分教材 PDF...`
+        });
+        const splitRes = await runPython(
+          mineruPy,
+          ["split", mainPdf, "--out-root", ocrWorkDir, "--chunk-size", String(input.chunkSize || 96)],
+          180000
+        );
+        if (splitRes.exitCode !== 0) {
+          throw new Error(pythonFailure(splitRes, "教材 PDF 切片失败"));
+        }
+      } else if (mode !== "book" && !existsSync(join(ocrWorkDir, "ids.tsv"))) {
+        const idLines = [];
+        if (mode === "research") {
+          idLines.push(`${mainPdf}\tmain`);
+          if (siPdf && existsSync(siPdf)) idLines.push(`${siPdf}\tsi`);
+        } else {
+          const slideStem = basename(mainPdf, extname(mainPdf))
+            .replace(/[^A-Za-z0-9_-]+/g, "_")
+            .replace(/^[-_]+|[-_]+$/g, "")
+            .slice(0, 48) || "slide01";
+          const safeId = /^[A-Za-z0-9]/.test(slideStem) ? slideStem : `s_${slideStem}`;
+          idLines.push(`${mainPdf}\t${safeId}`);
+        }
+        writeFileSync(join(ocrWorkDir, "ids.tsv"), idLines.join("\n") + "\n", "utf8");
+      }
+
+      const hasExistingJob = existsSync(join(ocrWorkDir, "job.json"));
+      const ocrCmdArgs = hasExistingJob
+        ? ["resume", "--out-root", ocrWorkDir, "--interval", "5"]
+        : ["submit", "--id-file", join(ocrWorkDir, "ids.tsv"), "--language", lang, "--out-root", ocrWorkDir, "--interval", "5"];
+
+      job = saveDoc2mdJob(jobId, {
+        ...job,
+        status: "running",
+        phase: "ocr_polling",
+        phaseLabel: hasExistingJob
+          ? "🔄 正在断点续传 MinerU 云端 OCR 批次..."
+          : "☁ 正在上传并执行 MinerU 云端公式/图表 OCR..."
+      });
+
+      const ocrRes = await runDoc2mdPythonWithProgress(
+        mineruPy,
+        ocrCmdArgs,
+        jobId,
+        "☁ MinerU 云端 OCR 识别中"
+      );
+      if (ocrRes.exitCode !== 0) {
+        throw new Error(pythonFailure(ocrRes, "MinerU 云端 OCR 未完成（可点击「🔄 断点续传」继续原批次）"));
+      }
+
+      if (mode === "book" && input.bookSplitOnly && !options.rebuildOnly) {
+        const draftChaptersPath = join(jobDir, "chapters-draft.json");
+        const chapters = await autoGenerateBookChapters(mainPdf, join(ocrWorkDir, "manifest.json"), draftChaptersPath);
+        const doneJob = saveDoc2mdJob(jobId, {
+          ...loadDoc2mdJob(jobId),
+          status: "ocr_completed",
+          phase: "ocr_completed",
+          phaseLabel: `✅ 教材切片与云端 OCR 已完成（预生成 ${chapters.length} 章，可一键装配或让 AI 核对章节表）`,
+          chaptersDraftPath: draftChaptersPath,
+          chaptersPreview: chapters
+        });
+        return doneJob;
+      }
+    }
+
+    // Step 2: Assembly & Validation
+    job = saveDoc2mdJob(jobId, {
+      ...loadDoc2mdJob(jobId),
+      status: "running",
+      phase: "assembling",
+      phaseLabel: "🔧 正在装配 Markdown、提取高清图表、归一化 LaTeX 公式并执行 KaTeX 校验..."
+    });
+
+    if (mode === "research") {
+      let metadataJsonPath = null;
+      if (input.metadata && typeof input.metadata === "object" && Object.keys(input.metadata).length > 0) {
+        metadataJsonPath = join(jobDir, "metadata-input.json");
+        const cleanMeta = {};
+        if (input.metadata.title) cleanMeta.title = String(input.metadata.title).trim();
+        if (Array.isArray(input.metadata.authors) && input.metadata.authors.length) {
+          cleanMeta.authors = input.metadata.authors
+            .map((a) => (typeof a === "string" ? a.trim() : String(a?.name || "").trim()))
+            .filter((s) => s && !/\bet\s+al\.?\s*$|等\s*$/i.test(s));
+        }
+        if (input.metadata.date || input.metadata.year) {
+          cleanMeta.date = String(input.metadata.date || input.metadata.year).trim();
+        }
+        if (input.metadata.publication_title || input.metadata.journal || input.metadata.venue) {
+          cleanMeta.publication_title = String(
+            input.metadata.publication_title || input.metadata.journal || input.metadata.venue
+          ).trim();
+        }
+        if (input.metadata.doi) {
+          const d = normalizeDoi(input.metadata.doi);
+          if (/^10\.\d{4,9}\/\S+$/.test(d)) cleanMeta.doi = d;
+        }
+        if (input.metadata.abstract) cleanMeta.abstract = String(input.metadata.abstract);
+        if (input.metadata.url) cleanMeta.url = String(input.metadata.url).trim();
+        if (input.metadata.zotero_item_uri && /^zotero:\/\/select\/(?:library|groups\/\d+)\/items\/[A-Z0-9]{8}$/.test(input.metadata.zotero_item_uri)) {
+          cleanMeta.zotero_item_uri = input.metadata.zotero_item_uri;
+        }
+        writeJsonSafe(metadataJsonPath, cleanMeta);
+      }
+
+      const buildMainArgs = (withMeta) => {
+        const a = [
+          "--pdf",
+          mainPdf,
+          "--raw",
+          rawRootForBuild,
+          "--out",
+          outDir,
+          "--state-dir",
+          stateMainDir,
+          "--reading-order",
+          input.readingOrder || "source"
+        ];
+        if (existsSync(join(rawRootForBuild, "main"))) {
+          a.push("--id", "main");
+        }
+        if (input.autoRepairs === false) {
+          a.push("--no-auto-repairs");
+        } else {
+          a.push("--auto-repairs");
+        }
+        if (options.repairsJsonPath && existsSync(options.repairsJsonPath)) {
+          a.push("--repairs", resolve(options.repairsJsonPath));
+        }
+        if (withMeta && metadataJsonPath && existsSync(metadataJsonPath)) {
+          a.push("--metadata", metadataJsonPath);
+        }
+        if (siPdf && siOutDir) {
+          a.push("--si-doc", basename(siOutDir));
+        }
+        return a;
+      };
+
+      let mainRes = await runPython(buildResearchPy, buildMainArgs(true), 300000);
+      if (
+        mainRes.exitCode !== 0 &&
+        metadataJsonPath &&
+        /not corroborated|differ|mismatch/i.test(String(mainRes.stderr || mainRes.stdout || ""))
+      ) {
+        // Fallback without uncorroborated external metadata so custom/cropped PDFs still build cleanly
+        mainRes = await runPython(buildResearchPy, buildMainArgs(false), 300000);
+      }
+      if (mainRes.exitCode !== 0 && !existsSync(join(outDir, "00-目录.md"))) {
+        throw new Error(pythonFailure(mainRes, "科研论文 Markdown 装配失败"));
+      }
+
+      if (siPdf && siOutDir && existsSync(siPdf)) {
+        const siArgs = [
+          "--pdf",
+          siPdf,
+          "--raw",
+          rawRootForBuild,
+          "--out",
+          siOutDir,
+          "--state-dir",
+          stateSiDir,
+          "--reading-order",
+          input.readingOrder || "source",
+          "--supplement-to",
+          basename(outDir)
+        ];
+        if (existsSync(join(rawRootForBuild, "si"))) {
+          siArgs.push("--id", "si");
+        }
+        if (input.autoRepairs === false) {
+          siArgs.push("--no-auto-repairs");
+        } else {
+          siArgs.push("--auto-repairs");
+        }
+        const siRes = await runPython(buildResearchPy, siArgs, 300000);
+        if (siRes.exitCode !== 0 && !existsSync(join(siOutDir, "00-目录.md"))) {
+          throw new Error(pythonFailure(siRes, "补充材料 (SI) Markdown 装配失败"));
+        }
+      }
+    } else if (mode === "slides") {
+      const slideArgs = [
+        "--raw",
+        rawRootForBuild,
+        "--out",
+        outDir,
+        "--mode",
+        "slides",
+        "--state-dir",
+        stateMainDir
+      ];
+      if (mainPdf && existsSync(mainPdf)) {
+        slideArgs.push("--pdf", mainPdf);
+      }
+      if (pptxFile && existsSync(pptxFile)) {
+        slideArgs.push("--source-dir", dirname(pptxFile), "--source-glob", basename(pptxFile));
+      }
+      if (input.keepTableImages !== false) {
+        slideArgs.push("--keep-table-images");
+      }
+      if (input.agentIndex) {
+        slideArgs.push("--agent-index");
+      }
+      const bRes = await runPython(buildMarkdownPy, slideArgs, 300000);
+      if (bRes.exitCode !== 0) {
+        throw new Error(pythonFailure(bRes, "课件 Markdown 装配失败"));
+      }
+      await runStandaloneDoc2mdValidators(outDir, jobDir, validateOutputPy, extractFormulasPy, validateMathCjs);
+    } else if (mode === "book") {
+      const manifestPath = existsSync(join(ocrWorkDir, "manifest.json"))
+        ? join(ocrWorkDir, "manifest.json")
+        : join(rawRootForBuild, "..", "manifest.json");
+      let chaptersPath =
+        (options.chaptersJsonPath && existsSync(options.chaptersJsonPath) ? resolve(options.chaptersJsonPath) : null) ||
+        (input.chaptersJsonPath && existsSync(input.chaptersJsonPath) ? resolve(input.chaptersJsonPath) : null) ||
+        (existsSync(join(jobDir, "chapters-draft.json")) ? join(jobDir, "chapters-draft.json") : null);
+      if (!chaptersPath) {
+        chaptersPath = join(jobDir, "chapters-auto.json");
+        await autoGenerateBookChapters(mainPdf, manifestPath, chaptersPath);
+      }
+      const bookArgs = [
+        "--raw",
+        rawRootForBuild,
+        "--out",
+        outDir,
+        "--mode",
+        "book",
+        "--state-dir",
+        stateMainDir,
+        "--keep-table-images"
+      ];
+      if (existsSync(manifestPath) && existsSync(chaptersPath)) {
+        bookArgs.push("--manifest", manifestPath, "--chapters", chaptersPath);
+      }
+      if (mainPdf && existsSync(mainPdf)) {
+        bookArgs.push("--pdf", mainPdf);
+      }
+      if (options.repairsJsonPath && existsSync(options.repairsJsonPath)) {
+        bookArgs.push("--repairs", resolve(options.repairsJsonPath));
+      } else if (input.autoRepairs !== false) {
+        bookArgs.push("--auto-repairs");
+      }
+      if (input.agentIndex) {
+        bookArgs.push("--agent-index");
+      }
+      const bRes = await runPython(buildMarkdownPy, bookArgs, 300000);
+      if (bRes.exitCode !== 0) {
+        throw new Error(pythonFailure(bRes, "教材 Markdown 装配失败"));
+      }
+      await runStandaloneDoc2mdValidators(outDir, jobDir, validateOutputPy, extractFormulasPy, validateMathCjs);
+    }
+
+    const stats = collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir);
+    const completedJob = saveDoc2mdJob(jobId, {
+      ...loadDoc2mdJob(jobId),
+      status: "completed",
+      phase: "completed",
+      phaseLabel: `✅ 解析完成：产出 ${stats.markdownCount} 份 Markdown · 提取图片 ${stats.totalImageCount} 张 · 公式 ${stats.formulaCount} 处`,
+      completedAt: new Date().toISOString(),
+      error: null,
+      stats
+    });
+
+    // Sync back to paper evidenceMap & basket if linked to a paper
+    const linkedKey =
+      input.paperKey ||
+      (input.metadata?.doi ? `doi:${normalizeDoi(input.metadata.doi)}` : null);
+    if (linkedKey) {
+      const state = loadState();
+      const prev = state.evidenceMap[linkedKey] || {};
+      state.evidenceMap[linkedKey] = {
+        ...prev,
+        stage: prev.stage === "read" ? "read" : "identity_checked",
+        doc2md_out_dir: outDir,
+        doc2md_md_path: stats.primaryMarkdownPath || null,
+        doc2md_si_out_dir: siOutDir || null,
+        doc2md_job_id: jobId,
+        updatedAt: new Date().toISOString()
+      };
+      if (Array.isArray(state.basket)) {
+        state.basket = state.basket.map((bp) =>
+          (bp.paper_key || computePaperKey(bp)) === linkedKey
+            ? {
+                ...bp,
+                doc2md_out_dir: outDir,
+                doc2md_md_path: stats.primaryMarkdownPath || null,
+                doc2md_si_out_dir: siOutDir || null,
+                doc2md_job_id: jobId
+              }
+            : bp
+        );
+      }
+      saveState(state);
+    }
+
+    return completedJob;
+  } catch (err) {
+    const msg = redactSecrets(err instanceof Error ? err.message : String(err));
+    const cur = readJsonSafe(join(jobDir, "job-meta.json"), job) || job;
+    const liveProg = readDoc2mdLiveProgress(jobDir, cur.progress || {});
+    const failedJob = saveDoc2mdJob(jobId, {
+      ...cur,
+      status: "failed",
+      phase: "failed",
+      phaseLabel: `❌ 解析中断：${msg}`,
+      progress: liveProg,
+      error: msg
+    });
+    throw Object.assign(new Error(msg), { jobId, job: failedJob });
+  }
+}
+
+async function runStandaloneDoc2mdValidators(outDir, jobDir, validateOutputPy, extractFormulasPy, validateMathCjs) {
+  const valRes = await runPython(validateOutputPy, [outDir, "--images-dir", "images", "--json"], 60000);
+  if (valRes.parsed) {
+    writeJsonSafe(join(jobDir, "validate-output.json"), valRes.parsed);
+  }
+  const formulasJson = join(jobDir, "formulas.json");
+  const mathReportJson = join(jobDir, "math-report.json");
+  const extRes = await runPython(extractFormulasPy, [outDir, "--out", formulasJson], 60000);
+  if (extRes.exitCode === 0 && existsSync(formulasJson)) {
+    const formulas = readJsonSafe(formulasJson, []);
+    const { childEnv } = getEffectiveConfig();
+    const mathArgs = [validateMathCjs, formulasJson, "--report", mathReportJson];
+    if (!Array.isArray(formulas) || formulas.length === 0) {
+      mathArgs.push("--allow-empty");
+    }
+    spawnSync("node", mathArgs, {
+      cwd: dirname(validateMathCjs),
+      env: childEnv,
+      encoding: "utf8",
+      timeout: 30000,
+      windowsHide: true
+    });
+  }
+}
+
+async function startKatexPreviewServer(outDir, requestedPort = 8766, openInBrowser = true) {
+  const resolvedOut = isAbsolutePath(outDir) ? resolve(outDir) : resolve(WORKSPACE_ROOT, outDir);
+  assertReadablePath(resolvedOut);
+  if (!existsSync(resolvedOut) || !statSync(resolvedOut).isDirectory()) {
+    throw new Error(`预览目录不存在: ${resolvedOut}`);
+  }
+  const existing = activePreviewServers.get(resolvedOut);
+  if (existing && existing.child && existing.child.exitCode === null) {
+    if (openInBrowser && !process.env.SANMU_TEST_NO_BROWSER) {
+      openFileInSystem(existing.url);
+    }
+    return { url: existing.url, port: existing.port, outDir: resolvedOut, reused: true };
+  }
+
+  const scriptsDir = resolveDoc2mdScriptsDir();
+  const previewPy = join(scriptsDir, "preview_server.py");
+  const katexInfo = resolveKatexNodeModules(scriptsDir);
+  const { childEnv } = getEffectiveConfig();
+  const pyRt = resolvePythonRuntime();
+  if (!pyRt.supported) {
+    throw new Error("未检测到 Python 3.10+ 运行环境，无法启动本地 KaTeX 预览服务。");
+  }
+
+  const usedPorts = new Set([...activePreviewServers.values()].map((v) => v.port));
+  let port = Number(requestedPort) || 8766;
+  while (usedPorts.has(port)) port++;
+
+  const args = [...pyRt.prefixArgs, previewPy, resolvedOut, "--port", String(port)];
+  if (katexInfo.katexDistDir) {
+    args.push("--katex-dir", katexInfo.katexDistDir);
+  }
+
+  const child = spawn(pyRt.cmd, args, {
+    cwd: scriptsDir,
+    env: childEnv,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+  let stderr = "";
+  child.stderr.on("data", (d) => {
+    stderr += d.toString("utf8");
+  });
+
+  await new Promise((r) => setTimeout(r, 350));
+  if (child.exitCode !== null) {
+    throw new Error(`启动 KaTeX 预览服务失败: ${stderr.trim() || `退出码 ${child.exitCode}`}`);
+  }
+
+  const url = `http://127.0.0.1:${port}/`;
+  activePreviewServers.set(resolvedOut, {
+    child,
+    port,
+    url,
+    outDir: resolvedOut,
+    startedAt: new Date().toISOString()
+  });
+  child.on("close", () => {
+    if (activePreviewServers.get(resolvedOut)?.child === child) {
+      activePreviewServers.delete(resolvedOut);
+    }
+  });
+
+  if (openInBrowser && !process.env.SANMU_TEST_NO_BROWSER) {
+    openFileInSystem(url);
+  }
+  return { url, port, outDir: resolvedOut, reused: false };
+}
+
+function stopKatexPreviewServer(outDir = null) {
+  let stopped = 0;
+  for (const [key, entry] of [...activePreviewServers.entries()]) {
+    if (!outDir || key === resolve(outDir)) {
+      try {
+        entry.child.kill();
+      } catch {}
+      activePreviewServers.delete(key);
+      stopped++;
+    }
+  }
+  return stopped;
+}
+
+async function startOrRunDoc2mdJob(input = {}) {
+  const mode = ["research", "slides", "book"].includes(input.mode) ? input.mode : "research";
+  const ocrEngine = ["mineru", "local_fast", "existing_raw"].includes(input.ocrEngine)
+    ? input.ocrEngine
+    : "mineru";
+
+  let pdfPath = input.pdfPath ? String(input.pdfPath).trim() : "";
+  let siPdfPath = input.siPdfPath ? String(input.siPdfPath).trim() : "";
+  let pptxPath = input.pptxPath ? String(input.pptxPath).trim() : "";
+  const existingRawDir = input.existingRawDir ? String(input.existingRawDir).trim() : "";
+
+  if (pdfPath) {
+    const info = inspectLocalDocumentFile(pdfPath);
+    if (!info || info.isDirectory) throw new Error(`未找到有效的主文档文件: ${pdfPath}`);
+    if (info.ext === ".pptx" && !pptxPath) {
+      pptxPath = info.path;
+      pdfPath = info.siblingPdfPath || "";
+    } else {
+      pdfPath = info.path;
+      if (mode === "slides" && !pptxPath && info.siblingPptxPath) {
+        pptxPath = info.siblingPptxPath;
+      }
+      if (mode === "research" && !siPdfPath && info.siblingSiPdfPath && input.autoDetectSi !== false) {
+        siPdfPath = info.siblingSiPdfPath;
+      }
+    }
+  }
+  if (pptxPath) {
+    const pInfo = inspectLocalDocumentFile(pptxPath);
+    if (!pInfo || pInfo.isDirectory) throw new Error(`未找到有效的 PPTX 课件文件: ${pptxPath}`);
+    pptxPath = pInfo.path;
+    if (!pdfPath && pInfo.siblingPdfPath) {
+      pdfPath = pInfo.siblingPdfPath;
+    }
+  }
+  if (siPdfPath) {
+    const sInfo = inspectLocalDocumentFile(siPdfPath);
+    if (!sInfo || sInfo.isDirectory) throw new Error(`未找到有效的补充材料 (SI) PDF 文件: ${siPdfPath}`);
+    siPdfPath = sInfo.path;
+  }
+
+  if (ocrEngine === "existing_raw") {
+    if (!existingRawDir) throw new Error("选择「复用已有 OCR 目录」时，请提供 existingRawDir 路径。");
+    const resolvedRaw = isAbsolutePath(existingRawDir) ? resolve(existingRawDir) : resolve(WORKSPACE_ROOT, existingRawDir);
+    assertReadablePath(resolvedRaw);
+    if (!existsSync(resolvedRaw)) throw new Error(`指定的 OCR 目录不存在: ${resolvedRaw}`);
+  } else if (!pdfPath && !(mode === "slides" && pptxPath)) {
+    throw new Error("请先选择或提供要解析的本地 PDF（或课件 PPTX）文件路径。");
+  }
+
+  const baseSaveDir = resolveTargetDoc2mdDir(input.saveDir);
+  const primarySource = pdfPath || pptxPath || existingRawDir;
+  const fallbackStem = basename(primarySource, extname(primarySource)) || "document";
+  const metadata = input.metadata && typeof input.metadata === "object" ? input.metadata : {};
+
+  let folderStem = input.outputFolderName ? sanitizeDoc2mdTitle(input.outputFolderName, 140) : "";
+  if (!folderStem) {
+    if (mode === "research") {
+      folderStem = formatZoteroBasenameJs(metadata, fallbackStem);
+    } else if (mode === "slides") {
+      folderStem = `${sanitizeDoc2mdTitle(metadata.title || fallbackStem, 100)}-课件笔记`;
+    } else {
+      folderStem = `${sanitizeDoc2mdTitle(metadata.title || fallbackStem, 100)}-知识库`;
+    }
+  }
+
+  const outDir = join(baseSaveDir, folderStem);
+  const siOutDir = mode === "research" && siPdfPath ? `${outDir} - SI` : null;
+
+  const jobId = makeRunId(`doc2md-${mode}`);
+  const displayTitle = metadata.title || fallbackStem;
+  const initialJob = saveDoc2mdJob(jobId, {
+    jobId,
+    mode,
+    ocrEngine,
+    title: displayTitle,
+    status: "running",
+    phase: "preflight",
+    phaseLabel: "🚀 正在预检源文件与初始化解析任务...",
+    createdAt: new Date().toISOString(),
+    outDir,
+    siOutDir,
+    saveDir: baseSaveDir,
+    input: {
+      mode,
+      ocrEngine,
+      pdfPath: pdfPath || null,
+      siPdfPath: siPdfPath || null,
+      pptxPath: pptxPath || null,
+      existingRawDir: existingRawDir ? (isAbsolutePath(existingRawDir) ? resolve(existingRawDir) : resolve(WORKSPACE_ROOT, existingRawDir)) : null,
+      chaptersJsonPath: input.chaptersJsonPath || null,
+      language: input.language || (mode === "research" ? "en" : "ch"),
+      autoRepairs: input.autoRepairs !== false,
+      keepTableImages: input.keepTableImages !== false,
+      agentIndex: Boolean(input.agentIndex),
+      readingOrder: input.readingOrder || "source",
+      chunkSize: Number(input.chunkSize) || 96,
+      bookSplitOnly: Boolean(input.bookSplitOnly),
+      saveDir: baseSaveDir,
+      outputFolderName: folderStem,
+      paperKey: input.paperKey || null,
+      zoteroItemKey: input.zoteroItemKey || null,
+      metadata
+    },
+    progress: {
+      totalFiles: siPdfPath ? 2 : 1,
+      doneFiles: 0,
+      extractedPages: 0,
+      totalPages: 0,
+      canResume: false
+    },
+    stats: null,
+    error: null
+  });
+
+  const execPromise = executeDoc2mdJob(jobId).finally(() => {
+    activeDoc2mdPromises.delete(jobId);
+  });
+  activeDoc2mdPromises.set(jobId, execPromise);
+
+  if (input.async) {
+    // Wait briefly so fast local extractions or immediate preflight errors settle right away
+    let settled = false;
+    let firstErr = null;
+    await Promise.race([
+      execPromise.then(
+        () => { settled = true; },
+        (err) => { settled = true; firstErr = err; }
+      ),
+      new Promise((r) => setTimeout(r, 1200))
+    ]);
+    if (settled && firstErr) {
+      throw firstErr;
+    }
+    const latestJob = loadDoc2mdJob(jobId);
+    const panelState = await getFullPanelState();
+    return {
+      text:
+        latestJob.status === "completed"
+          ? `✅ 文档《${latestJob.title}》已完成解析并存入：\`${latestJob.outDir}\`\n- 主 Markdown: \`${latestJob.stats?.primaryMarkdownPath || latestJob.outDir}\`\n- 提取高清图: ${latestJob.stats?.totalImageCount || 0} 张 · 公式: ${latestJob.stats?.formulaCount || 0} 处 (KaTeX校验: ${latestJob.stats?.mathPassed ? "通过" : "含告警"})`
+          : `⏳ 已启动文档解析任务 \`${jobId}\`（${latestJob.phaseLabel}），目标目录：\`${latestJob.outDir}\`。`,
+      structured: {
+        ...panelState,
+        activeDoc2mdJob: latestJob
+      }
+    };
+  }
+
+  const finishedJob = await execPromise;
+  const panelState = await getFullPanelState();
+  return {
+    text:
+      finishedJob.status === "ocr_completed"
+        ? `✅ 教材《${finishedJob.title}》已完成切片与云端 OCR（预生成章节表：\`${finishedJob.chaptersDraftPath}\`）。可核对章节表后执行装配。`
+        : `✅ 文档《${finishedJob.title}》已完成 Markdown 解析与 KaTeX 校验！\n- 输出目录: \`${finishedJob.outDir}\`${finishedJob.siOutDir ? `\n- 补充材料 (SI) 目录: \`${finishedJob.siOutDir}\`` : ""}\n- 主文档: \`${finishedJob.stats?.primaryMarkdownPath || finishedJob.outDir}\`\n- 提取高清图片: ${finishedJob.stats?.totalImageCount || 0} 张 · 公式: ${finishedJob.stats?.formulaCount || 0} 处 (KaTeX校验: ${finishedJob.stats?.mathPassed ? "通过" : "存在告警"})`,
+    structured: {
+      ...panelState,
+      activeDoc2mdJob: finishedJob
+    }
+  };
+}
+
+async function manageDoc2mdAction(input = {}) {
+  const act = input.action || "status";
+  if (act === "doctor") {
+    const scriptsDir = resolveDoc2mdScriptsDir();
+    const res = await runPython(join(scriptsDir, "doctor.py"), ["--json"], 20000);
+    const panelState = await getFullPanelState();
+    return {
+      text: `文档解析环境自检 (${res.parsed?.status || "unknown"})：\n${(res.parsed?.checks || []).map((c) => `- [${c.status}] ${c.name}: ${c.detail}`).join("\n")}`,
+      structured: {
+        ...panelState,
+        doc2mdDoctor: res.parsed
+      }
+    };
+  }
+  if (act === "status") {
+    const job = input.jobId ? loadDoc2mdJob(input.jobId) : listRecentDoc2mdJobs(1)[0] || null;
+    const panelState = await getFullPanelState();
+    return {
+      text: job ? `解析任务 \`${job.jobId}\` 状态：${job.phaseLabel || job.status}` : "当前暂无文档解析任务。",
+      structured: {
+        ...panelState,
+        activeDoc2mdJob: job
+      }
+    };
+  }
+  if (act === "resume" || act === "rebuild") {
+    if (!input.jobId) throw new Error(`操作 ${act} 需要提供 jobId。`);
+    const cur = loadDoc2mdJob(input.jobId);
+    if (activeDoc2mdPromises.has(cur.jobId)) {
+      const panelState = await getFullPanelState();
+      return {
+        text: `任务 \`${cur.jobId}\` 正在后台运行中：${cur.phaseLabel}`,
+        structured: { ...panelState, activeDoc2mdJob: cur }
+      };
+    }
+    const execPromise = executeDoc2mdJob(cur.jobId, {
+      rebuildOnly: act === "rebuild",
+      chaptersJsonPath: input.chaptersJsonPath || null,
+      repairsJsonPath: input.repairsJsonPath || null
+    }).finally(() => {
+      activeDoc2mdPromises.delete(cur.jobId);
+    });
+    activeDoc2mdPromises.set(cur.jobId, execPromise);
+
+    if (input.async) {
+      let settled = false;
+      let firstErr = null;
+      await Promise.race([
+        execPromise.then(
+          () => { settled = true; },
+          (e) => { settled = true; firstErr = e; }
+        ),
+        new Promise((r) => setTimeout(r, 1200))
+      ]);
+      if (settled && firstErr) throw firstErr;
+      const updated = loadDoc2mdJob(cur.jobId);
+      const panelState = await getFullPanelState();
+      return {
+        text: `🔄 已启动${act === "rebuild" ? "重新装配与校验" : "断点续传"}任务 \`${cur.jobId}\`（${updated.phaseLabel}）。`,
+        structured: { ...panelState, activeDoc2mdJob: updated }
+      };
+    }
+    const done = await execPromise;
+    const panelState = await getFullPanelState();
+    return {
+      text: `✅ 任务 \`${done.jobId}\` 已完成：${done.phaseLabel}\n- 输出目录：\`${done.outDir}\``,
+      structured: { ...panelState, activeDoc2mdJob: done }
+    };
+  }
+  if (act === "validate") {
+    const job = input.jobId ? loadDoc2mdJob(input.jobId) : null;
+    const targetOut = input.outDir
+      ? isAbsolutePath(input.outDir)
+        ? resolve(input.outDir)
+        : resolve(WORKSPACE_ROOT, input.outDir)
+      : job?.outDir;
+    if (!targetOut || !existsSync(targetOut)) {
+      throw new Error("未找到要校验的知识库输出目录。");
+    }
+    assertReadablePath(targetOut);
+    const scriptsDir = resolveDoc2mdScriptsDir();
+    const jobDir = job ? resolveDoc2mdJobDir(job.jobId, true) : mkdtempSync(join(DOC2MD_JOBS_DIR, ".val-"));
+    await runStandaloneDoc2mdValidators(
+      targetOut,
+      jobDir,
+      join(scriptsDir, "validate_output.py"),
+      join(scriptsDir, "extract_formulas.py"),
+      join(scriptsDir, "validate_math.cjs")
+    );
+    const stats = collectDoc2mdOutputStats(
+      targetOut,
+      job?.siOutDir || null,
+      job ? join(resolveDoc2mdJobDir(job.jobId, true), "state-main") : jobDir,
+      jobDir
+    );
+    let updatedJob = job;
+    if (job) {
+      updatedJob = saveDoc2mdJob(job.jobId, { ...job, stats });
+    }
+    const panelState = await getFullPanelState();
+    return {
+      text: `🔍 校验完成（\`${targetOut}\`）：Markdown ${stats.markdownCount} 份 · 图片 ${stats.totalImageCount} 张 · 公式 ${stats.formulaCount} 处（KaTeX: ${stats.mathPassed ? "100% 通过" : `${stats.mathErrors} 处报错`}）`,
+      structured: { ...panelState, activeDoc2mdJob: updatedJob, validationStats: stats }
+    };
+  }
+  if (act === "preview") {
+    const job = input.jobId ? loadDoc2mdJob(input.jobId) : null;
+    const targetOut = input.outDir || job?.outDir;
+    if (!targetOut) throw new Error("请提供要预览的知识库目录 (outDir) 或任务 ID (jobId)。");
+    const prev = await startKatexPreviewServer(targetOut, input.port || 8766, input.openInBrowser !== false);
+    const panelState = await getFullPanelState();
+    return {
+      text: `🌐 KaTeX 本地渲染预览服务已就绪：[${prev.url}](${prev.url})（目录：\`${prev.outDir}\`）`,
+      structured: { ...panelState, previewServer: prev, activeDoc2mdJob: job ? loadDoc2mdJob(job.jobId) : null }
+    };
+  }
+  if (act === "stop_preview") {
+    const job = input.jobId ? loadDoc2mdJob(input.jobId) : null;
+    const targetOut = input.outDir || job?.outDir || null;
+    const count = stopKatexPreviewServer(targetOut);
+    const panelState = await getFullPanelState();
+    return {
+      text: `⏹ 已停止 ${count} 个本地 KaTeX 预览服务。`,
+      structured: { ...panelState, stoppedPreviews: count }
+    };
+  }
+  if (act === "delete") {
+    if (!input.jobId) throw new Error("删除解析任务需要提供 jobId。");
+    const jobDir = resolveDoc2mdJobDir(input.jobId, true);
+    rmSync(jobDir, { recursive: true, force: true });
+    const panelState = await getFullPanelState();
+    return {
+      text: `🗑 已移除解析任务记录 \`${input.jobId}\`（已产出的知识库 Markdown 文件保持不变）。`,
+      structured: { ...panelState, deletedDoc2mdJobId: input.jobId }
+    };
+  }
+  if (act === "clear_all") {
+    let count = 0;
+    if (existsSync(DOC2MD_JOBS_DIR)) {
+      for (const d of readdirSync(DOC2MD_JOBS_DIR, { withFileTypes: true })) {
+        if (d.isDirectory() && !activeDoc2mdPromises.has(d.name)) {
+          rmSync(join(DOC2MD_JOBS_DIR, d.name), { recursive: true, force: true });
+          count++;
+        }
+      }
+    }
+    const panelState = await getFullPanelState();
+    return {
+      text: `🧹 已清空 ${count} 条历史解析任务记录（已产出的知识库 Markdown 文件保持不变）。`,
+      structured: { ...panelState, clearedDoc2mdCount: count }
+    };
+  }
+  throw new Error(`未知的 manage_doc2md 操作: ${act}`);
+}
+
 async function getFullPanelState(activeRunId = null) {
   const state = loadState();
   const eff = getEffectiveConfig();
@@ -3467,6 +5251,10 @@ async function getFullPanelState(activeRunId = null) {
       ...(Array.isArray(ev.sciverse_figure_files) ? { sciverse_figure_files: ev.sciverse_figure_files } : {}),
       ...(ev.sciverse_excerpt_path ? { sciverse_excerpt_path: ev.sciverse_excerpt_path } : {}),
       ...(ev.sciverse_materials_path ? { sciverse_materials_path: ev.sciverse_materials_path } : {}),
+      ...(ev.doc2md_out_dir ? { doc2md_out_dir: ev.doc2md_out_dir } : {}),
+      ...(ev.doc2md_md_path ? { doc2md_md_path: ev.doc2md_md_path } : {}),
+      ...(ev.doc2md_si_out_dir ? { doc2md_si_out_dir: ev.doc2md_si_out_dir } : {}),
+      ...(ev.doc2md_job_id ? { doc2md_job_id: ev.doc2md_job_id } : {}),
       ...(ev.zoteroMatch ? { zoteroMatch: ev.zoteroMatch } : {}),
       ...(ev.zoteroUndoneKey ? { zoteroUndoneKey: ev.zoteroUndoneKey, zoteroUndoneAt: ev.zoteroUndoneAt } : {}),
       ...(enr
@@ -3496,7 +5284,8 @@ async function getFullPanelState(activeRunId = null) {
     zoteroImports: Object.keys(state.zoteroImports || {}),
     basket: enrichedBasket,
     citationsPreview: generateCitations(enrichedBasket),
-    graphData
+    graphData,
+    doc2mdJobs: listRecentDoc2mdJobs(25)
   };
 }
 
@@ -3593,8 +5382,11 @@ const TOOLS = [
         easyscholarSecretKey: { type: "string" },
         ai4scholarApiKey: { type: "string" },
         sciverseApiKey: { type: "string" },
+        mineruApiToken: { type: "string" },
+        mineruApiKey: { type: "string" },
         zoteroUrl: { type: "string" },
         exportSubdir: { type: "string" },
+        doc2mdSubdir: { type: "string" },
         defaultSources: { type: "array", items: { type: "string" } },
         defaultLimit: { type: "integer", minimum: 1, maximum: 20 },
         clearKeys: { type: "array", items: { type: "string" } }
@@ -5653,6 +7445,212 @@ const TOOLS = [
         }
       };
     }
+  },
+  {
+    name: "pick_system_path",
+    description:
+      "调起本机系统原生文件或文件夹选择对话框（供侧栏「📝 文档解析」直接从文件管理器挑选本地 PDF / PPTX / JSON 文件或选择 Markdown 输出保存目录，并自动探测同目录关联的 SI PDF 或 PPTX）。",
+    visibility: ["app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        mode: {
+          type: "string",
+          enum: ["file", "files", "folder"],
+          default: "file",
+          description: "选择模式：file（单选文件）、files（多选文件）、folder（选择文件夹）"
+        },
+        filter: {
+          type: "string",
+          enum: ["pdf_pptx", "pdf", "pptx", "json", "all"],
+          default: "pdf_pptx",
+          description: "文件扩展名过滤器"
+        },
+        title: { type: "string", description: "系统选择窗口标题" },
+        initialDir: { type: "string", description: "可选。初始打开的目录路径" }
+      }
+    },
+    execute: async (input) => {
+      const picked = pickSystemPath(input || {});
+      return {
+        text: picked.canceled
+          ? "已取消文件/目录选择。"
+          : `已选择路径：\`${picked.path}\``,
+        structured: picked
+      };
+    }
+  },
+  {
+    name: "list_zotero_pdf_items",
+    description:
+      "从本机 Zotero 桌面端检索条目并提取已关联的本地 PDF 附件路径（自动区分主文 PDF 与补充材料 SI PDF）及完整题录元数据，供「📝 文档解析」直接点选 Zotero 文献转换 Markdown。",
+    visibility: ["model", "app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        collectionKey: { type: "string", description: "可选。Zotero 分类 Key（留空查询文库全部条目）" },
+        query: { type: "string", description: "可选。按标题、作者、年份或 DOI 搜索过滤" },
+        limit: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+        onlyWithPdf: {
+          type: "boolean",
+          default: true,
+          description: "是否仅返回带有本地可用 PDF 附件的 Zotero 条目（默认 true）"
+        }
+      }
+    },
+    execute: async (input) => {
+      const zotRes = await listZoteroPdfItems(input || {});
+      const panelState = await getFullPanelState();
+      return {
+        text: zotRes.zoteroOnline
+          ? `📚 已从本机 Zotero 读取到 ${zotRes.items.length} 条含本地 PDF 的文献条目。`
+          : zotRes.message || "本机 Zotero 未在线。",
+        structured: {
+          ...panelState,
+          zoteroPdfList: zotRes
+        }
+      };
+    }
+  },
+  {
+    name: "run_doc2md",
+    description:
+      "调用 sanmu-doc2md 将本地 PDF、补充材料（SI PDF）、PPTX 课件或长篇教材转换为保留 LaTeX 公式、高清原图和页码溯源的 Obsidian 兼容 Markdown 知识库（支持 MinerU 云端高精度 OCR、本地原生极速提取与复用已有 OCR 结果，自动执行结构与 KaTeX 公式校验）。",
+    visibility: ["model", "app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        mode: {
+          type: "string",
+          enum: ["research", "slides", "book"],
+          default: "research",
+          description: "解析模式：research（科研论文+SI双链入库）、slides（PPTX/PDF 课件转讲义笔记）、book（长篇教材切片与按章拆分）"
+        },
+        ocrEngine: {
+          type: "string",
+          enum: ["mineru", "local_fast", "existing_raw"],
+          default: "mineru",
+          description: "解析引擎：mineru（MinerU 云端公式/图表高精度 OCR，推荐）、local_fast（PyMuPDF/PPTX 本地原生文字与内嵌图直提，免 Token）、existing_raw（复用已有 raw/ OCR 目录直接装配）"
+        },
+        pdfPath: { type: "string", description: "主文档 PDF 本地路径（或工作区相对路径）" },
+        siPdfPath: {
+          type: "string",
+          description: "可选。补充材料 (SI) PDF 本地路径（research 模式下自动建立主文与 SI 双向 [[WikiLink]] 及独立 supplemental: 图表命名空间）"
+        },
+        pptxPath: {
+          type: "string",
+          description: "可选。课件模式 (slides) 下的源 PPTX 文件路径（用于自动校对替换 OCR 错字并提取未裁剪内嵌原图）"
+        },
+        existingRawDir: {
+          type: "string",
+          description: "可选。当 ocrEngine=existing_raw 时，指定已有的 MinerU OCR raw 目录路径"
+        },
+        chaptersJsonPath: {
+          type: "string",
+          description: "可选。教材模式 (book) 下的 chapters.json 章节定义文件路径（未传时自动从 PDF 书签目录或分片边界生成）"
+        },
+        language: {
+          type: "string",
+          enum: ["en", "ch"],
+          description: "OCR 识别语言声明：en（英文论文默认）或 ch（中文课件/教材默认）"
+        },
+        autoRepairs: {
+          type: "boolean",
+          default: true,
+          description: "是否自动缝合高置信度的同页多面板碎图（默认 true）"
+        },
+        keepTableImages: {
+          type: "boolean",
+          default: true,
+          description: "是否同时保留复杂表格/化学环结构的原版裁图以便核对（默认 true）"
+        },
+        agentIndex: {
+          type: "boolean",
+          default: false,
+          description: "是否额外生成供 Agent 分层检索用的 agent/ 索引与原页映射（--agent-index）"
+        },
+        readingOrder: {
+          type: "string",
+          enum: ["source", "geometry"],
+          default: "source",
+          description: "双栏/页面阅读顺序：source（保持 OCR 物理流顺序，默认）或 geometry（几何重排）"
+        },
+        chunkSize: {
+          type: "integer",
+          minimum: 10,
+          maximum: 200,
+          default: 96,
+          description: "教材模式 (book) 下的单次切片页数上限（默认 96 页）"
+        },
+        bookSplitOnly: {
+          type: "boolean",
+          default: false,
+          description: "教材模式 (book) 下是否仅执行切片与云端 OCR 并预生成章节草稿，留待核对章节表后再装配"
+        },
+        autoDetectSi: {
+          type: "boolean",
+          default: true,
+          description: "是否自动检测同目录下的 -SI.pdf 补充材料文件（默认 true）"
+        },
+        saveDir: {
+          type: "string",
+          description: "可选。解析产出的 Markdown 知识库存放父目录（支持工作区相对路径或任意本地绝对路径，默认保存到配置的文档解析目录）"
+        },
+        outputFolderName: {
+          type: "string",
+          description: "可选。自定义输出子文件夹名称（未传时按『第一作者 等 - 年份 - 标题』自动生成）"
+        },
+        paperKey: {
+          type: "string",
+          description: "可选。关联的检索/收藏篮论文键值，解析完成后自动绑定 Markdown 路径并更新阅读状态"
+        },
+        zoteroItemKey: {
+          type: "string",
+          description: "可选。关联的本机 Zotero 条目 Key"
+        },
+        metadata: {
+          type: "object",
+          description: "可选。关联的论文或 Zotero 题录元数据（title, authors, year, date, doi, journal, publication_title, abstract, url, zotero_item_uri）"
+        },
+        async: {
+          type: "boolean",
+          description: "可选。设为 true 时在后台异步执行并立即返回任务 ID 供面板轮询进度"
+        }
+      }
+    },
+    execute: async (input) => {
+      return await startOrRunDoc2mdJob(input || {});
+    }
+  },
+  {
+    name: "manage_doc2md",
+    description:
+      "管理文档解析任务与后续操作：支持查询进度 (status)、MinerU 断点续传 (resume，绝不重复新建批次)、修改章节表/修复表后重新装配 (rebuild)、独立执行结构与 KaTeX 公式校验 (validate)、启动/停止本地 KaTeX 渲染预览服务 (preview / stop_preview)、删除任务记录 (delete / clear_all) 及环境自检 (doctor)。",
+    visibility: ["model", "app"],
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["status", "resume", "rebuild", "validate", "preview", "stop_preview", "delete", "clear_all", "doctor"],
+          default: "status"
+        },
+        jobId: { type: "string", description: "目标文档解析任务 ID" },
+        outDir: { type: "string", description: "可选。当 action=validate / preview / stop_preview 时直接指定的知识库输出目录" },
+        chaptersJsonPath: { type: "string", description: "可选。当 action=rebuild 时传入修订后的 chapters.json 路径" },
+        repairsJsonPath: { type: "string", description: "可选。当 action=rebuild 时传入回源核对后的 repairs.json 路径" },
+        port: { type: "integer", minimum: 1024, maximum: 65535, description: "可选。KaTeX 预览服务端口（默认 8766）" },
+        openInBrowser: { type: "boolean", description: "启动预览服务时是否自动在系统默认浏览器中打开（默认 true）" },
+        async: { type: "boolean", description: "可选。resume / rebuild 是否在后台异步运行" }
+      }
+    },
+    execute: async (input) => {
+      return await manageDoc2mdAction(input || {});
+    }
   }
 ];
 
@@ -5707,6 +7705,8 @@ function validateToolInput(name, input) {
       "easyscholarSecretKey",
       "ai4scholarApiKey",
       "sciverseApiKey",
+      "mineruApiToken",
+      "mineruApiKey",
       "politeEmail"
     ];
     if (input.clearKeys?.some((key) => !allowed.includes(key))) throw new Error("clearKeys 只允许清空 API Key 或联系邮箱。");
@@ -5778,6 +7778,31 @@ function validateToolInput(name, input) {
       }
     }
   }
+  if (name === "list_zotero_pdf_items" && input.collectionKey && !/^[23456789A-Z]{8}$/.test(String(input.collectionKey).trim())) {
+    throw new Error("Zotero 分类 Key 格式无效。");
+  }
+  if (name === "run_doc2md") {
+    const mode = input.mode || "research";
+    const engine = input.ocrEngine || "mineru";
+    if (engine === "existing_raw") {
+      requiredText("existingRawDir");
+    } else if (mode === "slides") {
+      if (!input.pdfPath?.trim() && !input.pptxPath?.trim()) {
+        throw new Error("课件解析模式需要提供 pdfPath 或 pptxPath。");
+      }
+    } else {
+      requiredText("pdfPath");
+    }
+  }
+  if (name === "manage_doc2md") {
+    const act = input.action || "status";
+    if (["resume", "rebuild", "delete"].includes(act)) {
+      requiredText("jobId");
+    }
+    if (["validate", "preview"].includes(act) && !input.jobId?.trim() && !input.outDir?.trim()) {
+      throw new Error(`操作 ${act} 需要提供 jobId 或 outDir。`);
+    }
+  }
 }
 
 for (const tool of TOOLS) tool.inputSchema.additionalProperties = false;
@@ -5820,7 +7845,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.8.0"
+          version: "1.9.0"
         }
       }
     };
@@ -6027,6 +8052,9 @@ export {
   resolveEnvPath,
   readUserConfigFromEnv,
   resolveHostPaths,
-  buildRelationshipGraph
+  buildRelationshipGraph,
+  formatZoteroBasenameJs,
+  inspectLocalDocumentFile,
+  stopKatexPreviewServer
 };
 if (process.argv[1] && resolve(process.argv[1]) === __filename) await startStdio();

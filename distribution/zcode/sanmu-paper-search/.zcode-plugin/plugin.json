@@ -1,7 +1,7 @@
 {
   "name": "sanmu-paper-search",
-  "version": "1.8.0",
-  "description": "在对话侧栏与 Agent 中使用三木文献检索：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse (全文语义RAG/原文切片与配图/Paper Schema)、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI 与 easyScholar 期刊分区/IF 标注，以及 OA PDF / SI 下载与本机 Zotero 双向联动。",
+  "version": "1.9.0",
+  "description": "在对话侧栏与 Agent 中使用三木文献检索与文档解析：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse (全文语义RAG/原文切片与配图/Paper Schema)、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI、easyScholar 期刊分区/IF 标注、OA PDF / SI 下载、本机 Zotero 双向联动，以及 sanmu-doc2md 学术文档转 Obsidian Markdown 知识库（论文+SI双链、课件与教材解析）。",
   "author": {
     "name": "Sanmu (Wu Sen)"
   },
@@ -27,8 +27,10 @@
         "USER_CONFIG_EASYSCHOLAR_SECRET_KEY": "${user_config.easyscholarSecretKey}",
         "USER_CONFIG_AI4SCHOLAR_API_KEY": "${user_config.ai4scholarApiKey}",
         "USER_CONFIG_SCIVERSE_API_KEY": "${user_config.sciverseApiKey}",
+        "USER_CONFIG_MINERU_API_TOKEN": "${user_config.mineruApiToken}",
         "USER_CONFIG_ZOTERO_URL": "${user_config.zoteroUrl}",
-        "USER_CONFIG_EXPORT_SUBDIR": "${user_config.exportSubdir}"
+        "USER_CONFIG_EXPORT_SUBDIR": "${user_config.exportSubdir}",
+        "USER_CONFIG_DOC2MD_SUBDIR": "${user_config.doc2mdSubdir}"
       }
     }
   },
@@ -38,6 +40,12 @@
       "default": "",
       "title": "联系邮箱 (Polite Pool 推荐)",
       "description": "可选但推荐。填入常用邮箱可自动进入 OpenAlex、Crossref、Unpaywall 的礼貌加速池，减少匿名限流并解锁 Unpaywall 免费全文定位。"
+    },
+    "mineruApiToken": {
+      "type": "string",
+      "default": "",
+      "title": "MinerU API Token (文档解析 PDF/PPTX/教材转 Markdown)",
+      "description": "可选。用于「📝 文档解析」执行云端高精度公式/表格/双栏 OCR（sanmu-doc2md），支持论文+SI双链、课件讲义与长篇教材切片；已配系统环境变量 MINERU_API_TOKEN 时无需重复填写。"
     },
     "sciverseApiKey": {
       "type": "string",
@@ -92,6 +100,12 @@
       "default": "00-收件箱-待整理/文献检索",
       "title": "PDF/SI 默认下载目录",
       "description": "在侧栏下载免费 OA PDF 或 Europe PMC 补充材料 (SI) 包时，文件默认保存到当前工作区下的该相对路径（或本地绝对路径）。"
+    },
+    "doc2mdSubdir": {
+      "type": "string",
+      "default": "00-收件箱-待整理/文献解析",
+      "title": "文档解析 Markdown 默认存放目录",
+      "description": "在侧栏执行「📝 文档解析」（论文+SI、课件、教材转 Markdown 知识库）时，默认输出保存到当前工作区下的该相对路径（或本地绝对路径）。"
     }
   },
   "ui": {
