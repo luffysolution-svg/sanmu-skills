@@ -21,7 +21,7 @@
   ],
   "engines": {
     "node": ">=22.20.0",
-    "dsh": ">=0.2.2-alpha.2 <0.3.0"
+    "dsh": ">=0.2.1-rc.1 <0.3.0"
   },
   "bin": {
     "sanmu": "./scripts/sanmu.mjs"
@@ -158,8 +158,8 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-mcp-client": ">=0.2.2-alpha.2 <0.3.0",
-    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.2-alpha.2 <0.3.0"
+    "@deepseek-ai/dsh-mcp-client": ">=0.2.1-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.1-rc.1 <0.3.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-mcp-client": {

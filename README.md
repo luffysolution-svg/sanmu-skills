@@ -60,7 +60,7 @@
 | **Claude Code** | 一步安装，见下文 | 3 技能 + CLI + MCP + 浏览器工作台 |
 | **Codex** | 添加仓库市场后安装，可复制为一行 | 3 技能 + CLI + MCP + 浏览器工作台 |
 | **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | 3 技能 + CLI + 原生 MCP + 浏览器工作台 |
-| **DeepSeek Harness** | 安装到现有 profile，见下文 | 3 技能 + CLI + MCP + 浏览器工作台 |
+| **DeepSeek Harness** | 桌面端【插件 → 添加插件】填入仓库标识，或 CLI 安装 | 3 技能 + CLI + MCP + 浏览器工作台 |
 | **ZCode** | 桌面端插件市场 UI 或 Release 插件 ZIP | 3 技能 + MCP + 常驻侧栏工作台 |
 | **npx skills**（通用） | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy` | 技能说明与各技能脚本，可单选；不含完整宿主 MCP 安装 |
 | **腾讯 SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | 单个技能 |
@@ -83,8 +83,8 @@ https://github.com/luffysolution-svg/sanmu-skills
    Claude Code：claude plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
    Codex：codex plugin marketplace add luffysolution-svg/sanmu-skills && codex plugin add sanmu-skills@sanmu-skills
    Pi ≥1.4：pi install git:github.com/luffysolution-svg/sanmu-skills
-   DSH 官方 0.2.2-alpha.2：dsh plugin --profile <现有profile名> add github:luffysolution-svg/sanmu-skills
-   DSH 的 profile 必须用已有名称，不要假定存在默认 profile。
+   DSH ≥0.2.1-rc.1：在桌面端「插件 → 添加插件」输入 github:luffysolution-svg/sanmu-skills，或执行 dsh plugin --profile desktop add github:luffysolution-svg/sanmu-skills
+   （CLI 命令默认安装至 desktop profile，亦可指定其他已有 profile）
    ZCode：使用桌面端插件市场 UI 添加此 GitHub 仓库，或安装 Release 的 ZCode 插件 ZIP。
 2. 定位安装根目录，运行 node "<安装根>/scripts/sanmu.mjs" doctor，只检查状态。
    首次文档解析会自动在数据目录准备私有 Python venv 和 KaTeX；
@@ -136,21 +136,36 @@ pi install git:github.com/luffysolution-svg/sanmu-skills
 
 ### DeepSeek Harness（DSH）
 
-官方 **0.2.2-alpha.2** 的插件安装命令如下；将 `<现有profile名>` 替换为已有 profile，例如已有的 `deepseek`：
+支持 DSH **≥0.2.1-rc.1**（当前官方最新版本为 `0.2.1-rc.3`），宿主环境需 Node.js ≥24.9。
+
+#### 方式一：DSH 桌面端界面安装（推荐）
+
+1. 打开 DeepSeek Harness 桌面端，点击左侧导航栏的 **插件（Plugins）**。
+2. 点击右上角的 **添加插件（Add Plugin）** 按钮。
+3. 在弹出的安装输入框中粘贴本仓库 GitHub 标识：
+   ```text
+   github:luffysolution-svg/sanmu-skills
+   ```
+   *（也可以直接粘贴完整 Git 仓库地址 `https://github.com/luffysolution-svg/sanmu-skills.git`）*
+4. 点击确认安装，DSH 会自动拉取仓库、校验依赖并激活插件。
+
+#### 方式二：命令行 CLI 安装
+
+使用 DSH 提供的 `dsh plugin` 命令，安装到桌面端默认使用的 `desktop` profile（或自定义 profile）：
 
 ```bash
-dsh plugin --profile <现有profile名> add github:luffysolution-svg/sanmu-skills
+# 从 GitHub 仓库直接安装
+dsh plugin --profile desktop add github:luffysolution-svg/sanmu-skills
+
+# 或本地源码调试安装（以 link 方式连接本地路径）
+dsh plugin --profile desktop add link:<本地仓库绝对路径>
 ```
 
-在 DSH 桌面端也可打开 **Plugins → Experimental plugins → Custom plugin indexes**，启用后在 **Discover → Add index source** 添加：
+#### 安装后效果与使用
 
-```text
-https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/distribution/deepseek/index.json
-```
-
-选择“三木文献检索与科研工具”并安装。索引固定到完整源码提交；DSH 保留宿主自带的安装确认。普通 `dsh` CLI 不管理保留的 Desktop profile，请使用桌面端界面。
-
-需 Node.js ≥24.9 和提供工具、技能服务的完整 DSH 宿主。`@deepseek-ai/dsh-mcp-client`、`@deepseek-ai/dsh-skill-filesystem` 是由宿主提供的 peer 依赖。profile 进程中的多个工作区共享同一 MCP 进程，默认工作区绑定其初始 cwd；跨工作区保存时显式指定 `saveDir`，或在启动前设置 `SANMU_WORKSPACE_ROOT`。
+- **技能自动挂载**：安装后，DSH 会自动加载 3 个完整技能（`sanmu-paper-search`、`sanmu-doc2md`、`sanmu-paper-reader`），Agent 可在对话中随时调用。
+- **MCP 工具与工作台**：宿主自动桥接 24 个 MCP 科研工具；通过调用 `mcp__sanmu-paper-search__open_panel` 工具或在终端运行 `sanmu panel` 即可打开浏览器可视化工作台。
+- **环境依赖**：`@deepseek-ai/dsh-mcp-client` 和 `@deepseek-ai/dsh-skill-filesystem` 由 DSH 宿主作为可选 peer 依赖提供。MCP 进程共享当前工作区，跨工作区保存时可显式指定 `saveDir`，或在环境预设 `SANMU_WORKSPACE_ROOT`。
 
 ### ZCode
 

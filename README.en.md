@@ -61,7 +61,7 @@ Version 1.10.1 packages **three complete skills, a portable CLI, 24 MCP tools, a
 | **Claude Code** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
 | **Codex** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
 | **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | Three skills + CLI + native MCP + browser workbench |
-| **DeepSeek Harness** | `dsh plugin --profile <existing-profile> add github:luffysolution-svg/sanmu-skills` | Three skills + CLI + MCP + browser workbench |
+| **DeepSeek Harness** | Desktop UI (Plugins → Add Plugin) or CLI | Three skills + CLI + MCP + browser workbench |
 | **ZCode** | Plugin marketplace or Release plugin bundle, see below | Collection plugin / side-panel search plugin |
 | **Tencent SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | Individual skills |
 | **WorkBuddy** | Search for "三木" in the client under 专家·技能·连接器 → 技能 (Experts · Skills · Connectors → Skills) | Individual skills |
@@ -83,8 +83,8 @@ https://github.com/luffysolution-svg/sanmu-skills
    Claude: claude plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
    Codex: codex plugin marketplace add luffysolution-svg/sanmu-skills && codex plugin add sanmu-skills@sanmu-skills
    Pi >=1.4: pi install git:github.com/luffysolution-svg/sanmu-skills
-   DSH: dsh plugin --profile <existing-profile> add github:luffysolution-svg/sanmu-skills
-   Replace the DSH profile with one that already exists.
+   DSH >=0.2.1-rc.1: Add via Desktop Plugins UI (github:luffysolution-svg/sanmu-skills) or run dsh plugin --profile desktop add github:luffysolution-svg/sanmu-skills
+   (CLI defaults to the desktop profile; specify custom profile if needed)
 2. Locate the installed root and run node "<installed-root>/scripts/sanmu.mjs" doctor.
    Use setup to prepare private Python/KaTeX dependencies in advance; document conversion can prepare them automatically.
 3. Use MCP open_panel to open the complete workbench. On terminal hosts it returns a local browser URL.
@@ -140,21 +140,38 @@ pi install git:github.com/luffysolution-svg/sanmu-skills
 
 Pi ≥1.4 uses its native `registerMcpServer` API. No third-party MCP bridge is required.
 
-### DeepSeek Harness
+### DeepSeek Harness (DSH)
+
+Supports DSH **≥0.2.1-rc.1** (current official release is `0.2.1-rc.3`) with Node.js ≥24.9.
+
+#### Method 1: DSH Desktop GUI (Recommended)
+
+1. Open DeepSeek Harness Desktop, navigate to **Plugins** in the left sidebar.
+2. Click **Add Plugin** in the top right.
+3. Paste the GitHub repo specifier into the prompt:
+   ```text
+   github:luffysolution-svg/sanmu-skills
+   ```
+   *(or the full repository URL `https://github.com/luffysolution-svg/sanmu-skills.git`)*
+4. Confirm installation. DSH will fetch the bundle, verify dependencies, and activate the plugin.
+
+#### Method 2: CLI Installation
+
+Use the DSH CLI to install into the default `desktop` profile (or your custom profile):
 
 ```bash
-dsh plugin --profile <existing-profile> add github:luffysolution-svg/sanmu-skills
+# Install directly from GitHub
+dsh plugin --profile desktop add github:luffysolution-svg/sanmu-skills
+
+# Or link a local repository for development
+dsh plugin --profile desktop add link:<absolute-path-to-repo>
 ```
 
-For the DSH Desktop marketplace, enable **Plugins → Experimental plugins → Custom plugin indexes**, then use **Discover → Add index source** with:
+#### Verification and Capabilities
 
-```text
-https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/distribution/deepseek/index.json
-```
-
-Install Sanmu Research from that index. Entries are pinned to a complete source commit; DSH retains its own installation confirmation.
-
-Tested with the official 0.2.2-alpha.2 runtime, Node ≥24.9, and a base-backed profile. The complete host supplies the optional `dsh-mcp-client` and `dsh-skill-filesystem` peers. Use the Desktop Plugins UI for its reserved Desktop profile. A profile MCP process shares its initial workspace; pass explicit `saveDir` for other workspaces, or set `SANMU_WORKSPACE_ROOT` before starting it.
+- **Automatic Skills Mounting**: All three skills (`sanmu-paper-search`, `sanmu-doc2md`, `sanmu-paper-reader`) are discovered and loaded into the DSH skills registry.
+- **MCP Tools & Workbench**: 24 research MCP tools are exposed under `mcp__sanmu-paper-search__*`. Use `open_panel` or run `sanmu panel` to open the interactive browser workbench.
+- **Host Dependencies**: The optional `@deepseek-ai/dsh-mcp-client` and `@deepseek-ai/dsh-skill-filesystem` peer dependencies are provided by the DSH host runtime. A profile MCP process shares its initial workspace; pass explicit `saveDir` for other workspaces, or set `SANMU_WORKSPACE_ROOT` before starting it.
 
 ### ZCode
 

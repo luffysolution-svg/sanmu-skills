@@ -103,7 +103,7 @@ test('DSH bundle manifests use installable patches and optional host peers', asy
     assert.ok(existsSync(resolve(directory, request)));
     for (const peer of ['@deepseek-ai/dsh-mcp-client', '@deepseek-ai/dsh-skill-filesystem']) {
       assert.equal(manifest.peerDependenciesMeta[peer].optional, true);
-      assert.match(manifest.peerDependencies[peer], /0\.2\.2-alpha\.2/);
+      assert.match(manifest.peerDependencies[peer], /0\.2\.1-rc\.1/);
     }
   }
 });

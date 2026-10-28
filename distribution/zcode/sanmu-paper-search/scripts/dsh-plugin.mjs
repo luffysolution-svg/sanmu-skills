@@ -100,7 +100,7 @@ async function hostPlugin(ctx, specifier) {
     }
     return await import(pathToFileURL(filename).href);
   }
-  throw new Error(`sanmu-skills: DeepSeek Harness must supply ${specifier}. Use a complete DeepSeek Harness >=0.2.2-alpha.2 installation and retain this bundle's optional peer dependencies.`, { cause: failure });
+  throw new Error(`sanmu-skills: DeepSeek Harness must supply ${specifier}. Use a complete DeepSeek Harness >=0.2.1-rc.1 installation and retain this bundle's optional peer dependencies.`, { cause: failure });
 }
 
 /** Mount both capabilities and await real startup; unload children on failure. */
@@ -111,7 +111,7 @@ export async function apply(ctx, config = {}) {
   }
   if (typeof ctx?.plugin !== 'function' || typeof service(ctx, 'tools')?.register !== 'function'
     || typeof service(ctx, 'skills')?.registerProvider !== 'function') {
-    throw new Error('sanmu-skills: missing DeepSeek tools/skills provider APIs; use a base-backed DeepSeek Harness >=0.2.2-alpha.2 profile.');
+    throw new Error('sanmu-skills: missing DeepSeek tools/skills provider APIs; use a base-backed DeepSeek Harness >=0.2.1-rc.1 profile.');
   }
   const paths = resolvePackagePaths(process.env, config);
   const missing = skillNames.filter(skill => !existsSync(join(paths.skillsRoot, skill, 'SKILL.md')));
@@ -123,14 +123,14 @@ export async function apply(ctx, config = {}) {
   ]);
   if (typeof mcpClient.apply !== 'function' || typeof mcpClient.Config !== 'function'
     || typeof skillFilesystem.apply !== 'function' || typeof skillFilesystem.Config !== 'function') {
-    throw new Error('sanmu-skills: unsupported DeepSeek MCP/skill-filesystem plugin API; upgrade DeepSeek Harness to >=0.2.2-alpha.2.');
+    throw new Error('sanmu-skills: unsupported DeepSeek MCP/skill-filesystem plugin API; upgrade DeepSeek Harness to >=0.2.1-rc.1.');
   }
   const skillConfig = { providerName: 'sanmu-skills', includeDefaultRoots: false,
     bundledSkillDir: paths.skillsRoot, watch: config.watchSkills ?? false };
   const parsed = skillFilesystem.Config(skillConfig);
   if (parsed.providerName !== skillConfig.providerName || parsed.includeDefaultRoots !== false
     || parsed.bundledSkillDir !== paths.skillsRoot) {
-    throw new Error('sanmu-skills: this DeepSeek skill-filesystem version cannot mount isolated packaged skills; upgrade DeepSeek Harness to >=0.2.2-alpha.2.');
+    throw new Error('sanmu-skills: this DeepSeek skill-filesystem version cannot mount isolated packaged skills; upgrade DeepSeek Harness to >=0.2.1-rc.1.');
   }
   const children = [];
   try {
@@ -138,7 +138,7 @@ export async function apply(ctx, config = {}) {
       const child = ctx.plugin(plugin, options);
       children.push(child);
       if (typeof child?.then !== 'function' || typeof child?.dispose !== 'function') {
-        throw new Error('sanmu-skills: DeepSeek ctx.plugin must return an awaitable lifecycle fiber; upgrade DeepSeek Harness to >=0.2.2-alpha.2.');
+        throw new Error('sanmu-skills: DeepSeek ctx.plugin must return an awaitable lifecycle fiber; upgrade DeepSeek Harness to >=0.2.1-rc.1.');
       }
       await child;
     }

@@ -111,7 +111,7 @@ A self-hosted GitHub marketplace is not the same as being listed in Anthropic's 
 
 `deepseek/index.json` follows official format 1 and pins its Git source to a full 40-character commit containing the complete package. Commit the implementation first, then run `python distribution/deepseek/generate_index.py --commit <full-SHA>` and commit the resulting index. Its version comes from that source commit's `package.json`. The index stays outside runtime archives to avoid a self-referencing commit.
 
-DSH users enable Custom plugin indexes under Experimental plugins, add the public raw index URL in Discover, and install the listed bundle. This is the author's own marketplace; DSH supplies no third-party sources by default. Pi uses its native `pi install` package entry, with `pi-package` catalog metadata; this does not establish official-directory inclusion.
+In DSH, the bundle can be installed directly through the Desktop Plugins UI (Add Plugin with `github:luffysolution-svg/sanmu-skills`) or via the CLI (`dsh plugin --profile desktop add ...`); `deepseek/index.json` serves as standalone format-1 marketplace release metadata. Pi uses its native `pi install` package entry, with `pi-package` catalog metadata; this does not establish official-directory inclusion.
 
 ## GitHub Release
 

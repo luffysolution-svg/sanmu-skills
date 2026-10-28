@@ -111,7 +111,7 @@ Codex 的仓库市场是 `.agents/plugins/marketplace.json`，以本地来源 `.
 
 `deepseek/index.json` 遵守官方 format 1，Git 来源固定为实际含完整包的 40 位提交。先提交功能代码，再运行 `python distribution/deepseek/generate_index.py --commit <完整提交SHA>` 生成索引并提交；版本必须取该提交的 `package.json`。索引是发布元数据，不进入技能或 npm 运行包，避免自引用提交问题。
 
-用户在 DSH 的 Plugins 页面启用 Experimental plugins 中的 Custom plugin indexes，在 Discover 添加公开 raw 索引 URL 后安装。DSH 默认不附带第三方索引；这属于作者自建市场。Pi 使用 `pi install` 原生包入口，`pi-package` 关键字为目录提供元数据，不能把提供关键字称为已被官方收录。
+在 DSH 中，插件可通过桌面端「插件 → 添加插件」输入 GitHub 仓库标识（`github:luffysolution-svg/sanmu-skills`）直接安装，或通过 CLI 命令 `dsh plugin --profile desktop add ...` 安装；`deepseek/index.json` 作为 format 1 索引发布元数据。Pi 使用 `pi install` 原生包入口，`pi-package` 关键字为目录提供元数据，不能把提供关键字称为已被官方收录。
 
 ## GitHub Release
 
