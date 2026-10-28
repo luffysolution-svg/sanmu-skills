@@ -92,8 +92,12 @@ async function ensureBrowserPanel() {
   const panelServerPath = join(PLUGIN_ROOT, "scripts", "panel-server.mjs");
   if (!existsSync(panelServerPath)) throw new Error("浏览器工作台启动器缺失，请重新安装完整的 sanmu-skills 插件。");
   const { startPanelServer } = await import(pathToFileURL(panelServerPath).href);
-  browserPanel = await startPanelServer({ hostRoot: PLUGIN_ROOT, openBrowser: false,
-    env: { ...process.env, SANMU_PLUGIN_ROOT: PLUGIN_ROOT, SANMU_DATA_DIR: PLUGIN_DATA, SANMU_WORKSPACE_ROOT: WORKSPACE_ROOT } });
+  browserPanel = await startPanelServer({
+    hostRoot: PLUGIN_ROOT,
+    port: Number(process.env.SANMU_PANEL_PORT) || 55497,
+    openBrowser: false,
+    env: { ...process.env, SANMU_PLUGIN_ROOT: PLUGIN_ROOT, SANMU_DATA_DIR: PLUGIN_DATA, SANMU_WORKSPACE_ROOT: WORKSPACE_ROOT }
+  });
   return browserPanel;
 }
 
@@ -6074,11 +6078,11 @@ const TOOLS = [
       const panel = portableHost && process.env.SANMU_PANEL_WORKER !== "1" ? await ensureBrowserPanel() : null;
       return {
         text: panel
-          ? `三木科研工作台已就绪，请在本机浏览器打开：${panel.url}\n${panelState.activeRun ? summarizeRunForModel(panelState.activeRun) : "可使用完整检索、关系图谱、收藏篮、API 配置和文档解析功能。"}`
+          ? `三木科研工作台已就绪，本机浏览器可直接打开：${panel.origin}/\n（若需带鉴权参数亦可使用：${panel.url}）\n${panelState.activeRun ? summarizeRunForModel(panelState.activeRun) : "可使用完整检索、关系图谱、收藏篮、API 配置和文档解析功能。"}`
           : panelState.activeRun
             ? summarizeRunForModel(panelState.activeRun)
             : "三木文献检索工作台已就绪。可选择文献源、配置 API 或直接发起检索。",
-        structured: { ...panelState, ...(panel ? { panelUrl: panel.url } : {}) }
+        structured: { ...panelState, ...(panel ? { panelUrl: panel.url, origin: panel.origin } : {}) }
       };
     }
   },

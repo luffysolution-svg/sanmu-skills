@@ -142,6 +142,32 @@ export async function apply(ctx, config = {}) {
       }
       await child;
     }
+    if (config.autoStartPanel !== false && process.env.SANMU_NO_PANEL_AUTOSTART !== '1') {
+      try {
+        const panelServerModule = join(paths.pluginRoot, 'scripts', 'panel-server.mjs');
+        if (existsSync(panelServerModule)) {
+          const { startPanelServer } = await import(pathToFileURL(panelServerModule).href);
+          const panel = await startPanelServer({
+            hostRoot: paths.pluginRoot,
+            port: Number(process.env.SANMU_PANEL_PORT) || 55497,
+            openBrowser: false,
+            env: {
+              ...process.env,
+              SANMU_HOST: 'dsh',
+              SANMU_PLUGIN_ROOT: paths.pluginRoot,
+              SANMU_SKILLS_ROOT: paths.skillsRoot
+            }
+          });
+          if (typeof ctx?.effect === 'function') {
+            ctx.effect(() => () => {
+              panel.close().catch(() => {});
+            });
+          }
+        }
+      } catch {
+        // Non-fatal background panel startup failure
+      }
+    }
   } catch (error) {
     for (const child of children.reverse()) await child?.dispose?.();
     throw error;

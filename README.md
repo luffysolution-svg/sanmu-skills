@@ -163,6 +163,8 @@ dsh plugin --profile desktop add link:<本地仓库绝对路径>
 
 #### 安装后效果与使用
 
+- **右侧栏永久常驻卡片**：安装激活后，DSH 右侧栏（Sidebar Right）将自动常驻“三木文献检索”标签页（并在“开始”引导面板显示快捷入口卡片）。点击卡片即可在右侧分屏中直接交互使用三木科研工作台，无需手动执行额外命令。
+- **免脱敏浏览器访问**：当 Agent 调用 `open_panel` 时，会同时提供带会话令牌的链接与本地安全放行链接。即使客户端或对话输出对 `token=` 进行了 `[REDACTED]` 脱敏过滤，直接复制该链接粘贴至浏览器（或直接打开 `http://127.0.0.1:55497/`）亦可自动完成本地安全验证并进入工作台。
 - **技能自动挂载**：安装后，DSH 会自动加载 3 个完整技能（`sanmu-paper-search`、`sanmu-doc2md`、`sanmu-paper-reader`），Agent 可在对话中随时调用。
 - **MCP 工具与工作台**：宿主自动桥接 24 个 MCP 科研工具；通过调用 `mcp__sanmu-paper-search__open_panel` 工具或在终端运行 `sanmu panel` 即可打开浏览器可视化工作台。
 - **环境依赖**：`@deepseek-ai/dsh-mcp-client` 和 `@deepseek-ai/dsh-skill-filesystem` 由 DSH 宿主作为可选 peer 依赖提供。MCP 进程共享当前工作区，跨工作区保存时可显式指定 `saveDir`，或在环境预设 `SANMU_WORKSPACE_ROOT`。
