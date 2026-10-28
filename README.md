@@ -51,7 +51,7 @@
 
 ## 安装
 
-1.10.1 的完整插件包含 **3 个技能、统一 CLI `scripts/sanmu.mjs`、完整 MCP 工具和浏览器工作台**。通用运行环境为 **Node.js ≥22.20、Python ≥3.10**；从 GitHub 安装还需 Git。DeepSeek Harness（DSH）另需 **Node.js ≥24.9**。下载版本以 [Release 页面](https://github.com/luffysolution-svg/sanmu-skills/releases/latest)实际提供的资产为准。
+1.10.2 的完整插件包含 **3 个技能、统一 CLI `scripts/sanmu.mjs`、完整 MCP 工具和浏览器工作台**。通用运行环境为 **Node.js ≥22.20、Python ≥3.10**；从 GitHub 安装还需 Git。DeepSeek Harness（DSH）另需 **Node.js ≥24.9**。下载版本以 [Release 页面](https://github.com/luffysolution-svg/sanmu-skills/releases/latest)实际提供的资产为准。
 
 ### 安装渠道一览
 

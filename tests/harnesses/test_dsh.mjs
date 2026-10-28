@@ -28,7 +28,7 @@ async function fixturePackage(directory, { shell = false, peers = true } = {}) {
   await mkdir(dirname(adapter), { recursive: true });
   await cp(adapterPath, adapter);
   await writeFile(join(dirname(adapter), 'mcp-server.mjs'), '// fixture path; fake peer owns startup\n');
-  await writeFile(join(directory, 'package.json'), JSON.stringify({ name: 'sanmu-skills', type: 'module', version: '1.10.1' }));
+  await writeFile(join(directory, 'package.json'), JSON.stringify({ name: 'sanmu-skills', type: 'module', version: '1.10.2' }));
   if (!shell) {
     await mkdir(join(directory, 'scripts'), { recursive: true });
     await writeFile(join(directory, 'scripts/sanmu.mjs'), '// shared CLI fixture\n');
@@ -94,7 +94,7 @@ async function runNode(source, directory, environment = {}) {
 test('DSH bundle manifests use installable patches and optional host peers', async () => {
   for (const directory of [root, canonical]) {
     const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
-    assert.equal(manifest.version, '1.10.1');
+    assert.equal(manifest.version, '1.10.2');
     assert.equal(manifest.dsh.manifestVersion, 1);
     const patch = await readFile(join(directory, manifest.dsh.bundle.patch), 'utf8');
     assert.match(patch, /id: sanmu-skills/);
@@ -247,8 +247,8 @@ test('official install-spec parser accepts npm/git/tgz and refuses ZIP URLs', {
   const { stripTypeScriptTypes } = await import('node:module');
   const code = stripTypeScriptTypes(await readFile(sourcePath, 'utf8'), { mode: 'transform' });
   const { parseInstallSpec } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
-  assert.equal(parseInstallSpec('sanmu-skills@1.10.1').kind, 'registry');
+  assert.equal(parseInstallSpec('sanmu-skills@1.10.2').kind, 'registry');
   assert.equal(parseInstallSpec('git+https://github.com/luffysolution-svg/sanmu-skills.git#main').kind, 'git');
-  assert.equal(parseInstallSpec('https://example.test/sanmu-skills-1.10.1.tgz').kind, 'tarball');
-  assert.throws(() => parseInstallSpec('https://example.test/sanmu-skills-1.10.1.zip'), /URL must point/);
+  assert.equal(parseInstallSpec('https://example.test/sanmu-skills-1.10.2.tgz').kind, 'tarball');
+  assert.throws(() => parseInstallSpec('https://example.test/sanmu-skills-1.10.2.zip'), /URL must point/);
 });

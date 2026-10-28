@@ -933,7 +933,7 @@
           <line x1="294" y1="310" x2="336" y2="352" stroke="#F59E0B" stroke-width="22" stroke-linecap="round"/>
         </svg>
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.10.1</span>
+        <span class="brand-sub">v1.10.2</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -2092,7 +2092,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.10.1" },
+              appInfo: { name: "sanmu-paper-search", version: "1.10.2" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);

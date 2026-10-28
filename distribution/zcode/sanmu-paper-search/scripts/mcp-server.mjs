@@ -8669,7 +8669,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.10.1"
+          version: "1.10.2"
         }
       }
     };

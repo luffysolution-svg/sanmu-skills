@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { ensureRuntime, inspectRuntime, resolveConfigEnvironment, resolvePythonRuntime, resolveRuntimePaths, runProcess } from "./runtime.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const version = "1.10.1";
+const version = "1.10.2";
 const help = `sanmu ${version} — research skills, MCP and browser workbench
 
 Usage: sanmu <command> [arguments]

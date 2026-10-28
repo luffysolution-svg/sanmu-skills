@@ -1,6 +1,6 @@
 {
   "name": "sanmu-paper-search",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "description": "在对话侧栏与 Agent 中使用三木文献检索与文档解析：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse (全文语义RAG/原文切片与配图/Paper Schema)、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI、easyScholar 期刊分区/IF 标注、OA PDF / SI 下载、本机 Zotero 双向联动，以及 sanmu-doc2md 学术文档转 Obsidian Markdown 知识库（论文+SI双链、课件与教材解析）。",
   "type": "module",
   "main": "./scripts/dsh-plugin.mjs",

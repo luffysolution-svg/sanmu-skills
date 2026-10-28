@@ -51,7 +51,7 @@ The three skills can be used separately or chained: **search** → get the PDF /
 
 ## Installation
 
-Version 1.10.1 packages **three complete skills, a portable CLI, 24 MCP tools, and a browser workbench**. Requirements: Node.js ≥22.20 and Python ≥3.10; Git is needed for Git installation. DeepSeek Harness additionally requires Node.js ≥24.9.
+Version 1.10.2 packages **three complete skills, a portable CLI, 24 MCP tools, and a browser workbench**. Requirements: Node.js ≥22.20 and Python ≥3.10; Git is needed for Git installation. DeepSeek Harness additionally requires Node.js ≥24.9.
 
 ### Installation channels
 

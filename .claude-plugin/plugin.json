@@ -1,6 +1,6 @@
 {
   "name": "sanmu-skills",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "displayName": "三木文献检索",
   "description": "Academic document conversion, evidence-grounded paper reading, and literature discovery with three complete skills, CLI, MCP tools, and a browser workbench.",
   "icon": "./assets/icon.png",

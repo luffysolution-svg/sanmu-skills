@@ -1,6 +1,6 @@
 {
   "name": "sanmu-skills",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "displayName": "三木文献检索",
   "description": "Sanmu research skills, portable CLI, MCP server, and browser workbench for Claude Code, Codex, Pi, and DeepSeek Harness.",
   "type": "module",
