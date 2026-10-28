@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "sanmu": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/scripts/sanmu.mjs", "mcp"],
+      "env": {
+        "SANMU_PLUGIN_ROOT": "${PLUGIN_ROOT}",
+        "SANMU_HOST": "codex"
+      }
+    }
+  }
+}

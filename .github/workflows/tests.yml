@@ -19,7 +19,7 @@ jobs:
           python-version: '3.11'
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
       - run: python -m pip install -r skills/sanmu-doc2md/requirements.txt -r skills/sanmu-paper-reader/requirements.txt
       - run: npm install --ignore-scripts --no-audit --no-fund
         working-directory: skills/sanmu-doc2md/scripts
@@ -29,5 +29,7 @@ jobs:
       - run: python -m unittest discover -s tests/sanmu-paper-search -v
       - run: python skills/sanmu-paper-search/scripts/paper_search.py doctor
       - run: node --test tests/zcode-paper-search/test_mcp_server.mjs tests/zcode-paper-search/test_panel.mjs
+      # Host loaders skip only the tests for Pi/DSH when their optional runtimes are absent.
+      - run: node --test tests/harnesses/*.mjs
       - run: python -m unittest discover -s distribution/tests -v
       - run: python distribution/build.py check

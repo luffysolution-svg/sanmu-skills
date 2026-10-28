@@ -10,8 +10,9 @@
   "plugins": [
     {
       "name": "sanmu-skills",
-      "source": ".",
-      "description": "Academic document conversion, paper reading, and literature discovery."
+      "source": "./",
+      "version": "1.10.0",
+      "description": "Three complete research skills with CLI, MCP tools, and an interactive browser workbench."
     }
   ]
 }

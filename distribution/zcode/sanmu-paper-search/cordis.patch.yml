@@ -1,4 +1,4 @@
-# sanmu-paper-search bundle patch for DeepSeek Harness (dsh Desktop / CLI)
+# Built standalone shell: the same adapter mounts MCP and all three skills.
 - insert:
-    - id: mcp-sanmu-paper-search
+    - id: sanmu-skills
       name: "./scripts/dsh-plugin.mjs"

@@ -51,50 +51,115 @@
 
 ## 安装
 
+1.10.0 的完整插件包含 **3 个技能、统一 CLI `scripts/sanmu.mjs`、完整 MCP 工具和浏览器工作台**。通用运行环境为 **Node.js ≥22.20、Python ≥3.10**；从 GitHub 安装还需 Git。DeepSeek Harness（DSH）另需 **Node.js ≥24.9**。下载版本以 [Release 页面](https://github.com/luffysolution-svg/sanmu-skills/releases/latest)实际提供的资产为准。
+
 ### 安装渠道一览
 
 | 渠道 | 安装方式 | 包含 |
 | --- | --- | --- |
-| **npx skills**（通用） | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g` | 三个技能，可单选 |
-| **Claude Code** | 插件市场，见下文 | 合集插件 |
-| **Codex** | 插件市场，见下文 | 合集插件 |
-| **ZCode** | 插件市场或 Release 插件包，见下文 | 合集插件 / 文献检索侧栏可视化插件 |
+| **Claude Code** | 一步安装，见下文 | 3 技能 + CLI + MCP + 浏览器工作台 |
+| **Codex** | 添加仓库市场后安装，可复制为一行 | 3 技能 + CLI + MCP + 浏览器工作台 |
+| **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | 3 技能 + CLI + 原生 MCP + 浏览器工作台 |
+| **DeepSeek Harness** | 安装到现有 profile，见下文 | 3 技能 + CLI + MCP + 浏览器工作台 |
+| **ZCode** | 桌面端插件市场 UI 或 Release 插件 ZIP | 3 技能 + MCP + 常驻侧栏工作台 |
+| **npx skills**（通用） | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy` | 技能说明与各技能脚本，可单选；不含完整宿主 MCP 安装 |
 | **腾讯 SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | 单个技能 |
 | **WorkBuddy** | 客户端【专家·技能·连接器 → 技能】中搜索“三木” | 单个技能 |
-| **skills.sh / SkillsMP** | [合集页面](https://skills.sh/luffysolution-svg/sanmu-skills)，使用 npx 命令安装 | 三个技能 |
-| **GitHub Release** | [下载 ZIP](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) | 合集包与各平台适配包 |
+| **skills.sh / SkillsMP** | [合集页面](https://skills.sh/luffysolution-svg/sanmu-skills)，使用 npx 命令安装 | 技能说明与各技能脚本 |
+| **GitHub Release** | 合集 ZIP、ZCode ZIP、各平台技能 ZIP 与完整 `.tgz` | 详见[渠道发布说明](distribution/README.md#构建产物) |
 
-选择一种方式即可，同时用插件和 npx 安装会重复加载。安装技能不会自动装 Python 依赖、KaTeX、OCR 凭证或 Zotero，这些按各技能的说明配置。
+同一宿主选择一种安装方式即可，同时用插件和 npx 安装会重复加载技能。仓库自建 marketplace 不代表 Anthropic、OpenAI 或 ZCode 官方收录；Pi 包目录、npm 与 DSH 的包生态也不代表已通过官方商店审核。
 
 ### 让 AI 助手安装（推荐）
 
 把下面这段发给你正在用的 AI 编码助手：
 
 ```text
-请帮我安装并配置三木的 sanmu-skills 技能合集：
+请帮我安装并配置三木的 sanmu-skills：
 https://github.com/luffysolution-svg/sanmu-skills
 
-1. 检查 Git 和 Node.js，把合集安装到当前助手的用户级技能目录：
+1. 检查 Git、Node.js ≥22.20、Python ≥3.10；DSH 需 Node.js ≥24.9。
+   已有安装时先检查本地修改，按当前宿主选择一种完整安装方式：
+   Claude Code：claude plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
+   Codex：codex plugin marketplace add luffysolution-svg/sanmu-skills && codex plugin add sanmu-skills@sanmu-skills
+   Pi ≥1.4：pi install git:github.com/luffysolution-svg/sanmu-skills
+   DSH 官方 0.2.2-alpha.2：dsh plugin --profile <现有profile名> add github:luffysolution-svg/sanmu-skills
+   DSH 的 profile 必须用已有名称，不要假定存在默认 profile。
+   ZCode：使用桌面端插件市场 UI 添加此 GitHub 仓库，或安装 Release 的 ZCode 插件 ZIP。
+2. 定位安装根目录，运行 node "<安装根>/scripts/sanmu.mjs" doctor，只检查状态。
+   首次文档解析会自动在数据目录准备私有 Python venv 和 KaTeX；
+   如需提前准备，运行 node "<安装根>/scripts/sanmu.mjs" setup。
+   不把依赖写入插件安装缓存或系统 Python/Node 环境。
+3. 免费检索可先不用 Key。付费 API Key 和 MINERU_API_TOKEN 由我在工作台设置或宿主 userenv 中填写；
+   只检查是否配置，不显示值。MinerU Token 可到 https://mineru.net 申请。
+   Zotero 写入需 Zotero 8+ 的本机授权，不直接写数据库。
+4. 如果当前助手只支持技能目录，则用：
    npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
-   已有安装时先检查本地修改。
-2. sanmu-doc2md：进入它的技能目录（包含 SKILL.md），最好用独立的 Python 虚拟环境：
-   python -m pip install -r requirements.txt
-   npm --prefix scripts install --ignore-scripts --no-audit --no-fund
-   python scripts/doctor.py
-   检查 MINERU_API_TOKEN 是否已配置（不要显示值）；没有就告诉我去 https://mineru.net 申请。
-3. sanmu-paper-reader：核心工具只需 Python 3.10+；要用 SI 检索、PDF 附图提取或子图裁切时再装 requirements.txt。
-   运行 python scripts/evidence_tools.py --help 确认入口。
-4. sanmu-paper-search：核心无第三方依赖，运行 python scripts/paper_search.py doctor。
-   只检查 API 凭证是否配置（OPENALEX_API_KEY、SEMANTIC_SCHOLAR_API_KEY，可选 SCIVERSE_API_KEY、AI4SCHOLAR_API_KEY、EASYSCHOLAR_SECRET_KEY、SERPER_API_KEY、EXA_API_KEY），不显示值。
-5. 告诉我安装位置、检查结果，以及还需要我配置什么。
+   并明确这只安装 SKILL 和各技能脚本，依赖按各技能指南准备，不是完整 MCP/工作台安装。
+5. 告诉我安装位置、doctor 结果、如何打开工作台，以及还需要我配置什么。
 ```
 
-每个技能的完整安装指令：[doc2md](skills/sanmu-doc2md/README.md#安装) · [reader](skills/sanmu-paper-reader/README.md#安装) · [search](skills/sanmu-paper-search/README.md#安装)
+### Claude Code
 
-### 命令行
+一步安装：
 
 ```bash
-# 整个合集
+claude plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
+```
+
+也保留先添加市场再安装的方式：
+
+```bash
+claude plugin marketplace add luffysolution-svg/sanmu-skills
+claude plugin install sanmu-skills@sanmu-skills
+```
+
+会话内也可使用 `/plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills`。
+
+### Codex
+
+两步可复制为一行：
+
+```bash
+codex plugin marketplace add luffysolution-svg/sanmu-skills && codex plugin add sanmu-skills@sanmu-skills
+```
+
+需要支持 `plugin marketplace` 的新版 Codex CLI。安装后重开会话，可在 `/plugins` 中管理。
+
+### Pi
+
+```bash
+pi install git:github.com/luffysolution-svg/sanmu-skills
+```
+
+需要 **Pi ≥1.4**，通过宿主原生 `registerMcpServer` 接入完整 MCP，无需第三方桥接扩展。
+
+### DeepSeek Harness（DSH）
+
+官方 **0.2.2-alpha.2** 的插件安装命令如下；将 `<现有profile名>` 替换为已有 profile，例如已有的 `deepseek`：
+
+```bash
+dsh plugin --profile <现有profile名> add github:luffysolution-svg/sanmu-skills
+```
+
+在 DSH 桌面端也可打开 **Plugins → Experimental plugins → Custom plugin indexes**，启用后在 **Discover → Add index source** 添加：
+
+```text
+https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/distribution/deepseek/index.json
+```
+
+选择“三木文献检索与科研工具”并安装。索引固定到完整源码提交；DSH 保留宿主自带的安装确认。普通 `dsh` CLI 不管理保留的 Desktop profile，请使用桌面端界面。
+
+需 Node.js ≥24.9 和提供工具、技能服务的完整 DSH 宿主。`@deepseek-ai/dsh-mcp-client`、`@deepseek-ai/dsh-skill-filesystem` 是由宿主提供的 peer 依赖。profile 进程中的多个工作区共享同一 MCP 进程，默认工作区绑定其初始 cwd；跨工作区保存时显式指定 `saveDir`，或在启动前设置 `SANMU_WORKSPACE_ROOT`。
+
+### ZCode
+
+在 **ZCode 桌面端插件市场 UI** 添加 `luffysolution-svg/sanmu-skills` 仓库并安装插件；也可从 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) 下载 `sanmu-paper-search-zcode-plugin-<版本>.zip`，解压后通过 UI 的本地插件市场入口加载。此单独 ZIP 也包含全部 3 个技能、完整 MCP、关系图谱、Zotero 联动和文档解析工作台。普通桌面用户无需全局 `zcode` 命令，加载时选择自己实际解压的位置。
+
+### 只安装技能 / 手动安装
+
+```bash
+# 整个技能合集（SKILL 和各技能脚本）
 npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
 
 # 只装一个
@@ -103,45 +168,23 @@ npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 # 查看与更新
 npx skills add luffysolution-svg/sanmu-skills --list
 npx skills update
-```
 
-需要 Git 和满足 [skills 安装器](https://github.com/vercel-labs/skills) 要求的 Node.js。
-
-### Claude Code
-
-```bash
-claude plugin marketplace add luffysolution-svg/sanmu-skills
-claude plugin install sanmu-skills@sanmu-skills
-```
-
-也可以在会话里一步完成：`/plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills`
-
-### Codex
-
-```bash
-codex plugin marketplace add luffysolution-svg/sanmu-skills
-codex plugin add sanmu-skills@sanmu-skills
-```
-
-需要支持 `plugin marketplace` 的新版 Codex CLI。安装后重开会话，可在 `/plugins` 中管理。
-
-### ZCode
-
-```bash
-# 安装三合一技能合集
-zcode plugin marketplace add luffysolution-svg/sanmu-skills
-zcode plugin install sanmu-skills@sanmu-skills
-```
-
-若需在 ZCode 桌面端使用带**右侧常驻可视化面板、Obsidian 物理关系图谱、本机 Zotero 双向联动与 `sanmu-doc2md` 文档解析工作台**的独立插件，可从 [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) 下载 `sanmu-paper-search-zcode-plugin-<版本>.zip` 解压后通过本地插件市场安装。
-
-### 手动安装
-
-```bash
+# 手动获取源码
 git clone https://github.com/luffysolution-svg/sanmu-skills.git
 ```
 
-把 `skills/` 下需要的技能目录完整复制或链接到助手的技能目录，例如 `~/.agents/skills/sanmu-doc2md`。
+npx 需要 Git 和满足 [skills 安装器](https://github.com/vercel-labs/skills)要求的 Node.js；它只安装 SKILL 与各技能脚本。手动安装时，把 `skills/` 下需要的技能目录完整复制或链接到助手的技能目录，例如 `~/.agents/skills/sanmu-doc2md`。这两种方式的 Python 第三方库、KaTeX 和可选功能按各技能指南准备：[doc2md](skills/sanmu-doc2md/README.md#安装) · [reader](skills/sanmu-paper-reader/README.md#安装) · [search](skills/sanmu-paper-search/README.md#安装)。
+
+### 完整包的运行环境与配置
+
+完整包首次文档解析会自动把 Python 第三方依赖装入**数据目录中的私有 venv**，把 KaTeX 准备到 `<数据目录>/doc2md-node/`，不写插件安装缓存或系统环境。可提前运行 `setup`；`doctor` 只读取状态，不安装依赖。
+
+```bash
+node "<安装根>/scripts/sanmu.mjs" doctor
+node "<安装根>/scripts/sanmu.mjs" setup
+```
+
+`SANMU_DATA_DIR` 可显式指定数据目录，`SANMU_PYTHON` 可指定 Python 解释器；`SANMU_NO_AUTO_SETUP=1` 关闭首次使用时的自动依赖准备。API Key 仍需自行填入工作台「设置」或宿主 userenv：免费检索可不填 Key 起步，付费来源需相应账户与额度，MinerU 云端 OCR 需 `MINERU_API_TOKEN`；`local_fast` 可做本地原生提取。Zotero 写入需本机运行 **Zotero 8+** 并允许写授权；可移植 `zotero_library` 工具支持添加笔记和更新条目并回读确认，不直接写数据库。
 
 ## 使用
 

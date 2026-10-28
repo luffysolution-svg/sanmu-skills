@@ -1,6 +1,10 @@
 # 三木文献检索 (sanmu-paper-search) ZCode 插件
 
-在 ZCode / DeepSeek Harness (`dsh`) / Claude Code 对话侧边栏与 Agent 中使用 **三木文献检索与文档解析 (`sanmu-paper-search` v1.9.1)**：
+**三木科研工具 v1.10.0** 包含完整的 `sanmu-paper-search`、`sanmu-doc2md`、`sanmu-paper-reader`，以及统一 CLI 与 24 个 MCP 工具。ZCode 使用原生常驻侧栏；Claude Code、Codex、Pi、DeepSeek Harness 的完整合集通过 `open_panel` 或 `sanmu panel` 打开浏览器工作台，精读指令可复制回当前对话。四宿主安装命令见[合集说明](../../../README.md#安装)。
+
+ZCode 桌面端使用“插件市场 → 添加 → 添加插件市场”添加仓库市场，或给解压的 ZCode 归档配置本地市场，再点击安装/更新。插件包包含全部三个技能；首次文档解析自动在私有数据目录准备 Python 依赖与 KaTeX。需 Node.js ≥22.20、Python ≥3.10；MinerU 与付费检索仍需用户配置凭证，Zotero 写入需要桌面端授权。
+
+核心特性如下：
 
 ## 核心特性
 

@@ -40,7 +40,9 @@ description: 从研究课题、种子论文或作者出发查找学术文献，�
 
 ## 运行检索
 
-从本技能目录运行，路径里有空格要加引号。第一次使用或 CLI 有更新时，先看一下环境和帮助：
+完整插件安装（Claude Code、Codex、Pi、DeepSeek Harness）优先使用随包注册的 `sanmu` MCP 工具，调用 `open_panel` 可打开完整工作台。需要 CLI 时，包根目录的 `node scripts/sanmu.mjs search ...` 与下方 Python 命令等价，并共享工作台保存的 API 配置；包根可由本技能目录向上两级定位，先确认 `scripts/sanmu.mjs` 存在。`node scripts/sanmu.mjs doctor` 只检查环境，`setup` 在私有目录准备完整依赖。终端宿主的浏览器工作台会提供可复制的精读指令，请将其带回当前对话。
+
+单独安装技能时，从本技能目录运行，路径里有空格要加引号。第一次使用或 CLI 有更新时，先看一下环境和帮助：
 
 ```bash
 python scripts/paper_search.py doctor

@@ -1,7 +1,7 @@
 {
   "name": "sanmu-skills",
-  "version": "1.9.4",
-  "description": "Academic document conversion, evidence-grounded paper reading, and literature discovery for research knowledge bases.",
+  "version": "1.10.0",
+  "description": "Academic document conversion, evidence-grounded paper reading, and literature discovery with three complete skills, CLI, MCP tools, and a browser workbench.",
   "author": {
     "name": "三木 / Sanmu",
     "url": "https://github.com/luffysolution-svg"
@@ -9,5 +9,7 @@
   "homepage": "https://github.com/luffysolution-svg/sanmu-skills",
   "repository": "https://github.com/luffysolution-svg/sanmu-skills",
   "license": "MIT",
-  "keywords": ["academic", "research", "ocr", "markdown", "zotero", "literature"]
+  "keywords": ["academic", "research", "ocr", "markdown", "zotero", "literature"],
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
 }

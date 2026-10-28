@@ -91,7 +91,9 @@ Zotero 操作走宿主提供的工具或验证过的只读导出接口，不遍�
 
 ## 工具
 
-核心阅读由你自己完成，不需要额外的科研技能、向量库或云端账号。辅助脚本只依赖 Python 3.10+ 标准库，图像相关功能另需 PyMuPDF 和 Pillow（`pip install -r requirements.txt`）。不必提前装：等到真用到 SI 检索、附图提取或子图裁切，脚本报缺少 `fitz` 或 `PIL` 时，再告诉用户缺什么、用来做什么，征得同意后装进虚拟环境。从本技能目录运行：
+完整插件安装时，三个技能和辅助脚本全部随包提供。包根目录的 `node scripts/sanmu.mjs reader <evidence|topic|si-probe|extract-si|crop|benchmark> ...` 对应下方六个脚本，自动使用私有 Python 环境并在图像操作首次使用时准备依赖；先确认本技能目录上两级存在 `scripts/sanmu.mjs`。文献检索、文件和 Zotero 操作可使用随包 `sanmu` MCP，`open_panel` 可打开工作台。
+
+核心阅读由你自己完成，不需要额外的科研技能、向量库或云端账号。单独安装技能时，辅助脚本只依赖 Python 3.10+ 标准库，图像相关功能另需 PyMuPDF 和 Pillow（`pip install -r requirements.txt`）。不必提前装：等到真用到 SI 检索、附图提取或子图裁切，脚本报缺少 `fitz` 或 `PIL` 时，再告诉用户缺什么、用来做什么，征得同意后装进虚拟环境。从本技能目录运行：
 
 ```bash
 # 证据：建立来源清单，检查证据表

@@ -51,20 +51,24 @@ The three skills can be used separately or chained: **search** → get the PDF /
 
 ## Installation
 
+Version 1.10.0 packages **three complete skills, a portable CLI, 24 MCP tools, and a browser workbench**. Requirements: Node.js ≥22.20 and Python ≥3.10; Git is needed for Git installation. DeepSeek Harness additionally requires Node.js ≥24.9.
+
 ### Installation channels
 
 | Channel | How to install | Contents |
 | --- | --- | --- |
 | **npx skills** (general) | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g` | Three skills, can be selected individually |
-| **Claude Code** | Plugin marketplace, see below | Collection plugin |
-| **Codex** | Plugin marketplace, see below | Collection plugin |
+| **Claude Code** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
+| **Codex** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
+| **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | Three skills + CLI + native MCP + browser workbench |
+| **DeepSeek Harness** | `dsh plugin --profile <existing-profile> add github:luffysolution-svg/sanmu-skills` | Three skills + CLI + MCP + browser workbench |
 | **ZCode** | Plugin marketplace or Release plugin bundle, see below | Collection plugin / side-panel search plugin |
 | **Tencent SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | Individual skills |
 | **WorkBuddy** | Search for "三木" in the client under 专家·技能·连接器 → 技能 (Experts · Skills · Connectors → Skills) | Individual skills |
 | **skills.sh / SkillsMP** | [Collection page](https://skills.sh/luffysolution-svg/sanmu-skills); install with the npx command | Three skills |
 | **GitHub Release** | [Download ZIP](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) | Collection package and per-platform packages |
 
-Pick one method. Installing through both the plugin and npx loads the skills twice. Installing the skills does not install Python dependencies, KaTeX, OCR credentials or Zotero; configure these as described in each skill's guide.
+Pick one method to avoid duplicate skills. The complete plugin prepares Python dependencies and KaTeX in a private data directory on first document conversion; `node "<installed-root>/scripts/sanmu.mjs" setup` prepares them in advance, and `doctor` only checks status. `npx skills add` installs standalone skills and their scripts; it does not register the complete MCP/workbench. API keys, a MinerU token for cloud OCR, and Zotero 8+ write authorization still come from each user. A repository marketplace or Git package is independent of inclusion in an official directory.
 
 ### Ask your AI assistant to install it (recommended)
 
@@ -74,19 +78,22 @@ Send the following to the AI coding assistant you are using:
 Please install and configure Sanmu's sanmu-skills collection:
 https://github.com/luffysolution-svg/sanmu-skills
 
-1. Check Git and Node.js, then install the collection into the current assistant's user-level skill directory:
-   npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
-   If it is already installed, check for local edits first.
-2. sanmu-doc2md: go to its skill directory (the one containing SKILL.md), preferably in a dedicated Python virtual environment:
-   python -m pip install -r requirements.txt
-   npm --prefix scripts install --ignore-scripts --no-audit --no-fund
-   python scripts/doctor.py
-   Check whether MINERU_API_TOKEN is configured (do not display its value); if not, tell me to apply for one at https://mineru.net.
-3. sanmu-paper-reader: the core tools only need Python 3.10+; install requirements.txt only when SI search, PDF figure extraction or subfigure cropping is needed.
-   Run python scripts/evidence_tools.py --help to confirm the entry point.
-4. sanmu-paper-search: the core has no third-party dependencies; run python scripts/paper_search.py doctor.
-   Only check whether API credentials are configured (OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY, optional SCIVERSE_API_KEY, AI4SCHOLAR_API_KEY, EASYSCHOLAR_SECRET_KEY, SERPER_API_KEY, EXA_API_KEY); do not display values.
-5. Tell me the installation path, the check results, and what I still need to configure.
+1. Check Node >=22.20, Python >=3.10 and Git; DSH requires Node >=24.9.
+   Check existing installations for local modifications. Choose the current host's complete package:
+   Claude: claude plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
+   Codex: codex plugin marketplace add luffysolution-svg/sanmu-skills && codex plugin add sanmu-skills@sanmu-skills
+   Pi >=1.4: pi install git:github.com/luffysolution-svg/sanmu-skills
+   DSH: dsh plugin --profile <existing-profile> add github:luffysolution-svg/sanmu-skills
+   Replace the DSH profile with one that already exists.
+2. Locate the installed root and run node "<installed-root>/scripts/sanmu.mjs" doctor.
+   Use setup to prepare private Python/KaTeX dependencies in advance; document conversion can prepare them automatically.
+3. Use MCP open_panel to open the complete workbench. On terminal hosts it returns a local browser URL.
+4. Check credential presence without displaying values. Free search can start without keys.
+   Cloud OCR requires MINERU_API_TOKEN; paid providers require their own account and quota.
+   Zotero writes require local authorization in Zotero 8+.
+5. If the host supports only skills, use npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy,
+   and explain that this installs standalone skills, not the complete MCP/browser workbench.
+6. Report the installed location, checks, workbench entry and remaining user configuration.
 ```
 
 Full installation instructions for each skill: [doc2md](skills/sanmu-doc2md/README.en.md#installation) · [reader](skills/sanmu-paper-reader/README.en.md#installation) · [search](skills/sanmu-paper-search/README.en.md#installation)
@@ -125,15 +132,37 @@ codex plugin add sanmu-skills@sanmu-skills
 
 Requires a recent Codex CLI that supports `plugin marketplace`. Start a new session after installation; you can manage plugins under `/plugins`.
 
-### ZCode
+### Pi
 
 ```bash
-# Install the three-skill collection
-zcode plugin marketplace add luffysolution-svg/sanmu-skills
-zcode plugin install sanmu-skills@sanmu-skills
+pi install git:github.com/luffysolution-svg/sanmu-skills
 ```
 
-To use the standalone `sanmu-paper-search` ZCode Desktop plugin with its interactive side panel, live physics citation graph, local Zotero integration and built-in `sanmu-doc2md` document parsing workbench, download `sanmu-paper-search-zcode-plugin-<version>.zip` from the latest [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest).
+Pi ≥1.4 uses its native `registerMcpServer` API. No third-party MCP bridge is required.
+
+### DeepSeek Harness
+
+```bash
+dsh plugin --profile <existing-profile> add github:luffysolution-svg/sanmu-skills
+```
+
+For the DSH Desktop marketplace, enable **Plugins → Experimental plugins → Custom plugin indexes**, then use **Discover → Add index source** with:
+
+```text
+https://raw.githubusercontent.com/luffysolution-svg/sanmu-skills/main/distribution/deepseek/index.json
+```
+
+Install Sanmu Research from that index. Entries are pinned to a complete source commit; DSH retains its own installation confirmation.
+
+Tested with the official 0.2.2-alpha.2 runtime, Node ≥24.9, and a base-backed profile. The complete host supplies the optional `dsh-mcp-client` and `dsh-skill-filesystem` peers. Use the Desktop Plugins UI for its reserved Desktop profile. A profile MCP process shares its initial workspace; pass explicit `saveDir` for other workspaces, or set `SANMU_WORKSPACE_ROOT` before starting it.
+
+### ZCode
+
+Use **Plugin Marketplace → Add → Add Plugin Marketplace** in ZCode Desktop. Add this repository, or extract `sanmu-paper-search-zcode-plugin-<version>.zip` from [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest) and add a local marketplace for the extracted plugin. The ZCode artifact also includes all three complete skills. Ordinary Desktop users do not need a global `zcode` CLI.
+
+### Complete-package runtime and UI
+
+`SANMU_DATA_DIR` selects private storage, `SANMU_PYTHON` selects a Python executable, and `SANMU_NO_AUTO_SETUP=1` disables automatic dependency installation. Use MCP `open_panel` or `node "<installed-root>/scripts/sanmu.mjs" panel` for the workbench. Terminal hosts keep the existing search, graph, basket, history and conversion UI in the browser; reading handoffs are copied back to the AI conversation. Saved API settings also apply to CLI `search`, `fetch-pdf`, `doc2md`, and `reader`. The portable `zotero_library` tool supports readback-verified metadata and note synchronization without a separate Zotero plugin. Full Pi/DSH tarballs are built at `npm/sanmu-skills-<version>.tgz`; GitHub Release availability does not imply an npm registry publication.
 
 ### Manual installation
 

@@ -2,17 +2,34 @@
 """Validate channel manifests and build packages from Git-tracked skill files."""
 
 import argparse
+from fnmatch import fnmatchcase
+import gzip
 import hashlib
+import io
 import json
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import tarfile
 from urllib.parse import unquote, urlsplit
 import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_FILES = ("plugin.json", ".claude-plugin/plugin.json", "README.md", "README.en.md", "LICENSE")
+ROOT_RUNTIME_FILES = (
+    "scripts/sanmu.mjs", "scripts/runtime.mjs", "scripts/panel-server.mjs", "scripts/zotero-tools.mjs",
+)
+ROOT_HOST_FILES = (
+    "plugin.json", "mcp.json", ".mcp.json", ".claude-plugin/plugin.json",
+    ".claude-plugin/marketplace.json", ".codex-plugin/plugin.json", ".codex-plugin/mcp-env.json",
+    ".agents/plugins/marketplace.json", "package.json", "cordis.patch.yml",
+    *ROOT_RUNTIME_FILES, "extensions/pi.ts",
+)
+ZCODE_SHELL_DIR = "distribution/zcode/sanmu-paper-search"
+CANONICAL_RUNTIME_FILES = tuple(f"{ZCODE_SHELL_DIR}/{path}" for path in (
+    "scripts/mcp-server.mjs", "assets/panel.html", "scripts/dsh-plugin.mjs",
+))
+PLUGIN_FILES = (*ROOT_HOST_FILES, *CANONICAL_RUNTIME_FILES, "README.md", "README.en.md", "LICENSE")
 BLOCKED_PARTS = {
     ".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache",
     ".mypy_cache", ".ruff_cache", "cache", ".cache", ".search-work", "runs",
@@ -22,7 +39,8 @@ DEVELOPMENT_PARTS = {"tests", "examples", "docs"}
 SKILL_ROOT_FILES = {"SKILL.md", "LICENSE", "README.md", "README.en.md", "requirements.txt"}
 # SkillHub rejects uploads containing files without an extension; license stays in the bundle.
 SKILLHUB_EXCLUDED_FILES = {"LICENSE"}
-ZCODE_SHELL_DIR = "distribution/zcode/sanmu-paper-search"
+SKILLHUB_LIMITS = {"maxFiles": 200, "maxBytes": 10 * 1024 * 1024}
+ARCHIVE_MTIME = 1767225600  # 2026-01-01T00:00:00Z, independent of source mtimes and time zones.
 ZCODE_SHELL_FILES = (
     ".zcode-plugin/plugin.json",
     ".claude-plugin/plugin.json",
@@ -125,12 +143,144 @@ def tracked_files(root):
     return sorted(set(result.stdout.decode("utf-8").split("\0")) - {""})
 
 
+def local_path(value, label):
+    if (not isinstance(value, str) or not value or "\\" in value or ":" in value
+            or value.startswith("/") or ".." in PurePosixPath(value).parts):
+        raise ValueError(f"Invalid package-relative path in {label}: {value}")
+    path = PurePosixPath(value).as_posix().rstrip("/")
+    if path == "." or "$" in path or path.startswith("!"):
+        raise ValueError(f"Invalid package-relative path in {label}: {value}")
+    return path
+
+
+def require_path(value, files, label, directory=False):
+    path = local_path(value, label)
+    if not (any(name.startswith(path + "/") for name in files) if directory else path in files):
+        raise ValueError(f"Missing packaged path in {label}: {value}")
+    return path
+
+
+def npm_files(root, files):
+    package = read_json(root / "package.json")
+    patterns = package.get("files")
+    if not isinstance(patterns, list) or not patterns:
+        raise ValueError("Root package.json files must be a non-empty allowlist")
+    patterns = [local_path(pattern, "package.json files") for pattern in patterns]
+    automatic = {"package.json", "README.md", "README.en.md", "LICENSE"}
+    selected = [name for name in files if name in automatic or any(
+        name == pattern or name.startswith(pattern + "/") or fnmatchcase(name, pattern)
+        for pattern in patterns
+    )]
+    missing = set(files) - set(selected)
+    if missing:
+        raise ValueError(f"Root package.json files omits runtime inputs: {sorted(missing)}")
+    for pattern in patterns:
+        if not any(name == pattern or name.startswith(pattern + "/") or fnmatchcase(name, pattern) for name in selected):
+            raise ValueError(f"Root package.json files has no packaged input: {pattern}")
+    return selected
+
+
+def validate_mcp(config, files, label, variable, entrypoint, cli=False):
+    servers = config.get("mcpServers")
+    if not isinstance(servers, dict) or not servers:
+        raise ValueError(f"Missing MCP server configuration: {label}")
+    for server in servers.values():
+        args = server.get("args", []) if isinstance(server, dict) else []
+        expected = [f"${{{variable}}}/{entrypoint}", *(["mcp"] if cli else [])]
+        if (not isinstance(server, dict) or server.get("command") != "node"
+                or server.get("type", "stdio") != "stdio" or args != expected):
+            raise ValueError(f"Invalid packaged MCP command: {label}")
+        require_path(entrypoint, files, label)
+
+
+def validate_patch(root, path, files):
+    text = (root / path).read_text(encoding="utf-8")
+    adapters = re.findall(r'(?m)^\s*(?:-\s*)?name:\s*[\"\']?([^\s\"\']+\.mjs)[\"\']?\s*$', text)
+    if not adapters:
+        raise ValueError(f"Missing DeepSeek adapter path: {path}")
+    for adapter in adapters:
+        require_path(adapter, files, path)
+
+
+def zcode_sources(files):
+    sources = {path: f"{ZCODE_SHELL_DIR}/{path}" for path in ZCODE_SHELL_FILES}
+    sources["LICENSE"] = "LICENSE"
+    sources.update({path: path for path in files if path.startswith("skills/") or path in ROOT_RUNTIME_FILES})
+    # Older ZCode hosts and MCP engines also discover search tools at scripts/.
+    prefix = "skills/sanmu-paper-search/scripts/"
+    for path in files:
+        if path.startswith(prefix):
+            target = "scripts/" + path[len(prefix):]
+            if target in sources:
+                raise ValueError(f"Conflicting ZCode runtime path: {target}")
+            sources[target] = path
+    return sources
+
+
+def validate_hosts(root, release, files):
+    version = release["version"]
+    manifests = ("plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "package.json")
+    for path in manifests:
+        plugin = read_json(root / path)
+        if plugin.get("name") != release["name"] or plugin.get("version") != version:
+            raise ValueError(f"Plugin name/version differs from release manifest: {path}")
+    portable = read_json(root / "plugin.json")
+    if portable.get("$schema") != "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json":
+        raise ValueError("Invalid portable plugin schema: plugin.json")
+    if any(key in portable for key in ("skills", "mcpServers")):
+        raise ValueError("Portable plugin uses automatic skills/ and mcp.json discovery")
+    for path, mcp in ((".claude-plugin/plugin.json", ".mcp.json"), (".codex-plugin/plugin.json", ".codex-plugin/mcp-env.json")):
+        plugin = read_json(root / path)
+        if require_path(plugin.get("skills"), files, path, directory=True) != "skills":
+            raise ValueError(f"Plugin must expose all three skills: {path}")
+        if require_path(plugin.get("mcpServers"), files, path) != mcp:
+            raise ValueError(f"Unexpected MCP manifest path: {path}")
+    for path, variable in (("mcp.json", "PLUGIN_ROOT"), (".mcp.json", "CLAUDE_PLUGIN_ROOT")):
+        config = read_json(root / path)
+        if path == "mcp.json" and config.get("$schema") != "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json":
+            raise ValueError("Invalid portable MCP schema: mcp.json")
+        validate_mcp(config, files, path, variable, "scripts/sanmu.mjs", cli=True)
+    for path in (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"):
+        market = read_json(root / path)
+        entries = market.get("plugins", [])
+        if market.get("name") != release["name"] or [p.get("name") for p in entries] != [release["name"]]:
+            raise ValueError(f"Unexpected marketplace entries: {path}")
+        if any(p.get("version", version) != version for p in entries):
+            raise ValueError(f"Marketplace version differs from release manifest: {path}")
+        source = entries[0].get("source")
+        if path.startswith(".claude-plugin/"):
+            valid = source in {".", "./"} if isinstance(source, str) else False
+        else:
+            valid = isinstance(source, dict) and source.get("source") == "local" and source.get("path") in {".", "./"}
+        if not valid:
+            raise ValueError(f"Marketplace must reference the packaged plugin root: {path}")
+    package = read_json(root / "package.json")
+    if package.get("type") != "module" or package.get("bin", {}).get("sanmu") != "./scripts/sanmu.mjs":
+        raise ValueError("Root package.json must expose the sanmu CLI")
+    require_path(package["bin"]["sanmu"], files, "package.json bin")
+    require_path(package.get("main"), files, "package.json main")
+    for target in package.get("exports", {}).values():
+        require_path(target, files, "package.json exports")
+    pi = package.get("pi", {})
+    if pi.get("skills") != ["./skills"] or pi.get("extensions") != ["./extensions/pi.ts"]:
+        raise ValueError("Root package.json Pi paths must expose all three skills and the extension")
+    require_path(pi["skills"][0], files, "package.json pi.skills", directory=True)
+    require_path(pi["extensions"][0], files, "package.json pi.extensions")
+    patch = package.get("dsh", {}).get("bundle", {}).get("patch")
+    if require_path(patch, files, "package.json dsh.bundle.patch") != "cordis.patch.yml":
+        raise ValueError("Unexpected DeepSeek patch path: package.json")
+    validate_patch(root, "cordis.patch.yml", files)
+    npm_files(root, files)
+
+
 def validate(root=ROOT):
     release = read_json(root / "distribution/manifest.json")
     version = release["version"]
     for value in (version, release.get("workbuddyVersion", version)):
-        if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", value):
+        if not isinstance(value, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", value):
             raise ValueError("Release and WorkBuddy versions must be semantic versions")
+    if release.get("workbuddyVersion", version) != version:
+        raise ValueError("WorkBuddy version differs from release manifest")
     names = [skill["name"] for skill in release["skills"]]
     if len(names) != len(set(names)) or not names:
         raise ValueError("Skill names must be unique and non-empty")
@@ -153,14 +303,6 @@ def validate(root=ROOT):
                 raise ValueError(f"Invalid WorkBuddy paid display name {field}: {name}")
         if not (directory / "LICENSE").is_file():
             raise ValueError(f"Standalone skill lacks LICENSE: {name}")
-    for path in ("plugin.json", ".claude-plugin/plugin.json"):
-        plugin = read_json(root / path)
-        if plugin.get("name") != release["name"] or plugin.get("version") != version:
-            raise ValueError(f"Plugin name/version differs from release manifest: {path}")
-    for path in (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"):
-        market = read_json(root / path)
-        if market.get("name") != release["name"] or [p["name"] for p in market["plugins"]] != [release["name"]]:
-            raise ValueError(f"Unexpected marketplace entries: {path}")
     files = tracked_files(root)
     selected = []
     for path in files:
@@ -192,6 +334,10 @@ def validate(root=ROOT):
             if f"skills/{name}/{filename}" not in selected:
                 raise ValueError(f"Missing tracked package file: {name}/{filename}")
     validate_runtime_references(root, selected, names)
+    validate_hosts(root, release, selected)
+    for skill in release["skills"]:
+        entries = skill_entries(root, selected, skill, release)
+        validate_skillhub_budget(entries, skill["name"])
     zcode_shell_root = root / ZCODE_SHELL_DIR
     for rel in ZCODE_SHELL_FILES:
         shell_file = zcode_shell_root / rel
@@ -203,6 +349,19 @@ def validate(root=ROOT):
         zcode_plugin = read_json(zcode_shell_root / rel_manifest)
         if zcode_plugin.get("name") != "sanmu-paper-search" or zcode_plugin.get("version") != version:
             raise ValueError(f"ZCode plugin name/version differs from release manifest: {rel_manifest}")
+    zcode_files = zcode_sources(selected)
+    for path in (".zcode-plugin/plugin.json", ".claude-plugin/plugin.json"):
+        plugin = read_json(zcode_shell_root / path)
+        if require_path(plugin.get("skills"), zcode_files, path, directory=True) != "skills":
+            raise ValueError(f"ZCode plugin must expose all three skills: {path}")
+        require_path(plugin.get("commands"), zcode_files, path, directory=True)
+        validate_mcp(plugin, zcode_files, path, "CLAUDE_PLUGIN_ROOT", "scripts/mcp-server.mjs")
+    package = read_json(zcode_shell_root / "package.json")
+    require_path(package.get("main"), zcode_files, "ZCode package.json main")
+    patch = package.get("dsh", {}).get("bundle", {}).get("patch")
+    if require_path(patch, zcode_files, "ZCode package.json dsh.bundle.patch") != "cordis.patch.yml":
+        raise ValueError("Unexpected DeepSeek patch path: ZCode package.json")
+    validate_patch(zcode_shell_root, "cordis.patch.yml", zcode_files)
     server_text = (zcode_shell_root / "scripts/mcp-server.mjs").read_text(encoding="utf-8")
     panel_text = (zcode_shell_root / "assets/panel.html").read_text(encoding="utf-8")
     server_versions = re.findall(r'\bversion:\s*"(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)"', server_text)
@@ -251,13 +410,43 @@ def platform_document(text, extra):
     return "---\n" + header + "\n---\n" + text[match.end():]
 
 
+def skill_entries(root, files, skill, release):
+    prefix = f"skills/{skill['name']}/"
+    entries = {path[len(prefix):]: (root / path).read_bytes() for path in files
+               if path.startswith(prefix) and path[len(prefix):] not in SKILLHUB_EXCLUDED_FILES}
+    entries["SKILL.md"] = skillhub_document(entries["SKILL.md"].decode("utf-8"), skill, release).encode("utf-8")
+    return entries
+
+
+def validate_skillhub_budget(entries, name):
+    size = sum(len(data) for data in entries.values())
+    if len(entries) > SKILLHUB_LIMITS["maxFiles"] or size > SKILLHUB_LIMITS["maxBytes"]:
+        raise ValueError(f"SkillHub package limit exceeded for {name}: {len(entries)} files, {size} bytes "
+                         "(maximum 200 files and 10 MiB)")
+
+
 def write_zip(path, entries):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, data in sorted(entries.items()):
             info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o100644 << 16
+            info.external_attr = (0o100755 if name == "scripts/sanmu.mjs" else 0o100644) << 16
             archive.writestr(info, data)
+
+
+def write_npm_tgz(path, entries):
+    # An npm installable tarball uses package/ and Unix permission bits, not st_mode.
+    with path.open("wb") as destination:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=destination, mtime=ARCHIVE_MTIME) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
+                for name, data in sorted(entries.items()):
+                    info = tarfile.TarInfo("package/" + name)
+                    info.size = len(data)
+                    info.mode = 0o755 if name == "scripts/sanmu.mjs" else 0o644
+                    info.mtime = ARCHIVE_MTIME
+                    info.uid = info.gid = 0
+                    info.uname = info.gname = ""
+                    archive.addfile(info, io.BytesIO(data))
 
 
 def build(output, root=ROOT):
@@ -275,11 +464,8 @@ def build(output, root=ROOT):
     write_zip(bundle_path, bundle)
     archives = [bundle_path]
     for skill in release["skills"]:
-        prefix = f"skills/{skill['name']}/"
-        entries = {path[len(prefix):]: data for path, data in bundle.items()
-                   if path.startswith(prefix) and path[len(prefix):] not in SKILLHUB_EXCLUDED_FILES}
-        text = entries["SKILL.md"].decode("utf-8")
-        entries["SKILL.md"] = skillhub_document(text, skill, release).encode("utf-8")
+        text = bundle[f"skills/{skill['name']}/SKILL.md"].decode("utf-8")
+        entries = skill_entries(root, files, skill, release)
         directory = skillhub / skill["name"]
         for name, data in entries.items():
             destination = directory / name
@@ -293,40 +479,22 @@ def build(output, root=ROOT):
         archive = workbuddy / f"{skill.get('workbuddyName', skill['name'])}-{release.get('workbuddyVersion', release['version'])}.zip"
         write_zip(archive, entries)
         archives.append(archive)
-    zcode_shell_root = root / ZCODE_SHELL_DIR
-    if zcode_shell_root.is_dir():
-        zcode = output / "zcode"
-        zcode.mkdir()
-        zcode_dir = zcode / "sanmu-paper-search"
-        zcode_entries = {}
-        for rel in ZCODE_SHELL_FILES:
-            zcode_entries[rel] = (zcode_shell_root / rel).read_bytes()
-        search_prefix = "skills/sanmu-paper-search/"
-        for path, data in bundle.items():
-            if not path.startswith(search_prefix):
-                continue
-            rel = path[len(search_prefix):]
-            if rel == "LICENSE":
-                zcode_entries["LICENSE"] = data
-            elif rel == "SKILL.md" or rel.startswith("references/"):
-                zcode_entries[f"skills/sanmu-paper-search/{rel}"] = data
-            elif rel.startswith("scripts/"):
-                zcode_entries[rel] = data
-                zcode_entries[f"skills/sanmu-paper-search/{rel}"] = data
-        doc2md_prefix = "skills/sanmu-doc2md/"
-        for path, data in bundle.items():
-            if not path.startswith(doc2md_prefix):
-                continue
-            rel = path[len(doc2md_prefix):]
-            if rel in {"SKILL.md", "requirements.txt", "LICENSE"} or rel.startswith(("references/", "scripts/")):
-                zcode_entries[f"skills/sanmu-doc2md/{rel}"] = data
-        for rel, data in zcode_entries.items():
-            dest = zcode_dir / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(data)
-        zcode_archive = zcode / f"sanmu-paper-search-zcode-plugin-{release['version']}.zip"
-        write_zip(zcode_archive, zcode_entries)
-        archives.append(zcode_archive)
+    zcode = output / "zcode"
+    zcode.mkdir()
+    zcode_dir = zcode / "sanmu-paper-search"
+    zcode_entries = {path: (root / source).read_bytes() for path, source in zcode_sources(files).items()}
+    for rel, data in zcode_entries.items():
+        dest = zcode_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+    zcode_archive = zcode / f"sanmu-paper-search-zcode-plugin-{release['version']}.zip"
+    write_zip(zcode_archive, zcode_entries)
+    archives.append(zcode_archive)
+    npm_directory = output / "npm"
+    npm_directory.mkdir()
+    npm_archive = npm_directory / f"{release['name']}-{release['version']}.tgz"
+    write_npm_tgz(npm_archive, {path: bundle[path] for path in npm_files(root, files)})
+    archives.append(npm_archive)
     checksums = []
     for path in archives:
         checksums.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(output).as_posix()}")
@@ -351,10 +519,16 @@ def main():
                   f"{sum((ROOT / path).stat().st_size for path in selected)} bytes")
     else:
         for path in build(args.out):
-            with zipfile.ZipFile(path) as archive:
-                entries = archive.infolist()
-                print(f"{path}: {len(entries)} files, {sum(item.file_size for item in entries)} "
-                      f"uncompressed bytes, {path.stat().st_size} ZIP bytes")
+            if path.suffix == ".tgz":
+                with tarfile.open(path, "r:gz") as archive:
+                    entries = archive.getmembers()
+                    size = sum(item.size for item in entries)
+            else:
+                with zipfile.ZipFile(path) as archive:
+                    entries = archive.infolist()
+                    size = sum(item.file_size for item in entries)
+            print(f"{path}: {len(entries)} files, {size} uncompressed bytes, "
+                  f"{path.stat().st_size} {path.suffix[1:].upper()} bytes")
 
 
 if __name__ == "__main__":

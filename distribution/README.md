@@ -68,12 +68,13 @@ node --test tests/zcode-paper-search/test_mcp_server.mjs tests/zcode-paper-searc
 
 | 文件 | 用途 |
 | --- | --- |
-| `sanmu-skills-<版本>.zip` | 通用合集包：三个技能 + 根 `plugin.json` + Claude 插件声明 + 许可证；也可作为 OpenAI 公共插件目录的待提交包 |
+| `sanmu-skills-<版本>.zip` | 完整合集：三技能、Claude/Codex 市场清单、Pi 扩展、DSH bundle、CLI、MCP 与浏览器工作台 |
 | `skillhub/<技能名>/` | 交给 `skillhub publish` 的目录 |
 | `skillhub/<技能名>-<版本>.zip` | 与上面目录内容一致的归档，根部是 `SKILL.md` |
 | `workbuddy/<技能名>-<版本>.zip` | WorkBuddy 技能包，根部是 `SKILL.md` |
 | `zcode/sanmu-paper-search-zcode-plugin-<版本>.zip` | ZCode 桌面端「三木文献检索」侧栏插件包（由 `distribution/zcode/` 外壳与 `skills/sanmu-paper-search/` 自动同源组装） |
-| `SHA256SUMS` | 以上 8 个 ZIP 的 SHA-256，LF 换行 |
+| `npm/sanmu-skills-<版本>.tgz` | Pi / DSH / npm 安装器接受的标准 `package/` tarball，与完整合集同源 |
+| `SHA256SUMS` | 以上 8 个 ZIP 与 1 个 TGZ 的 SHA-256，LF 换行 |
 
 **平台专用元数据只在构建时注入**，源码 `SKILL.md` 保持标准格式，正文和资源在各渠道完全一致：
 
@@ -83,6 +84,17 @@ node --test tests/zcode-paper-search/test_mcp_server.mjs tests/zcode-paper-searc
 SkillHub 展示名写在 `manifest.json` 的 `displayName`；WorkBuddy 使用独立的 `workbuddyName` 标识和 `workbuddyDisplayName` / `workbuddyDisplayNameEn` 展示名。简介共用 `summary` / `summaryEn`，作者写在顶层 `author`。
 
 两个平台都会拒绝没有扩展名的文件，所以 `skillhub/` 和 `workbuddy/` 包里不含 `LICENSE`；许可证信息由 frontmatter 和合集包提供。
+
+## 完整插件与宿主验收
+
+完整包以根 `package.json` 的 `files` 和构建白名单共同约束运行文件，包含全部三个技能。Claude 使用 `.mcp.json`，Codex 使用标准 `mcp.json` 及 `.codex-plugin/mcp-env.json` 环境变量覆盖；Pi 扩展调用原生 `registerMcpServer`；DSH 的 `cordis.patch.yml` 注册 MCP 和技能 provider。依赖装在私有数据目录，`doctor` 不执行安装。终端宿主可通过 `open_panel` 或 `sanmu panel` 使用浏览器工作台，精读指令通过复制回到对话。
+
+```bash
+node --test tests/harnesses/*.mjs
+SANMU_TEST_HOSTS=1 python tests/harnesses/test_marketplace_hosts.py
+```
+
+宿主测试使用隔离配置，不改当前用户安装。Pi / DSH 官方运行时不存在时，相应集成测试会明确跳过；发布验收须单独提供已安装的官方运行时。通过通用插件市场安装不等于官方目录收录，npm tarball 不代表已发布 npm 包。
 
 ## Claude Code 与 Codex
 
@@ -95,14 +107,20 @@ Codex 的仓库市场是 `.agents/plugins/marketplace.json`，以本地来源 `.
 
 自建 GitHub 市场不等于进入 Anthropic 或 OpenAI 的官方目录。OpenAI 公共目录需要另外通过[开发者平台提交](https://developers.openai.com/plugins/deploy/submission)，上传 ZIP、处理检查结果后等待审核。
 
+## DeepSeek 自建市场
+
+`deepseek/index.json` 遵守官方 format 1，Git 来源固定为实际含完整包的 40 位提交。先提交功能代码，再运行 `python distribution/deepseek/generate_index.py --commit <完整提交SHA>` 生成索引并提交；版本必须取该提交的 `package.json`。索引是发布元数据，不进入技能或 npm 运行包，避免自引用提交问题。
+
+用户在 DSH 的 Plugins 页面启用 Experimental plugins 中的 Custom plugin indexes，在 Discover 添加公开 raw 索引 URL 后安装。DSH 默认不附带第三方索引；这属于作者自建市场。Pi 使用 `pi install` 原生包入口，`pi-package` 关键字为目录提供元数据，不能把提供关键字称为已被官方收录。
+
 ## GitHub Release
 
 Release 页面上的文件是平铺的，没有 `skillhub/`、`workbuddy/` 子目录。WorkBuddy 包使用独立的 `-paid` 名称，上传时保留文件名，并生成一份与平铺文件名对应的校验文件：
 
 ```bash
 V=<版本>; D=dist/$V; R=$D/release; mkdir $R
-cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $D/workbuddy/*.zip $D/zcode/*.zip $R/
-(cd $R && sha256sum *.zip > SHA256SUMS)
+cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $D/workbuddy/*.zip $D/zcode/*.zip $D/npm/*.tgz $R/
+(cd $R && sha256sum *.zip *.tgz > SHA256SUMS)
 gh release create v$V $R/* --title "sanmu-skills v$V" --notes-file <更新说明.md>
 ```
 

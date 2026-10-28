@@ -11,7 +11,9 @@ description: 把 PDF、PPTX 和扫描件整理成保留 LaTeX 公式、高清图
 
 ## 首次使用
 
-技能装好后，脚本依赖和 OCR 凭证不会自动就位。第一次用（或命令报缺依赖时）先检查：
+通过完整插件安装时，优先使用随包 MCP 的 `run_doc2md`、`manage_doc2md`；首次解析会在私有数据目录准备 Python 依赖和 KaTeX。CLI 可从包根运行 `node scripts/sanmu.mjs doc2md <脚本名> ...`，例如 `doc2md build-research-document --help`；运行前确认本技能目录上两级确实存在 `scripts/sanmu.mjs`。`node scripts/sanmu.mjs setup` 可预先准备依赖，`doctor` 只检查；`SANMU_NO_AUTO_SETUP=1` 可关闭自动安装。OCR 凭证仍由用户在工作台配置。
+
+单独安装技能时，脚本依赖和 OCR 凭证不会自动就位。第一次用（或命令报缺依赖时）先检查：
 
 ```bash
 python scripts/doctor.py
@@ -150,7 +152,7 @@ python scripts/preview_server.py ./知识库 --port 8766 --katex-dir scripts/nod
 
 ### 8. Zotero 同步（可选）
 
-`scripts/zotero_sync.py` 对比 Markdown 与 Zotero 条目的元数据、阅读笔记和 PDF 批注。本地 HTTP API 只用来读；写入一律经 Zotero 官方 MCP 工具执行，执行后重跑同一命令回读确认，退出码 `0` 才算完成（`2` 表示还有待执行的 MCP 操作，`1` 是冲突或失败）。这样即使计划有误，也不会绕过 Zotero 自身的校验直接改库。首次同步要用 `--initial-direction` 指定以哪边为准；之后两边改了同一字段会报冲突，不会静默覆盖。用户自己写的笔记不受影响。命令、字段映射和群组库用法见 [zotero-sync.md](references/zotero-sync.md)。
+`scripts/zotero_sync.py` 对比 Markdown 与 Zotero 条目的元数据、阅读笔记和 PDF 批注。该脚本对本地 HTTP API 只执行读取；写入计划经宿主 Zotero MCP 工具执行。完整插件也提供 `zotero_library`，可将计划中的 `update_item` / `add_note` 映射为同名 `action`，将计划的 `version` 传入 `expectedVersion`，保留库身份、父条目和 `expected_html`（传入 `html`），取得 Zotero 写入授权并回读核验。执行后重跑同一命令回读确认，退出码 `0` 才算完成（`2` 表示还有待执行的 MCP 操作，`1` 是冲突或失败）。这样即使计划有误，也不会绕过 Zotero 自身的校验直接改库。首次同步要用 `--initial-direction` 指定以哪边为准；之后两边改了同一字段会报冲突，不会静默覆盖。用户自己写的笔记不受影响。命令、字段映射和群组库用法见 [zotero-sync.md](references/zotero-sync.md)。
 
 ## 经验与陷阱
 

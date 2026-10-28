@@ -68,12 +68,13 @@ Under `dist/<version>/`:
 
 | File | Purpose |
 | --- | --- |
-| `sanmu-skills-<version>.zip` | General collection package: three skills + root `plugin.json` + Claude plugin manifest + licenses; can also serve as the package to submit to the OpenAI public plugin directory |
+| `sanmu-skills-<version>.zip` | Complete collection: three skills, host manifests/marketplaces, CLI, MCP server, Pi extension, DSH bundle and browser workbench |
 | `skillhub/<skill-name>/` | Directories passed to `skillhub publish` |
 | `skillhub/<skill-name>-<version>.zip` | Archives with the same content as the directories above, with `SKILL.md` at the root |
 | `workbuddy/<skill-name>-<version>.zip` | WorkBuddy skill packages, with `SKILL.md` at the root |
 | `zcode/sanmu-paper-search-zcode-plugin-<version>.zip` | ZCode Desktop side-panel plugin package for `sanmu-paper-search` (assembled from `distribution/zcode/` and `skills/sanmu-paper-search/`) |
-| `SHA256SUMS` | SHA-256 of the 8 ZIPs above, LF line endings |
+| `npm/sanmu-skills-<version>.tgz` | Standard npm `package/` tarball for Pi, DSH and npm installers; same complete runtime as the collection ZIP |
+| `SHA256SUMS` | SHA-256 of all 8 ZIPs and 1 TGZ, LF line endings |
 
 **Platform-specific metadata is applied only at build time.** The source `SKILL.md` stays in the standard format, and the body and resources are identical across channels:
 
@@ -83,6 +84,17 @@ Under `dist/<version>/`:
 The SkillHub display name is set in `manifest.json` as `displayName`; WorkBuddy uses a separate `workbuddyName` identifier and `workbuddyDisplayName` / `workbuddyDisplayNameEn` display names. Summaries are shared as `summary` / `summaryEn`, and the author is set in the top-level `author`.
 
 Both platforms reject files without an extension, so the `skillhub/` and `workbuddy/` packages do not include `LICENSE`; license information is provided by the frontmatter and the collection package.
+
+## Complete packages and host acceptance
+
+The root `package.json` file allowlist and the builder jointly select runtime files. Every complete artifact contains all three skills. Claude loads `.mcp.json`; Codex loads portable `mcp.json` and the native environment allowlist in `.codex-plugin/mcp-env.json`; Pi registers native MCP through its extension; DSH mounts MCP and the filesystem skill provider through `cordis.patch.yml`. Dependencies live in private storage; `doctor` does not install them. Terminal hosts use the browser workbench, with copyable reading handoffs.
+
+```bash
+node --test tests/harnesses/*.mjs
+SANMU_TEST_HOSTS=1 python tests/harnesses/test_marketplace_hosts.py
+```
+
+Host installs use isolated user directories. Optional Pi/DSH runtime tests explicitly skip when those runtimes are absent; release acceptance should also run them with the official runtimes installed. A repository marketplace is independent of official-directory inclusion, and a tarball is independent of npm registry publication.
 
 ## Claude Code and Codex
 
@@ -95,14 +107,20 @@ The Codex repository marketplace is `.agents/plugins/marketplace.json`, which po
 
 A self-hosted GitHub marketplace is not the same as being listed in Anthropic's or OpenAI's official directory. The OpenAI public directory requires a separate [submission through the developer platform](https://developers.openai.com/plugins/deploy/submission): upload the ZIP, address the check results, then wait for review.
 
+## DeepSeek marketplace
+
+`deepseek/index.json` follows official format 1 and pins its Git source to a full 40-character commit containing the complete package. Commit the implementation first, then run `python distribution/deepseek/generate_index.py --commit <full-SHA>` and commit the resulting index. Its version comes from that source commit's `package.json`. The index stays outside runtime archives to avoid a self-referencing commit.
+
+DSH users enable Custom plugin indexes under Experimental plugins, add the public raw index URL in Discover, and install the listed bundle. This is the author's own marketplace; DSH supplies no third-party sources by default. Pi uses its native `pi install` package entry, with `pi-package` catalog metadata; this does not establish official-directory inclusion.
+
 ## GitHub Release
 
 Files on the Release page are flat, without `skillhub/` or `workbuddy/` subdirectories. The WorkBuddy packages use their own `-paid` names, so keep the file names when uploading and generate a checksum file that matches the flat file names:
 
 ```bash
 V=<version>; D=dist/$V; R=$D/release; mkdir $R
-cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $D/workbuddy/*.zip $D/zcode/*.zip $R/
-(cd $R && sha256sum *.zip > SHA256SUMS)
+cp $D/sanmu-skills-$V.zip $D/skillhub/*.zip $D/workbuddy/*.zip $D/zcode/*.zip $D/npm/*.tgz $R/
+(cd $R && sha256sum *.zip *.tgz > SHA256SUMS)
 gh release create v$V $R/* --title "sanmu-skills v$V" --notes-file <release-notes.md>
 ```
 

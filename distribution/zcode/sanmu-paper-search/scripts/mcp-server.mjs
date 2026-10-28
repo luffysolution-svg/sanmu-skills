@@ -17,7 +17,7 @@ import {
 import { homedir } from "node:os";
 import { delimiter as pathDelimiter, basename, dirname, extname, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,8 +37,10 @@ function resolveHostPaths(envObj = process.env) {
   const pluginRoot =
     resolveEnvPath(envObj?.SANMU_PLUGIN_ROOT) ||
     resolveEnvPath(envObj?.CLAUDE_PLUGIN_ROOT) ||
+    resolveEnvPath(envObj?.PLUGIN_ROOT) ||
     resolve(__dirname, "..");
   const workspaceRoot =
+    resolveEnvPath(envObj?.SANMU_WORKSPACE_ROOT) ||
     resolveEnvPath(envObj?.ZCODE_WORKSPACE_ROOT) ||
     resolveEnvPath(envObj?.ZCODE_PROJECT_DIR) ||
     resolveEnvPath(envObj?.DSH_WORKSPACE_ROOT) ||
@@ -46,16 +48,25 @@ function resolveHostPaths(envObj = process.env) {
     process.cwd();
   const dshHome = resolveEnvPath(envObj?.DSH_HOME);
   const pluginData =
+    resolveEnvPath(envObj?.SANMU_DATA_DIR) ||
+    resolveEnvPath(envObj?.SANMU_PLUGIN_DATA) ||
     resolveEnvPath(envObj?.ZCODE_PLUGIN_DATA) ||
     resolveEnvPath(envObj?.DSH_PLUGIN_DATA) ||
     resolveEnvPath(envObj?.CLAUDE_PLUGIN_DATA) ||
+    resolveEnvPath(envObj?.PLUGIN_DATA) ||
     (dshHome
       ? join(dshHome, "plugin-data", "sanmu-paper-search")
-      : join(homedir(), ".zcode", "plugin-data", "sanmu-paper-search"));
+      : join(homedir(), envObj?.SANMU_HOST ? ".sanmu" : ".zcode", "plugin-data", "sanmu-paper-search"));
   return { pluginRoot, workspaceRoot, pluginData };
 }
 
-const { pluginRoot: PLUGIN_ROOT, workspaceRoot: WORKSPACE_ROOT, pluginData: PLUGIN_DATA } = resolveHostPaths(process.env);
+const { pluginRoot: PLUGIN_ROOT, workspaceRoot: INITIAL_WORKSPACE_ROOT, pluginData: PLUGIN_DATA } = resolveHostPaths(process.env);
+let WORKSPACE_ROOT = INITIAL_WORKSPACE_ROOT;
+const runtimePath = join(PLUGIN_ROOT, "scripts", "runtime.mjs");
+const sharedRuntime = existsSync(runtimePath) ? await import(pathToFileURL(runtimePath).href) : null;
+let preparedRuntime = null;
+const zoteroToolsPath = join(PLUGIN_ROOT, "scripts", "zotero-tools.mjs");
+const zoteroTools = existsSync(zoteroToolsPath) ? await import(pathToFileURL(zoteroToolsPath).href) : null;
 
 const RUNS_DIR = join(PLUGIN_DATA, "runs");
 const DOC2MD_JOBS_DIR = join(PLUGIN_DATA, "doc2md-jobs");
@@ -67,9 +78,31 @@ const OFFICIAL_ZOTERO_KEYS_PATH = join(dirname(PLUGIN_DATA), "zotero@zcode-plugi
 const PANEL_URI = "ui://sanmu-paper-search/panel.html";
 const SURFACE_ID = "sanmu-paper-search";
 const HTML_MIME = "text/html;profile=mcp-app";
-const PANEL_HTML_PATH = join(PLUGIN_ROOT, "assets", "panel.html");
-const PAPER_SEARCH_PY = join(PLUGIN_ROOT, "scripts", "paper_search.py");
-const FETCH_PDF_PY = join(PLUGIN_ROOT, "scripts", "fetch_pdf.py");
+const PANEL_HTML_PATH = [join(PLUGIN_ROOT, "assets", "panel.html"), join(PLUGIN_ROOT, "distribution", "zcode", "sanmu-paper-search", "assets", "panel.html")].find(existsSync) || join(PLUGIN_ROOT, "assets", "panel.html");
+const SKILLS_ROOT = resolveEnvPath(process.env.SANMU_SKILLS_ROOT) || join(PLUGIN_ROOT, "skills");
+const SEARCH_SCRIPTS = existsSync(join(SKILLS_ROOT, "sanmu-paper-search", "scripts", "paper_search.py"))
+  ? join(SKILLS_ROOT, "sanmu-paper-search", "scripts") : join(PLUGIN_ROOT, "scripts");
+const PAPER_SEARCH_PY = join(SEARCH_SCRIPTS, "paper_search.py");
+const FETCH_PDF_PY = join(SEARCH_SCRIPTS, "fetch_pdf.py");
+let browserPanel = null;
+
+async function ensureBrowserPanel() {
+  if (browserPanel && browserPanel.workspaceRoot === WORKSPACE_ROOT) return browserPanel;
+  if (browserPanel) { await browserPanel.close(); browserPanel = null; }
+  const panelServerPath = join(PLUGIN_ROOT, "scripts", "panel-server.mjs");
+  if (!existsSync(panelServerPath)) throw new Error("浏览器工作台启动器缺失，请重新安装完整的 sanmu-skills 插件。");
+  const { startPanelServer } = await import(pathToFileURL(panelServerPath).href);
+  browserPanel = await startPanelServer({ hostRoot: PLUGIN_ROOT, openBrowser: false,
+    env: { ...process.env, SANMU_PLUGIN_ROOT: PLUGIN_ROOT, SANMU_DATA_DIR: PLUGIN_DATA, SANMU_WORKSPACE_ROOT: WORKSPACE_ROOT } });
+  return browserPanel;
+}
+
+async function prepareDocumentRuntime() {
+  if (!sharedRuntime) return;
+  preparedRuntime = await sharedRuntime.ensureRuntime({ root: PLUGIN_ROOT, dataDir: PLUGIN_DATA, env: getEffectiveConfig().childEnv });
+  cachedPythonRuntime = null;
+  cachedKatexInfo = null;
+}
 
 mkdirSync(RUNS_DIR, { recursive: true });
 mkdirSync(DOC2MD_JOBS_DIR, { recursive: true });
@@ -82,7 +115,7 @@ function resolveDoc2mdScriptsDir() {
     return cachedDoc2mdScriptsDir;
   }
   const candidates = [
-    join(PLUGIN_ROOT, "skills", "sanmu-doc2md", "scripts"),
+    join(SKILLS_ROOT, "sanmu-doc2md", "scripts"),
     resolve(PLUGIN_ROOT, "..", "..", "skills", "sanmu-doc2md", "scripts"),
     resolve(__dirname, "..", "..", "..", "..", "skills", "sanmu-doc2md", "scripts"),
     join(WORKSPACE_ROOT, ".agents", "skills", "sanmu-doc2md", "scripts"),
@@ -144,6 +177,8 @@ const STAGE_LABELS = {
 let cachedPythonRuntime = null;
 
 function resolvePythonRuntime() {
+  if (preparedRuntime) return preparedRuntime;
+  if (sharedRuntime) return sharedRuntime.resolvePythonRuntime({ env: process.env, dataDir: PLUGIN_DATA });
   if (cachedPythonRuntime) return cachedPythonRuntime;
   const candidates =
     process.platform === "win32"
@@ -850,6 +885,7 @@ function getEffectiveConfig() {
 
   const childEnv = {
     ...process.env,
+    ...Object.fromEntries(Object.entries(preparedRuntime?.env || {}).filter(([key]) => ["PATH", "VIRTUAL_ENV", "NODE_PATH", "PYTHONNOUSERSITE"].includes(key))),
     PYTHONIOENCODING: "utf-8",
     PYTHONUTF8: "1",
     PYTHONDONTWRITEBYTECODE: "1",
@@ -4960,6 +4996,7 @@ async function executeDoc2mdJob(jobId, options = {}) {
   const siOutDir = job.siOutDir ? resolve(job.siOutDir) : null;
 
   try {
+    await prepareDocumentRuntime();
     // Prepare safe source PDF paths outside outDir so build_research_document containment check always passes
     let mainPdf = input.pdfPath ? resolve(input.pdfPath) : null;
     let siPdf = input.siPdfPath ? resolve(input.siPdfPath) : null;
@@ -5424,6 +5461,7 @@ async function runStandaloneDoc2mdValidators(
 }
 
 async function startKatexPreviewServer(outDir, requestedPort = 8766, openInBrowser = true) {
+  await prepareDocumentRuntime();
   const resolvedOut = isAbsolutePath(outDir) ? resolve(outDir) : resolve(WORKSPACE_ROOT, outDir);
   assertReadablePath(resolvedOut);
   if (!existsSync(resolvedOut) || !statSync(resolvedOut).isDirectory()) {
@@ -5775,6 +5813,7 @@ async function manageDoc2mdAction(input = {}) {
     };
   }
   if (act === "validate") {
+    await prepareDocumentRuntime();
     const job = input.jobId ? loadDoc2mdJob(input.jobId) : null;
     const targetOut = input.outDir
       ? isAbsolutePath(input.outDir)
@@ -6017,7 +6056,7 @@ const TOOLS = [
   {
     name: "open_panel",
     description:
-      "打开「三木文献检索 (Sanmu Paper Search)」侧边栏面板，查看当前检索结果、多源配置状态、历史运行批次与文献收藏篮。",
+      "打开「三木文献检索 (Sanmu Paper Search)」工作台，查看检索、关系图谱、收藏篮、API 配置和文档解析。支持原生侧栏；终端宿主返回本机浏览器工作台链接。",
     visibility: ["model", "app"],
     inputSchema: {
       $schema: "http://json-schema.org/draft-07/schema#",
@@ -6031,11 +6070,15 @@ const TOOLS = [
     },
     execute: async (input) => {
       const panelState = await getFullPanelState(input?.runId);
+      const portableHost = resolveEnvPath(process.env.SANMU_HOST) && process.env.SANMU_HOST !== "zcode";
+      const panel = portableHost && process.env.SANMU_PANEL_WORKER !== "1" ? await ensureBrowserPanel() : null;
       return {
-        text: panelState.activeRun
-          ? summarizeRunForModel(panelState.activeRun)
-          : "三木文献检索侧边栏已就绪。可在面板中选择文献源、配置 API 或直接发起检索。",
-        structured: panelState
+        text: panel
+          ? `三木科研工作台已就绪，请在本机浏览器打开：${panel.url}\n${panelState.activeRun ? summarizeRunForModel(panelState.activeRun) : "可使用完整检索、关系图谱、收藏篮、API 配置和文档解析功能。"}`
+          : panelState.activeRun
+            ? summarizeRunForModel(panelState.activeRun)
+            : "三木文献检索工作台已就绪。可选择文献源、配置 API 或直接发起检索。",
+        structured: { ...panelState, ...(panel ? { panelUrl: panel.url } : {}) }
       };
     }
   },
@@ -8559,6 +8602,17 @@ function validateToolInput(name, input) {
   }
 }
 
+if (zoteroTools) TOOLS.push({
+  name: "zotero_library", description: zoteroTools.description,
+  visibility: ["model", "app"], inputSchema: zoteroTools.inputSchema,
+  execute: async input => {
+    const { settings } = getEffectiveConfig();
+    const out = await zoteroTools.executeZoteroLibrary(input, { baseUrl: settings.zoteroUrl, authorize: getOrAuthorizeZoteroWriteKey });
+    if (["update_item", "add_note", "create_collection"].includes(input.action)) invalidateZoteroProbeCache();
+    return out;
+  }
+});
+
 for (const tool of TOOLS) tool.inputSchema.additionalProperties = false;
 
 function buildToolsList() {
@@ -8582,6 +8636,17 @@ function buildToolsList() {
 
 let toolQueue = Promise.resolve();
 
+function applyRequestWorkspace(params) {
+  if (process.env.SANMU_HOST !== "codex" || resolveEnvPath(process.env.SANMU_WORKSPACE_ROOT)) return;
+  const state = params?._meta?.["codex/sandbox-state"] || params?._meta?.["codex/sandbox-state-meta"];
+  const cwd = state?.sandboxCwd;
+  if (typeof cwd !== "string" || !cwd.trim()) return;
+  let candidate;
+  try { candidate = cwd.startsWith("file:") ? fileURLToPath(cwd) : cwd; } catch { return; }
+  if (!isAbsolutePath(candidate)) return;
+  try { if (statSync(candidate).isDirectory()) WORKSPACE_ROOT = resolve(candidate); } catch {}
+}
+
 async function handleRequest(message) {
   if (!message || typeof message !== "object" || Array.isArray(message) || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
     return { jsonrpc: "2.0", id: message?.id ?? null, error: { code: -32600, message: "Invalid JSON-RPC request" } };
@@ -8595,11 +8660,12 @@ async function handleRequest(message) {
         protocolVersion: ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"].includes(params?.protocolVersion) ? params.protocolVersion : "2025-11-25",
         capabilities: {
           tools: { listChanged: true },
-          resources: { listChanged: true }
+          resources: { listChanged: true },
+          experimental: { "codex/sandbox-state": {} }
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.9.4"
+          version: "1.10.0"
         }
       }
     };
@@ -8747,7 +8813,10 @@ async function handleRequest(message) {
       validateInput(tool.inputSchema, input);
       validateToolInput(toolName, input);
       // One writer per MCP process: UI/model calls must not overwrite state read before an await.
-      const operation = toolQueue.then(() => tool.execute(input));
+      const operation = toolQueue.then(() => {
+        applyRequestWorkspace(params);
+        return tool.execute(input);
+      });
       toolQueue = operation.catch(() => {});
       const out = await operation;
       return redactSecrets({
@@ -8780,24 +8849,31 @@ async function handleRequest(message) {
 }
 
 async function startStdio() {
-  for await (const line of createInterface({ input: process.stdin })) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let message;
-    try {
-      message = JSON.parse(trimmed);
-    } catch {
-      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }) + "\n");
-      continue;
+  try {
+    for await (const line of createInterface({ input: process.stdin })) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let message;
+      try {
+        message = JSON.parse(trimmed);
+      } catch {
+        process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }) + "\n");
+        continue;
+      }
+      if (message && typeof message === "object" && !Array.isArray(message) && message.id === undefined) continue;
+      let response;
+      try {
+        response = await handleRequest(message);
+      } catch (err) {
+        response = { jsonrpc: "2.0", id: message?.id ?? null, error: { code: -32603, message: redactSecrets(err.message || "Internal error") } };
+      }
+      process.stdout.write(JSON.stringify(response) + "\n");
     }
-    if (message && typeof message === "object" && !Array.isArray(message) && message.id === undefined) continue;
-    let response;
-    try {
-      response = await handleRequest(message);
-    } catch (err) {
-      response = { jsonrpc: "2.0", id: message?.id ?? null, error: { code: -32603, message: redactSecrets(err.message || "Internal error") } };
+  } finally {
+    if (browserPanel) {
+      await browserPanel.close();
+      browserPanel = null;
     }
-    process.stdout.write(JSON.stringify(response) + "\n");
   }
 }
 

@@ -1,0 +1,161 @@
+{
+  "name": "sanmu-skills",
+  "version": "1.10.0",
+  "description": "Sanmu research skills, portable CLI, MCP server, and browser workbench for Claude Code, Codex, Pi, and DeepSeek Harness.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Sanmu (Wu Sen)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luffysolution-svg/sanmu-skills.git"
+  },
+  "homepage": "https://github.com/luffysolution-svg/sanmu-skills",
+  "keywords": [
+    "pi-package",
+    "agent-skills",
+    "mcp",
+    "research",
+    "dsh-bundle",
+    "literature"
+  ],
+  "engines": {
+    "node": ">=22.20.0",
+    "dsh": ">=0.2.2-alpha.2 <0.3.0"
+  },
+  "bin": {
+    "sanmu": "./scripts/sanmu.mjs"
+  },
+  "main": "./distribution/zcode/sanmu-paper-search/scripts/dsh-plugin.mjs",
+  "exports": {
+    ".": "./distribution/zcode/sanmu-paper-search/scripts/dsh-plugin.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    ".agents/plugins/marketplace.json",
+    ".claude-plugin/marketplace.json",
+    ".claude-plugin/plugin.json",
+    ".codex-plugin/mcp-env.json",
+    ".codex-plugin/plugin.json",
+    ".mcp.json",
+    "LICENSE",
+    "README.en.md",
+    "README.md",
+    "cordis.patch.yml",
+    "distribution/zcode/sanmu-paper-search/assets/panel.html",
+    "distribution/zcode/sanmu-paper-search/scripts/dsh-plugin.mjs",
+    "distribution/zcode/sanmu-paper-search/scripts/mcp-server.mjs",
+    "extensions/pi.ts",
+    "mcp.json",
+    "package.json",
+    "plugin.json",
+    "scripts/panel-server.mjs",
+    "scripts/runtime.mjs",
+    "scripts/sanmu.mjs",
+    "scripts/zotero-tools.mjs",
+    "skills/sanmu-doc2md/LICENSE",
+    "skills/sanmu-doc2md/README.en.md",
+    "skills/sanmu-doc2md/README.md",
+    "skills/sanmu-doc2md/SKILL.md",
+    "skills/sanmu-doc2md/references/book-workflow.md",
+    "skills/sanmu-doc2md/references/math-normalization.md",
+    "skills/sanmu-doc2md/references/mineru-api.md",
+    "skills/sanmu-doc2md/references/repairs.md",
+    "skills/sanmu-doc2md/references/research-documents.md",
+    "skills/sanmu-doc2md/references/setup.md",
+    "skills/sanmu-doc2md/references/zotero-sync.md",
+    "skills/sanmu-doc2md/requirements.txt",
+    "skills/sanmu-doc2md/scripts/audit_figures.py",
+    "skills/sanmu-doc2md/scripts/book_features.py",
+    "skills/sanmu-doc2md/scripts/build_markdown.py",
+    "skills/sanmu-doc2md/scripts/build_research_document.py",
+    "skills/sanmu-doc2md/scripts/build_support.py",
+    "skills/sanmu-doc2md/scripts/console_output.py",
+    "skills/sanmu-doc2md/scripts/doctor.py",
+    "skills/sanmu-doc2md/scripts/extract_formulas.py",
+    "skills/sanmu-doc2md/scripts/figure_identifiers.py",
+    "skills/sanmu-doc2md/scripts/markdown_metadata.py",
+    "skills/sanmu-doc2md/scripts/markdown_resources.py",
+    "skills/sanmu-doc2md/scripts/mineru_ocr.py",
+    "skills/sanmu-doc2md/scripts/normalize_math.py",
+    "skills/sanmu-doc2md/scripts/package.json",
+    "skills/sanmu-doc2md/scripts/portable_paths.py",
+    "skills/sanmu-doc2md/scripts/preview_server.py",
+    "skills/sanmu-doc2md/scripts/research_metadata.py",
+    "skills/sanmu-doc2md/scripts/validate_math.cjs",
+    "skills/sanmu-doc2md/scripts/validate_output.py",
+    "skills/sanmu-doc2md/scripts/zotero_export.py",
+    "skills/sanmu-doc2md/scripts/zotero_sync.py",
+    "skills/sanmu-paper-reader/LICENSE",
+    "skills/sanmu-paper-reader/README.en.md",
+    "skills/sanmu-paper-reader/README.md",
+    "skills/sanmu-paper-reader/SKILL.md",
+    "skills/sanmu-paper-reader/references/domains/catalysis-electrochemistry.md",
+    "skills/sanmu-paper-reader/references/domains/dft-computation.md",
+    "skills/sanmu-paper-reader/references/domains/performance-comparison.md",
+    "skills/sanmu-paper-reader/references/domains/spectroscopy-mechanism.md",
+    "skills/sanmu-paper-reader/references/domains/synthesis-characterization.md",
+    "skills/sanmu-paper-reader/references/evidence-contract.md",
+    "skills/sanmu-paper-reader/references/scenarios/cross-discipline.md",
+    "skills/sanmu-paper-reader/references/scenarios/cross-paper.md",
+    "skills/sanmu-paper-reader/references/scenarios/cross-topic.md",
+    "skills/sanmu-paper-reader/references/scenarios/knowledge-qa.md",
+    "skills/sanmu-paper-reader/references/scenarios/single-paper.md",
+    "skills/sanmu-paper-reader/references/topic-reading.md",
+    "skills/sanmu-paper-reader/requirements.txt",
+    "skills/sanmu-paper-reader/scripts/benchmark_collector.py",
+    "skills/sanmu-paper-reader/scripts/crop_subfigures.py",
+    "skills/sanmu-paper-reader/scripts/evidence_tools.py",
+    "skills/sanmu-paper-reader/scripts/extract_si_figures.py",
+    "skills/sanmu-paper-reader/scripts/si_probe.py",
+    "skills/sanmu-paper-reader/scripts/topic_tools.py",
+    "skills/sanmu-paper-search/LICENSE",
+    "skills/sanmu-paper-search/README.en.md",
+    "skills/sanmu-paper-search/README.md",
+    "skills/sanmu-paper-search/SKILL.md",
+    "skills/sanmu-paper-search/references/cli.md",
+    "skills/sanmu-paper-search/references/epmc.md",
+    "skills/sanmu-paper-search/references/exa.md",
+    "skills/sanmu-paper-search/references/handoff.md",
+    "skills/sanmu-paper-search/references/protocol.md",
+    "skills/sanmu-paper-search/references/retrieval.md",
+    "skills/sanmu-paper-search/references/serper.md",
+    "skills/sanmu-paper-search/references/setup.md",
+    "skills/sanmu-paper-search/scripts/_ai4scholar.py",
+    "skills/sanmu-paper-search/scripts/_core.py",
+    "skills/sanmu-paper-search/scripts/_easyscholar.py",
+    "skills/sanmu-paper-search/scripts/_epmc.py",
+    "skills/sanmu-paper-search/scripts/_exa.py",
+    "skills/sanmu-paper-search/scripts/_providers.py",
+    "skills/sanmu-paper-search/scripts/_rate_limit.py",
+    "skills/sanmu-paper-search/scripts/_sciverse.py",
+    "skills/sanmu-paper-search/scripts/_serper.py",
+    "skills/sanmu-paper-search/scripts/fetch_pdf.py",
+    "skills/sanmu-paper-search/scripts/paper_search.py"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/pi.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-mcp-client": ">=0.2.2-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.2-alpha.2 <0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-mcp-client": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill-filesystem": {
+      "optional": true
+    }
+  }
+}

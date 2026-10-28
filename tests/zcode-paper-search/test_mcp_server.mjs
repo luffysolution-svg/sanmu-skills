@@ -449,7 +449,7 @@ test("MCP offline regressions", async (t) => {
       config = module.createMcpConfig(hostEnv);
     }
     const childEnv = Object.fromEntries(Object.keys(process.env).filter(k => /API_KEY|USER_CONFIG|ZCODE_|CLAUDE_|DSH_/.test(k)).map(k => [k, '']));
-    const client = startMcpServer(config.args[0], { env: { ...childEnv, ...config.env }, cwd: config.cwd || workspace });
+    const client = startMcpServer(config.args[0], { env: { ...childEnv, ...config.env, SANMU_PANEL_WORKER: "1" }, cwd: config.cwd || workspace });
     try {
       await client.request('initialize');
       const panel = await client.call('open_panel');

@@ -1,9 +1,13 @@
 {
   "name": "sanmu-paper-search",
-  "version": "1.9.4",
+  "version": "1.10.0",
   "description": "在对话侧栏与 Agent 中使用三木文献检索与文档解析：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse (全文语义RAG/原文切片与配图/Paper Schema)、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI、easyScholar 期刊分区/IF 标注、OA PDF / SI 下载、本机 Zotero 双向联动，以及 sanmu-doc2md 学术文档转 Obsidian Markdown 知识库（论文+SI双链、课件与教材解析）。",
   "type": "module",
-  "main": "./scripts/mcp-server.mjs",
+  "main": "./scripts/dsh-plugin.mjs",
+  "exports": {
+    ".": "./scripts/dsh-plugin.mjs",
+    "./package.json": "./package.json"
+  },
   "license": "MIT",
   "author": "Sanmu (Wu Sen)",
   "repository": {
@@ -11,7 +15,16 @@
     "url": "https://github.com/luffysolution-svg/sanmu-skills"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.20.0",
+    "dsh": ">=0.2.2-alpha.2 <0.3.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-mcp-client": ">=0.2.2-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.2-alpha.2 <0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-mcp-client": { "optional": true },
+    "@deepseek-ai/dsh-skill-filesystem": { "optional": true }
   },
   "dsh": {
     "bundle": {

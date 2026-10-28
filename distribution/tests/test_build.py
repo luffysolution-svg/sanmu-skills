@@ -1,9 +1,11 @@
 import importlib.util
 from fnmatch import fnmatchcase
+import hashlib
 import json
 from pathlib import Path
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import unittest
 import zipfile
@@ -24,6 +26,7 @@ class DistributionTests(unittest.TestCase):
             archives = build.build(output)
             self.assertTrue(any("workbuddy" in path.parts for path in archives))
             self.assertTrue(any("zcode" in path.parts for path in archives))
+            self.assertTrue(any(path.suffix == ".tgz" for path in archives))
             paths = ["dist/" + path.relative_to(output).as_posix() for path in archives]
             paths.append("dist/SHA256SUMS")
             for path in paths:
@@ -90,44 +93,121 @@ class DistributionTests(unittest.TestCase):
                             build.validate(root)
                 release["skills"][0][field] = original
 
+    def archive_entries(self, path):
+        if path.suffix == ".tgz":
+            with tarfile.open(path, "r:gz") as archive:
+                return {item.name.removeprefix("package/"): archive.extractfile(item).read()
+                        for item in archive.getmembers()}
+        with zipfile.ZipFile(path) as archive:
+            self.assertIsNone(archive.testzip())
+            return {name: archive.read(name) for name in archive.namelist()}
+
+    def assert_clean_entries(self, entries):
+        for name in entries:
+            with self.subTest(name=name):
+                parts = Path(name).parts
+                self.assertFalse(build.BLOCKED_PARTS.intersection(part.lower() for part in parts))
+                self.assertFalse(any(part == ".env" or part.startswith(".env.") for part in parts))
+                self.assertNotIn(Path(name).suffix.lower(), {".pyc", ".pyo"})
+                self.assertNotIn(Path(name).name, {"_selftest.py", "ROADMAP.md"})
+                self.assertFalse(Path(name).name.startswith("test_"))
+
     def test_archives_are_complete_deterministic_and_exclude_untracked(self):
+        release, files = build.validate()
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             first = build.build(root / "first")
             second = build.build(root / "second")
-            self.assertEqual(len(first), 8)
-            self.assertNotIn(b"\r", (root / "first" / "SHA256SUMS").read_bytes())
+            self.assertEqual(len(first), 9)
+            self.assertEqual(sum(path.suffix == ".zip" for path in first), 8)
+            self.assertEqual(sum(path.suffix == ".tgz" for path in first), 1)
+            checksums = (root / "first" / "SHA256SUMS").read_bytes()
+            self.assertNotIn(b"\r", checksums)
+            self.assertEqual(len(checksums.splitlines()), 9)
             for left, right in zip(first, second):
                 self.assertEqual(left.read_bytes(), right.read_bytes())
-                is_skillhub = "skillhub" in left.parts or "workbuddy" in left.parts
-                is_zcode = "zcode" in left.parts
-                with zipfile.ZipFile(left) as archive:
-                    self.assertIsNone(archive.testzip())
-                    names = archive.namelist()
-                    self.assertTrue(any(name.endswith("/SKILL.md") or name == "SKILL.md" for name in names))
-                    self.assertFalse(any(build.BLOCKED_PARTS.intersection(Path(name).parts) for name in names))
-                    if is_skillhub:
-                        self.assertFalse(any(Path(name).name == "LICENSE" for name in names))
-                    if is_zcode:
-                        self.assertIn(".zcode-plugin/plugin.json", names)
-                        self.assertIn(".claude-plugin/plugin.json", names)
-                        self.assertIn("package.json", names)
-                        self.assertIn("cordis.patch.yml", names)
-                        self.assertIn("assets/panel.html", names)
-                        self.assertIn("scripts/mcp-server.mjs", names)
-                        self.assertIn("scripts/paper_search.py", names)
-                        self.assertIn("skills/sanmu-paper-search/SKILL.md", names)
-            with zipfile.ZipFile(first[0]) as archive:
-                self.assertIn("plugin.json", archive.namelist())
-                self.assertIn("skills/sanmu-paper-search/LICENSE", archive.namelist())
-                self.assertIn("skills/sanmu-paper-search/SKILL.md", archive.namelist())
-                self.assertIn("skills/sanmu-paper-reader/requirements.txt", archive.namelist())
+                self.assertIn(release["version"], left.name)
+                digest = hashlib.sha256(left.read_bytes()).hexdigest()
+                self.assertIn(f"{digest}  {left.relative_to(root / 'first').as_posix()}\n".encode(), checksums)
+                entries = self.archive_entries(left)
+                self.assertTrue(any(name.endswith("/SKILL.md") or name == "SKILL.md" for name in entries))
+                self.assert_clean_entries(entries)
+                if left.parent.name in {"skillhub", "workbuddy"}:
+                    self.assertFalse(any(Path(name).name == "LICENSE" for name in entries))
+                elif left.parent.name == "zcode":
+                    self.assertTrue(set(build.ZCODE_SHELL_FILES).issubset(entries))
+                    self.assertTrue(set(build.ROOT_RUNTIME_FILES).issubset(entries))
+                    self.assertIn("scripts/paper_search.py", entries)
+                    self.assertEqual(set(entries), set(build.zcode_sources(files)))
+                else:
+                    self.assertEqual(set(entries), set(files))
+                if left.parent.name not in {"skillhub", "workbuddy"}:
+                    for path in files:
+                        if path.startswith("skills/"):
+                            self.assertEqual(entries[path], (build.ROOT / path).read_bytes())
             with self.assertRaises(FileExistsError):
                 build.build(root / "first")
 
+    def test_npm_tarball_has_standard_prefix_permissions_and_file_allowlist(self):
+        _, files = build.validate()
+        with tempfile.TemporaryDirectory() as temporary:
+            archives = build.build(Path(temporary) / "out")
+            path = next(path for path in archives if path.suffix == ".tgz")
+            with tarfile.open(path, "r:gz") as archive:
+                members = archive.getmembers()
+                self.assertEqual(len(members), len(files))
+                self.assertEqual(len({item.name for item in members}), len(members))
+                for member in members:
+                    self.assertTrue(member.name.startswith("package/"))
+                    self.assertTrue(member.isfile())
+                    self.assertNotIn("..", Path(member.name).parts)
+                    expected_mode = 0o755 if member.name == "package/scripts/sanmu.mjs" else 0o644
+                    self.assertEqual(member.mode, expected_mode)
+                    self.assertEqual(member.mtime, build.ARCHIVE_MTIME)
+                    self.assertEqual((member.uid, member.gid, member.uname, member.gname), (0, 0, "", ""))
+                self.assertEqual({item.name[8:] for item in members}, set(build.npm_files(build.ROOT, files)))
+            entries = self.archive_entries(path)
+            package = json.loads(entries["package.json"])
+            self.assertEqual(package["bin"]["sanmu"], "./scripts/sanmu.mjs")
+            self.assertEqual(package["pi"]["skills"], ["./skills"])
+            self.assertEqual(package["pi"]["extensions"], ["./extensions/pi.ts"])
+            self.assertIn(package["dsh"]["bundle"]["patch"].removeprefix("./"), entries)
+
+    def test_three_complete_skills_references_and_host_entrypoints_survive_archiving(self):
+        release, _ = build.validate()
+        expected_skills = {f"skills/{skill['name']}/SKILL.md" for skill in release["skills"]}
+        self.assertEqual(len(expected_skills), 3)
+        with tempfile.TemporaryDirectory() as temporary:
+            archives = build.build(Path(temporary) / "out")
+            for path in archives:
+                if path.parent.name in {"skillhub", "workbuddy"}:
+                    continue
+                entries = self.archive_entries(path)
+                self.assertEqual({name for name in entries if name.endswith("/SKILL.md")}, expected_skills)
+                extracted = Path(temporary) / path.stem
+                for name, data in entries.items():
+                    destination = extracted / name
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(data)
+                build.validate_runtime_references(extracted, entries, [skill["name"] for skill in release["skills"]])
+                for name in ("sanmu-doc2md", "sanmu-paper-reader"):
+                    self.assertIn(f"skills/{name}/requirements.txt", entries)
+                if path.parent.name == "zcode":
+                    for manifest in (".zcode-plugin/plugin.json", ".claude-plugin/plugin.json"):
+                        metadata = json.loads(entries[manifest])
+                        self.assertEqual(metadata["skills"], "./skills")
+                        self.assertEqual(metadata["version"], release["version"])
+                        build.validate_mcp(metadata, entries, manifest, "CLAUDE_PLUGIN_ROOT", "scripts/mcp-server.mjs")
+                    self.assertIn("assets/panel.html", entries)
+                else:
+                    build.validate_hosts(extracted, release, entries)
+                    self.assertTrue(set(build.PLUGIN_FILES).issubset(entries))
+                    for name in ("plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "package.json"):
+                        self.assertEqual(json.loads(entries[name])["version"], release["version"])
+
     def fixture(self, root):
         _, files = build.validate()
-        extra = ["distribution/manifest.json", ".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"]
+        extra = ["distribution/manifest.json"]
         extra += [f"{build.ZCODE_SHELL_DIR}/{name}" for name in build.ZCODE_SHELL_FILES]
         for name in files + extra:
             destination = root / name
@@ -160,29 +240,93 @@ class DistributionTests(unittest.TestCase):
                 build.validate(root)
             subprocess.run(["git", "-C", str(root), "add", "--", f"{build.ZCODE_SHELL_DIR}/assets/panel.html"], check=True)
             panel.unlink()
-            with self.assertRaisesRegex(ValueError, "Missing or invalid ZCode"):
+            with self.assertRaisesRegex(ValueError, "Missing or invalid ZCode|not a regular file"):
                 build.validate(root)
 
     def test_zcode_archive_uses_identical_shared_engine_files(self):
+        _, files = build.validate()
         with tempfile.TemporaryDirectory() as temporary:
             archives = build.build(Path(temporary) / "out")
             zcode = next(path for path in archives if path.parent.name == "zcode")
             with zipfile.ZipFile(zcode) as archive:
-                self.assertEqual(archive.read('scripts/dsh-plugin.mjs'),
-                                 (build.ROOT / build.ZCODE_SHELL_DIR / 'scripts/dsh-plugin.mjs').read_bytes())
-                for source in (build.ROOT / "skills/sanmu-paper-search/scripts").glob("*.py"):
-                    expected = source.read_bytes()
-                    self.assertEqual(archive.read(f"scripts/{source.name}"), expected)
-                    self.assertEqual(archive.read(f"skills/sanmu-paper-search/scripts/{source.name}"), expected)
-                for source in (build.ROOT / "skills/sanmu-doc2md/scripts").glob("*.py"):
-                    expected = source.read_bytes()
-                    self.assertEqual(archive.read(f"skills/sanmu-doc2md/scripts/{source.name}"), expected)
-                self.assertEqual(archive.read("skills/sanmu-doc2md/SKILL.md"),
-                                 (build.ROOT / "skills/sanmu-doc2md/SKILL.md").read_bytes())
-                self.assertEqual(archive.read("skills/sanmu-doc2md/requirements.txt"),
-                                 (build.ROOT / "skills/sanmu-doc2md/requirements.txt").read_bytes())
+                for target, source in build.zcode_sources(files).items():
+                    self.assertEqual(archive.read(target), (build.ROOT / source).read_bytes())
+                for path in files:
+                    if path.startswith("skills/sanmu-paper-search/scripts/"):
+                        suffix = path.removeprefix("skills/sanmu-paper-search/scripts/")
+                        self.assertEqual(archive.read("scripts/" + suffix), archive.read(path))
                 metadata = json.loads(archive.read(".zcode-plugin/plugin.json"))
                 self.assertEqual(metadata["version"], build.read_json(build.ROOT / "distribution/manifest.json")["version"])
+
+    def test_all_host_and_marketplace_versions_must_match_release(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fixture(root)
+            paths = ["plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "package.json",
+                     f"{build.ZCODE_SHELL_DIR}/.zcode-plugin/plugin.json",
+                     f"{build.ZCODE_SHELL_DIR}/.claude-plugin/plugin.json",
+                     f"{build.ZCODE_SHELL_DIR}/package.json"]
+            for name in paths + [".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"]:
+                with self.subTest(path=name):
+                    path = root / name
+                    original = path.read_text(encoding="utf-8")
+                    data = json.loads(original)
+                    if "marketplace" in name:
+                        data["plugins"][0]["version"] = "0.0.0"
+                    else:
+                        data["version"] = "0.0.0"
+                    path.write_text(json.dumps(data), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "version differs"):
+                        build.validate(root)
+                    path.write_text(original, encoding="utf-8")
+            path = root / "distribution/manifest.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["workbuddyVersion"] = "0.0.0"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "WorkBuddy version differs"):
+                build.validate(root)
+
+    def test_root_host_schemas_and_paths_are_validated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fixture(root)
+            mutations = [
+                ("plugin.json", lambda data: data.update({"$schema": "https://example.org/invalid"})),
+                ("mcp.json", lambda data: data.update({"$schema": "https://example.org/invalid"})),
+                ("mcp.json", lambda data: next(iter(data["mcpServers"].values())).update({"args": ["missing.mjs"]})),
+                (".mcp.json", lambda data: next(iter(data["mcpServers"].values())).update({"command": "python"})),
+                (".claude-plugin/plugin.json", lambda data: data.update({"skills": "./skills/sanmu-paper-search"})),
+                (".codex-plugin/plugin.json", lambda data: data.update({"mcpServers": "./.mcp.json"})),
+                ("package.json", lambda data: data.update({"bin": {"sanmu": "./scripts/missing.mjs"}})),
+                ("package.json", lambda data: data.update({"main": "../outside.mjs"})),
+                ("package.json", lambda data: data["pi"].update({"skills": ["./skills/sanmu-paper-search"]})),
+                ("package.json", lambda data: data["pi"].update({"extensions": ["./extensions/missing.ts"]})),
+                ("package.json", lambda data: data["dsh"]["bundle"].update({"patch": "./missing.yml"})),
+                ("package.json", lambda data: data.update({"files": ["scripts", "skills"]})),
+                (f"{build.ZCODE_SHELL_DIR}/package.json", lambda data: data.update({"main": "./missing.mjs"})),
+            ]
+            for name, mutate in mutations:
+                with self.subTest(path=name, mutation=mutate):
+                    path = root / name
+                    original = path.read_text(encoding="utf-8")
+                    data = json.loads(original)
+                    mutate(data)
+                    path.write_text(json.dumps(data), encoding="utf-8")
+                    with self.assertRaises(ValueError):
+                        build.validate(root)
+                    path.write_text(original, encoding="utf-8")
+            patch = root / "cordis.patch.yml"
+            patch.write_text('- insert:\n    - name: "./missing.mjs"\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Missing packaged path"):
+                build.validate(root)
+
+    def test_skillhub_limits_are_independent_of_project_budget(self):
+        build.validate_skillhub_budget({f"{index}.txt": b"" for index in range(200)}, "demo")
+        build.validate_skillhub_budget({"data.txt": b"x" * (10 * 1024 * 1024)}, "demo")
+        for entries in ({f"{index}.txt": b"" for index in range(201)},
+                        {"data.txt": b"x" * (10 * 1024 * 1024 + 1)}):
+            with self.assertRaisesRegex(ValueError, "SkillHub package limit exceeded"):
+                build.validate_skillhub_budget(entries, "demo")
 
     def test_development_trees_are_excluded_even_if_tracked(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -197,10 +341,9 @@ class DistributionTests(unittest.TestCase):
             _, selected = build.validate(root)
             self.assertTrue(set(paths).isdisjoint(selected))
             for archive in build.build(root / "out", root):
-                with zipfile.ZipFile(archive) as package:
-                    for path in package.namelist():
-                        self.assertFalse(build.DEVELOPMENT_PARTS.intersection(Path(path).parts))
-                        self.assertNotIn("ROADMAP.md", Path(path).parts)
+                for path in self.archive_entries(archive):
+                    self.assertFalse(build.DEVELOPMENT_PARTS.intersection(Path(path).parts))
+                    self.assertNotIn("ROADMAP.md", Path(path).parts)
 
     def test_nested_test_cache_and_selftest_inputs_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -273,6 +416,10 @@ class DistributionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Runtime reference"):
                 build.validate(root)
             subprocess.run(["git", "-C", str(root), "add", str(untracked)], check=True)
+            package_path = root / "package.json"
+            package = json.loads(package_path.read_text(encoding="utf-8"))
+            package["files"].append("skills/sanmu-doc2md/references/local.md")
+            package_path.write_text(json.dumps(package), encoding="utf-8")
             manifest = root / "distribution/manifest.json"
             release = json.loads(manifest.read_text(encoding="utf-8"))
             for budget in [{"maxFiles": 1, "maxBytes": 5242880}, {"maxFiles": 200, "maxBytes": 1}]:
