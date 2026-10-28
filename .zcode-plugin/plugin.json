@@ -13,7 +13,7 @@
   "license": "MIT",
   "skills": "./skills",
   "mcpServers": {
-    "sanmu-paper-search": {
+    "sanmu": {
       "type": "stdio",
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/sanmu.mjs", "mcp"],
@@ -122,7 +122,7 @@
           "en-US": "Sanmu Paper Search"
         },
         "icon": "library",
-        "server": "sanmu-paper-search",
+        "server": "sanmu",
         "resourceUri": "ui://sanmu-paper-search/panel.html",
         "availability": "session"
       }
