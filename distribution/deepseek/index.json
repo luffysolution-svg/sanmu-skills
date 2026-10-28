@@ -1,0 +1,43 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Sanmu Research Plugins",
+    "zh": "三木科研插件市场"
+  },
+  "description": {
+    "en": "Research skills, literature tools and document conversion.",
+    "zh": "文献检索、文档转换与证据精读，完整技能与 MCP 同包安装。"
+  },
+  "plugins": [
+    {
+      "name": "sanmu-skills",
+      "title": {
+        "en": "Sanmu Research",
+        "zh": "三木文献检索与科研工具"
+      },
+      "description": {
+        "en": "Sanmu research skills, portable CLI, MCP server, and browser workbench for Claude Code, Codex, Pi, and DeepSeek Harness.",
+        "zh": "三技能、统一 CLI、24 个 MCP 工具与浏览器工作台；含检索、OA/SI、关系图谱、Zotero 与 Markdown 文档解析。"
+      },
+      "author": "Sanmu (Wu Sen)",
+      "homepage": "https://github.com/luffysolution-svg/sanmu-skills",
+      "repository": {
+        "url": "https://github.com/luffysolution-svg/sanmu-skills"
+      },
+      "versions": [
+        {
+          "version": "1.10.0",
+          "publishTimestamp": 1793171864,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/luffysolution-svg/sanmu-skills.git",
+            "commit": "27fcd00e5bb3b15356318c074b512a26a1ea7254"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-alpha.2 <0.3.0"
+          }
+        }
+      ]
+    }
+  ]
+}
