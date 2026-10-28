@@ -885,4 +885,262 @@ test("MCP offline regressions", async (t) => {
     assert.equal(delRes.isError, undefined);
     assert.equal(existsSync(slideJob.stats.primaryMarkdownPath), true);
   });
+
+  await t.test("v1.9.3 regressions: PDF prefix isolation, SI empty-prefix rejection, snippet DOI isolation, doc2md re-parse/validate, cross-session rank lock & Zotero 412 child conflict", async () => {
+    reset();
+    process.env.SANMU_TEST_NO_BROWSER = "1";
+
+    // 1b. Title prefix collision (first 48+ normalized chars identical, different DOI & full title) must NOT associate A's PDF with B or upload A's PDF to Zotero
+    const exportDir = join(workspace, "inherited-export");
+    mkdirSync(exportDir, { recursive: true });
+    const sharedPrefix = "Photocatalytic Hydrogen Evolution over Single Atom Nickel on Carbon Nitride";
+    const paperA = {
+      paper_key: "doi:10.1234/paper-a",
+      title: `${sharedPrefix}: Part 1 Mechanism`,
+      year: 2025,
+      identifiers: { doi: ["10.1234/paper-a"] },
+      authors: [{ name: "Alice Lee" }]
+    };
+    const paperB = {
+      paper_key: "doi:10.1234/paper-b",
+      title: `${sharedPrefix}: Part 2 Synthesis`,
+      year: 2025,
+      identifiers: { doi: ["10.1234/paper-b"] },
+      authors: [{ name: "Bob Chen" }]
+    };
+    const pdfAPath = join(exportDir, `2025-${sharedPrefix} Part 1.pdf`);
+    writePdf(pdfAPath, `${paperA.title} DOI: 10.1234/paper-a`);
+    json(join(data, "state.json"), {
+      evidenceMap: { "doi:10.1234/paper-a": { stage: "file_obtained", pdfPath: pdfAPath } },
+      basket: []
+    });
+    makeRun("prefix-collision-run", [paperA, paperB]);
+    const panel1 = (await call("open_panel", { runId: "prefix-collision-run" })).structuredContent;
+    const enrichedA = panel1.activeRun.papers.find((p) => p.paper_key === "doi:10.1234/paper-a");
+    const enrichedB = panel1.activeRun.papers.find((p) => p.paper_key === "doi:10.1234/paper-b");
+    assert.equal(enrichedA.local_pdf_path, pdfAPath);
+    assert.equal(enrichedA.handoff_stage, "file_obtained");
+    assert.equal(enrichedB.local_pdf_path, null);
+    assert.equal(enrichedB.handoff_stage, "discovered");
+
+    // Also test unrecorded PDF in exportDir with Paper A's first-page text: Paper B still must NOT auto-attach it on save_to_zotero
+    json(join(data, "state.json"), { evidenceMap: {}, basket: [] });
+    let uploadedAttachmentCount = 0;
+    let childNoteStatus = 204;
+    let parentDeletedCount = 0;
+    const zParent = () => ({
+      key: "ZPRNT234",
+      version: 21,
+      data: {
+        itemType: "journalArticle",
+        title: paperB.title,
+        DOI: "10.1234/paper-b",
+        tags: [{ tag: "sanmu-paper-search" }]
+      }
+    });
+    const zNote = () => ({
+      key: "ZNOTE567",
+      version: 22,
+      data: {
+        itemType: "note",
+        parentItem: "ZPRNT234",
+        note: "<p>Test note</p>",
+        tags: []
+      }
+    });
+    fetchImpl = async (raw, options = {}) => {
+      const u = new URL(raw);
+      const resp = (obj, status = 200) =>
+        new Response(JSON.stringify(obj), {
+          status,
+          headers: { "Zotero-Server-ID": "fixture-server", "Zotero-API-Version": "3" }
+        });
+      if (u.pathname === "/api/") return resp({});
+      if (u.pathname.endsWith("/collections")) return resp([]);
+      if (u.pathname === "/api/local/authorize") return resp({ key: "FAKE_ZOTERO_WRITE_KEY", remember: true });
+      if (u.pathname.endsWith("/ZPRNT234/children")) return resp([zNote()]);
+      if (options.method === "DELETE" && u.pathname.endsWith("/ZNOTE567")) {
+        return new Response(null, { status: childNoteStatus });
+      }
+      if (options.method === "DELETE" && u.pathname.endsWith("/ZPRNT234")) {
+        parentDeletedCount++;
+        return new Response(null, { status: 204 });
+      }
+      if (u.pathname.endsWith("/ZPRNT234")) return resp(zParent());
+      if (u.pathname.endsWith("/ZNOTE567")) return resp(zNote());
+      if (options.method === "POST" && u.pathname.endsWith("/items")) {
+        const bodyArr = JSON.parse(options.body);
+        if (bodyArr[0].itemType === "attachment") {
+          uploadedAttachmentCount++;
+          return resp({ successful: { "0": { key: "ZATT2345", version: 23, data: bodyArr[0] } } });
+        }
+        if (bodyArr[0].itemType === "note") {
+          return resp({ successful: { "0": zNote() } });
+        }
+        return resp({ successful: { "0": zParent() } });
+      }
+      return resp([]);
+    };
+
+    const saveB = await call("manage_basket", {
+      action: "save_to_zotero",
+      paper: { ...paperB, user_note: "Test note" }
+    });
+    assert.equal(saveB.isError, undefined);
+    assert.equal(uploadedAttachmentCount, 0);
+    assert.equal(saveB.structuredContent.zoteroSaveResult.pdfAttached, false);
+
+    // 7. Zotero child note DELETE conflict (412 Precondition Failed) must abort before deleting parent and keep undo record
+    childNoteStatus = 412;
+    const undoConflict = await call("manage_basket", { action: "undo_zotero_save", zoteroItemKey: "ZPRNT234" });
+    expectError(undoConflict, /412/);
+    assert.equal(parentDeletedCount, 0);
+    assert.ok(JSON.parse(readFileSync(join(data, "state.json"), "utf8")).zoteroImports.ZPRNT234);
+
+    // When child note DELETE succeeds (204), parent is deleted and undo record is cleaned up
+    childNoteStatus = 204;
+    const undoOk = await call("manage_basket", { action: "undo_zotero_save", zoteroItemKey: "ZPRNT234" });
+    assert.equal(undoOk.isError, undefined);
+    assert.equal(parentDeletedCount, 1);
+    assert.equal(JSON.parse(readFileSync(join(data, "state.json"), "utf8")).zoteroImports.ZPRNT234, undefined);
+
+    // 1c. Automatic SI detection rejects empty stripped prefix ("Supplement.pdf") and picks exact "Study-A-SI.pdf"
+    const siTestDir = join(workspace, "si-match-test");
+    mkdirSync(siTestDir, { recursive: true });
+    const studyA = join(siTestDir, "Study-A.pdf");
+    const studyASi = join(siTestDir, "Study-A-SI.pdf");
+    const genericSuppl = join(siTestDir, "Supplement.pdf");
+    writePdf(studyA, "Main Study A. See Figure S1.");
+    writePdf(studyASi, "Correct Supporting Information for Study A. Figure S1 data.");
+    writePdf(genericSuppl, "Unrelated generic Supplement file.");
+    process.env.SANMU_TEST_PICK_PATH = studyA;
+    const pickedSi = await call("pick_system_path", { mode: "file", filter: "pdf" });
+    delete process.env.SANMU_TEST_PICK_PATH;
+    assert.equal(pickedSi.structuredContent.siblingSiPdfPath, studyASi);
+
+    // 2 (JS side). Serper Google Scholar snippet DOI is kept as extracted_dois/candidate_dois clue, never candidate_paper.identifiers.doi
+    const gsSnippetDir = makeRun("gs-snippet-run", []);
+    json(join(gsSnippetDir, "results.json"), {
+      type: "scholar",
+      results: [
+        {
+          type: "scholar",
+          data: {
+            title: "Review of Protein Folding",
+            link: "https://example.org/review-protein",
+            snippet: "Discusses AlphaFold (10.1038/s41586-021-03819-2) in detail."
+          }
+        }
+      ]
+    });
+    const gsSc = (await call("open_panel", { runId: "gs-snippet-run" })).structuredContent;
+    const rawItem0 = gsSc.activeRun.results[0];
+    assert.deepEqual(rawItem0.extracted_dois, ["10.1038/s41586-021-03819-2"]);
+    assert.equal(rawItem0.candidate_paper.identifiers.doi, undefined);
+    assert.deepEqual(rawItem0.candidate_paper.candidate_dois, ["10.1038/s41586-021-03819-2"]);
+
+    // 4 & 5. Same-name doc2md re-parse (Alpha -> Beta), hand-edit build_failed propagation, and standalone validate with broken image & invalid KaTeX
+    const reparseDir = join(workspace, "reparse-docs");
+    const reparseOutRoot = join(workspace, "reparse-kb");
+    mkdirSync(reparseDir, { recursive: true });
+    const reparsePdf = join(reparseDir, "Reparse-Study.pdf");
+    writePdf(reparsePdf, "Alpha body text with valid formula $a + b = c$.");
+
+    const run1 = await call("run_doc2md", {
+      mode: "research",
+      ocrEngine: "local_fast",
+      pdfPath: reparsePdf,
+      saveDir: reparseOutRoot,
+      paperKey: "doi:10.1234/reparse-1"
+    });
+    assert.equal(run1.isError, undefined);
+    const job1 = run1.structuredContent.activeDoc2mdJob;
+    assert.equal(job1.status, "completed");
+    assert.match(readFileSync(job1.stats.primaryMarkdownPath, "utf8"), /Alpha body text/);
+
+    // Modify PDF from Alpha to Beta and re-parse to the same output directory -> reuses ownership state and updates to Beta
+    writePdf(reparsePdf, "Beta updated body text with valid formula $x + y = z$.");
+    const run2 = await call("run_doc2md", {
+      mode: "research",
+      ocrEngine: "local_fast",
+      pdfPath: reparsePdf,
+      saveDir: reparseOutRoot,
+      paperKey: "doi:10.1234/reparse-1"
+    });
+    assert.equal(run2.isError, undefined);
+    const job2 = run2.structuredContent.activeDoc2mdJob;
+    assert.equal(job2.status, "completed");
+    assert.equal(job2.outDir, job1.outDir);
+    assert.match(readFileSync(job2.stats.primaryMarkdownPath, "utf8"), /Beta updated body text/);
+
+    // Hand-edit the generated Markdown file, then attempt rebuild -> must fail with build_failed and NOT report completed
+    const mdBeforeFail = readFileSync(job2.stats.primaryMarkdownPath, "utf8");
+    writeFileSync(
+      job2.stats.primaryMarkdownPath,
+      mdBeforeFail + "\n\n![BrokenImage](images/nonexistent-broken.png)\n\n$$\\invalidKatexCommandXYZ{1}$$\n",
+      "utf8"
+    );
+    const rebuildFail = await call("manage_doc2md", { action: "rebuild", jobId: job2.jobId });
+    expectError(rebuildFail, /人工修改|build_failed/);
+
+    // Also if a new paperKey attempts run_doc2md into the hand-edited folder with explicit outputFolderName, it must fail and NOT bind evidenceMap
+    const runFailBind = await call("run_doc2md", {
+      mode: "research",
+      ocrEngine: "local_fast",
+      pdfPath: reparsePdf,
+      saveDir: reparseOutRoot,
+      outputFolderName: "Reparse-Study",
+      paperKey: "doi:10.1234/should-not-bind"
+    });
+    expectError(runFailBind);
+    const stateAfterFail = JSON.parse(readFileSync(join(data, "state.json"), "utf8"));
+    assert.equal(stateAfterFail.evidenceMap["doi:10.1234/should-not-bind"], undefined);
+
+    // 5. Standalone validate (both with jobId and with outDir only) reads fresh validation & math reports instead of stale build report
+    const valWithJob = await call("manage_doc2md", { action: "validate", jobId: job2.jobId });
+    assert.equal(valWithJob.isError, undefined);
+    const vStats1 = valWithJob.structuredContent.validationStats;
+    assert.equal(vStats1.outputValidationPassed, false);
+    assert.equal(vStats1.mathPassed, false);
+    assert.equal(vStats1.mathErrors, 1);
+    assert.ok(vStats1.warnings.some((w) => w.includes("nonexistent-broken.png")));
+    assert.ok(vStats1.warnings.some((w) => w.includes("公式校验告警")));
+
+    const valOutDirOnly = await call("manage_doc2md", { action: "validate", outDir: job2.outDir });
+    assert.equal(valOutDirOnly.isError, undefined);
+    const vStats2 = valOutDirOnly.structuredContent.validationStats;
+    assert.equal(vStats2.outputValidationPassed, false);
+    assert.equal(vStats2.mathPassed, false);
+    assert.equal(vStats2.mathErrors, 1);
+
+    // 6. Cross-session concurrent state update: Session A awaits lookup_venue_rank while Session B adds to basket
+    const slowRankRun = makeRun("slow-rank-run", [paper("rank-target", "Rank Target Paper")]);
+    const rankEntries = ["run.json", "papers.json"].map((p) => {
+      const b = readFileSync(join(slowRankRun, p));
+      return { path: p, sha256: createHash("sha256").update(b).digest("hex"), size: b.length };
+    });
+    json(join(slowRankRun, "manifest.json"), { algorithm: "sha256", files: rankEntries });
+
+    const secondServer = await import(`${pathToFileURL(serverPath).href}?session=b`);
+    const rankPromise = call("lookup_venue_rank", {
+      venues: ["slow", "Advanced Materials"],
+      runId: "slow-rank-run",
+      preserveActiveRun: false
+    });
+    await new Promise((r) => setTimeout(r, 25));
+    const basketAddRes = await secondServer.handleRequest({
+      jsonrpc: "2.0",
+      id: 999,
+      method: "tools/call",
+      params: {
+        name: "manage_basket",
+        arguments: { action: "add", paper: paper("session-b-saved", "Session B Saved Paper") }
+      }
+    });
+    assert.equal(basketAddRes.result.isError, undefined);
+    const rankDone = await rankPromise;
+    assert.equal(rankDone.isError, undefined);
+    const finalSharedState = JSON.parse(readFileSync(join(data, "state.json"), "utf8"));
+    assert.ok(finalSharedState.basket.some((bp) => bp.paper_key === "doi:10.1234/session-b-saved"));
+  });
 });

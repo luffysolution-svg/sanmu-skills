@@ -362,6 +362,28 @@ class EasyScholarAndAi4ScholarTests(unittest.TestCase):
         # 4. easyScholar JMST alias & conflict venue fallback
         self.assertIn("Journal of Materials Science & Technology", _easyscholar.candidate_venue_names("Journal of Material Science and Technology"))
 
+        # 5. Google Scholar snippet DOI must NOT populate identifiers.doi or cause false deduplication
+        review_gs = _ai4scholar.normalize_gs_item({
+            "title": "A Survey of Deep Protein Structure Prediction",
+            "link": "https://example.org/survey-protein",
+            "publicationInfo": "J Reviewer - Briefings in Bioinformatics, 2024",
+            "snippet": "Recent breakthroughs such as AlphaFold (10.1038/s41586-021-03819-2) transformed structural biology.",
+        })
+        alphafold_gs = _ai4scholar.normalize_gs_item({
+            "title": "Highly accurate protein structure prediction with AlphaFold",
+            "link": "https://www.nature.com/articles/s41586-021-03819-2",
+            "doi": "10.1038/s41586-021-03819-2",
+            "publicationInfo": "J Jumper, R Evans - Nature, 2021",
+            "snippet": "AlphaFold predicts 3D coordinates directly from primary sequence.",
+        })
+        self.assertEqual(review_gs["identifiers"].get("doi"), None)
+        self.assertEqual(review_gs.get("candidate_dois"), ["10.1038/s41586-021-03819-2"])
+        self.assertEqual(alphafold_gs["identifiers"]["doi"], ["10.1038/s41586-021-03819-2"])
+        deduped = _core.deduplicate([review_gs, alphafold_gs])
+        self.assertEqual(len(deduped), 2)
+        self.assertEqual(deduped[0]["title"], "A Survey of Deep Protein Structure Prediction")
+        self.assertEqual(deduped[1]["title"], "Highly accurate protein structure prediction with AlphaFold")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -349,15 +349,16 @@ def normalize_gs_item(item):
 
     link = str(item.get("link") or item.get("url") or "").strip()
     pdf_url = str(item.get("pdfUrl") or "").strip() or None
-    raw_doi = item.get("doi")
-    if not raw_doi:
-        for text_cand in (link, item.get("snippet") or ""):
-            m_d = re.search(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", str(text_cand))
-            if m_d:
-                cand_doi = doi(m_d.group(0))
-                if cand_doi:
-                    raw_doi = cand_doi
-                    break
+    raw_doi = doi(item.get("doi"))
+    if not raw_doi and link:
+        m_d = re.search(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", link)
+        if m_d:
+            raw_doi = doi(m_d.group(0))
+    snippet_dois = []
+    for m_sd in re.finditer(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", str(item.get("snippet") or "")):
+        cand_doi = doi(m_sd.group(0))
+        if cand_doi and cand_doi != raw_doi and cand_doi not in snippet_dois:
+            snippet_dois.append(cand_doi)
     identifiers = ids(doi=raw_doi)
     oa_locs = [location(pdf_url, "google-scholar", True, None, "gs_pdf_link", None)] if pdf_url else []
     gs_id = str(item.get("id") or link or title)
@@ -380,6 +381,8 @@ def normalize_gs_item(item):
     p["reference_count"] = None
     p["tldr"] = None
     p["search_snippet"] = plain_text(item.get("snippet")) or ""
+    if snippet_dois:
+        p["candidate_dois"] = snippet_dois
     if pdf_url:
         p["pdfUrl"] = pdf_url
     if item.get("id"):

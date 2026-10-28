@@ -250,7 +250,8 @@
     .field {
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      justify-content: space-between;
+      gap: 4px;
       flex: 1;
       min-width: 110px;
     }
@@ -258,17 +259,27 @@
       font-size: 11px;
       font-weight: 600;
       color: var(--text-secondary);
+      cursor: pointer;
     }
     .field-label-row {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+    .field-meta-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 6px;
       flex-wrap: wrap;
+      width: 100%;
     }
     .api-link-btn {
       display: inline-flex;
       align-items: center;
+      flex: 0 0 auto;
+      width: fit-content;
       gap: 3px;
       font-size: 11px;
       font-weight: 600;
@@ -911,7 +922,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.9.2</span>
+        <span class="brand-sub">v1.9.3</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -947,104 +958,131 @@
         <button class="btn sm" id="btnCloseConfig">收起</button>
       </div>
       <div class="form-grid">
-        <div class="form-row">
+        <div class="form-row" style="align-items: stretch;">
           <div class="field">
-            <label class="field-label-row">
-              <span>SciVerse API Key (全文语义RAG / 原文切片与原图 / Paper Schema) <span id="badgeSciverseKey" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://sciverse.space" title="点击在浏览器中打开 SciVerse 控制台 (https://sciverse.space) 创建并复制 API Key">🔗 获取Key ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgSciverseKey">SciVerse API Key (全文语义RAG / 原文切片与原图 / Paper Schema)</label>
+              <div class="field-meta-row">
+                <span id="badgeSciverseKey" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgSciverseKey" data-url="https://sciverse.space" title="点击在浏览器中打开 SciVerse 控制台 (https://sciverse.space) 创建并复制 API Key">🔗 获取Key ↗</button>
+              </div>
+            </div>
             <div class="api-input-group">
               <input type="password" class="api-secret-input" id="cfgSciverseKey" data-default-placeholder="粘贴或输入 sci_... 密钥（默认加密展示）" placeholder="粘贴或输入 sci_... 密钥（默认加密展示）" autocomplete="off" spellcheck="false" />
               <button type="button" class="btn sm api-vis-btn" data-target="cfgSciverseKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
             </div>
           </div>
           <div class="field">
-            <label class="field-label-row">
-              <span>AI4Scholar API Key (S2 / 谷歌学术 / 专利 / PubMed / 科研绘图) <span id="badgeAi4scholarKey" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://ai4scholar.net" title="点击在浏览器中打开 AI4Scholar 控制台 (https://ai4scholar.net) 创建并复制 API Key">🔗 获取Key ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgAi4scholarKey">AI4Scholar API Key (S2 / 谷歌学术 / 专利 / PubMed / 科研绘图)</label>
+              <div class="field-meta-row">
+                <span id="badgeAi4scholarKey" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgAi4scholarKey" data-url="https://ai4scholar.net" title="点击在浏览器中打开 AI4Scholar 控制台 (https://ai4scholar.net) 创建并复制 API Key">🔗 获取Key ↗</button>
+              </div>
+            </div>
             <div class="api-input-group">
               <input type="password" class="api-secret-input" id="cfgAi4scholarKey" data-default-placeholder="粘贴或输入 sk-user-... 密钥（默认加密展示）" placeholder="粘贴或输入 sk-user-... 密钥（默认加密展示）" autocomplete="off" spellcheck="false" />
               <button type="button" class="btn sm api-vis-btn" data-target="cfgAi4scholarKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
             </div>
           </div>
         </div>
-        <div class="form-row">
+        <div class="form-row" style="align-items: stretch;">
           <div class="field">
-            <label class="field-label-row">
-              <span>easyScholar Secret Key (期刊分区 / IF / CCF / 预警) <span id="badgeEasyscholarKey" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://www.easyscholar.cc" title="点击在浏览器中打开 easyScholar 开放接口页 (https://www.easyscholar.cc) 获取 SecretKey">🔗 获取Key ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgEasyscholarKey">easyScholar Secret Key (期刊分区 / IF / CCF / 预警)</label>
+              <div class="field-meta-row">
+                <span id="badgeEasyscholarKey" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgEasyscholarKey" data-url="https://www.easyscholar.cc" title="点击在浏览器中打开 easyScholar 开放接口页 (https://www.easyscholar.cc) 获取 SecretKey">🔗 获取Key ↗</button>
+              </div>
+            </div>
             <div class="api-input-group">
               <input type="password" class="api-secret-input" id="cfgEasyscholarKey" data-default-placeholder="粘贴或输入开放接口 SecretKey（默认加密展示）" placeholder="粘贴或输入开放接口 SecretKey（默认加密展示）" autocomplete="off" spellcheck="false" />
               <button type="button" class="btn sm api-vis-btn" data-target="cfgEasyscholarKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
             </div>
           </div>
           <div class="field">
-            <label class="field-label-row">
-              <span>联系邮箱 (Polite Pool 加速 + Unpaywall) <span id="badgePoliteEmail" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://unpaywall.org/products/api" title="填入个人常用邮箱即可免注册进入 OpenAlex / Crossref / Unpaywall 礼貌加速池">🔗 礼貌池说明 ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgPoliteEmail">联系邮箱 (Polite Pool 加速 + Unpaywall)</label>
+              <div class="field-meta-row">
+                <span id="badgePoliteEmail" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgPoliteEmail" data-url="https://unpaywall.org/products/api" title="填入个人常用邮箱即可免注册进入 OpenAlex / Crossref / Unpaywall 礼貌加速池">🔗 礼貌池说明 ↗</button>
+              </div>
+            </div>
             <input type="text" id="cfgPoliteEmail" data-default-placeholder="例如 researcher@university.edu（免注册，填常用邮箱即可）" placeholder="例如 researcher@university.edu（免注册，填常用邮箱即可）" />
           </div>
         </div>
-        <div class="form-row">
+        <div class="form-row" style="align-items: stretch;">
           <div class="field">
-            <label class="field-label-row">
-              <span>Serper API Key (Google Scholar / 专利备选) <span id="badgeSerperKey" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://serper.dev/api-key" title="点击在浏览器中打开 Serper 控制台 (https://serper.dev/api-key) 获取 API Key">🔗 获取Key ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgSerperKey">Serper API Key (Google Scholar / 专利备选)</label>
+              <div class="field-meta-row">
+                <span id="badgeSerperKey" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgSerperKey" data-url="https://serper.dev/api-key" title="点击在浏览器中打开 Serper 控制台 (https://serper.dev/api-key) 获取 API Key">🔗 获取Key ↗</button>
+              </div>
+            </div>
             <div class="api-input-group">
               <input type="password" class="api-secret-input" id="cfgSerperKey" data-default-placeholder="粘贴或输入 Serper API Key（默认加密展示）" placeholder="粘贴或输入 Serper API Key（默认加密展示）" autocomplete="off" spellcheck="false" />
               <button type="button" class="btn sm api-vis-btn" data-target="cfgSerperKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
             </div>
           </div>
           <div class="field">
-            <label class="field-label-row">
-              <span>Exa API Key (AI 自然语言语义搜论文) <span id="badgeExaKey" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://dashboard.exa.ai/api-keys" title="点击在浏览器中打开 Exa AI 控制台 (https://dashboard.exa.ai/api-keys) 获取 API Key">🔗 获取Key ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgExaKey">Exa API Key (AI 自然语言语义搜论文)</label>
+              <div class="field-meta-row">
+                <span id="badgeExaKey" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgExaKey" data-url="https://dashboard.exa.ai/api-keys" title="点击在浏览器中打开 Exa AI 控制台 (https://dashboard.exa.ai/api-keys) 获取 API Key">🔗 获取Key ↗</button>
+              </div>
+            </div>
             <div class="api-input-group">
               <input type="password" class="api-secret-input" id="cfgExaKey" data-default-placeholder="粘贴或输入 Exa API Key（默认加密展示）" placeholder="粘贴或输入 Exa API Key（默认加密展示）" autocomplete="off" spellcheck="false" />
               <button type="button" class="btn sm api-vis-btn" data-target="cfgExaKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
             </div>
           </div>
         </div>
-        <div class="form-row">
+        <div class="form-row" style="align-items: stretch;">
           <div class="field">
-            <label class="field-label-row">
-              <span>Semantic Scholar API Key (1 RPS 独立配额) <span id="badgeS2Key" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://www.semanticscholar.org/product/api#api-key-form" title="点击在浏览器中打开 Semantic Scholar 官方 API Key 免费申请页">🔗 申请Key ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgS2Key">Semantic Scholar API Key (1 RPS 独立配额)</label>
+              <div class="field-meta-row">
+                <span id="badgeS2Key" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgS2Key" data-url="https://www.semanticscholar.org/product/api#api-key-form" title="点击在浏览器中打开 Semantic Scholar 官方 API Key 免费申请页">🔗 申请Key ↗</button>
+              </div>
+            </div>
             <div class="api-input-group">
               <input type="password" class="api-secret-input" id="cfgS2Key" data-default-placeholder="粘贴或输入 S2 API Key（默认加密展示）" placeholder="粘贴或输入 S2 API Key（默认加密展示）" autocomplete="off" spellcheck="false" />
               <button type="button" class="btn sm api-vis-btn" data-target="cfgS2Key" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
             </div>
           </div>
           <div class="field">
-            <label class="field-label-row">
-              <span>OpenAlex API Key (可选 · 免费高配额) <span id="badgeOpenalexKey" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://openalex.org/settings/api" title="点击在浏览器中打开 OpenAlex 账号设置页 (https://openalex.org/settings/api) 免费获取 API Key">🔗 获取Key ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgOpenalexKey">OpenAlex API Key (可选 · 免费高配额)</label>
+              <div class="field-meta-row">
+                <span id="badgeOpenalexKey" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgOpenalexKey" data-url="https://openalex.org/settings/api" title="点击在浏览器中打开 OpenAlex 账号设置页 (https://openalex.org/settings/api) 免费获取 API Key">🔗 获取Key ↗</button>
+              </div>
+            </div>
             <div class="api-input-group">
               <input type="password" class="api-secret-input" id="cfgOpenalexKey" data-default-placeholder="粘贴或输入 OpenAlex API Key（默认加密展示）" placeholder="粘贴或输入 OpenAlex API Key（默认加密展示）" autocomplete="off" spellcheck="false" />
               <button type="button" class="btn sm api-vis-btn" data-target="cfgOpenalexKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
             </div>
           </div>
         </div>
-        <div class="form-row">
+        <div class="form-row" style="align-items: stretch;">
           <div class="field">
-            <label class="field-label-row">
-              <span>MinerU API Token (文档解析 PDF/PPTX/教材转 Markdown) <span id="badgeMineruToken" class="pill static"></span></span>
-              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://mineru.net/apiManage/token" title="点击在浏览器中打开 MinerU Token 管理页 (https://mineru.net/apiManage/token) 免费创建 Token">🔗 获取Token ↗</button>
-            </label>
+            <div class="field-label-row">
+              <label for="cfgMineruToken">MinerU API Token (文档解析 PDF/PPTX/教材转 Markdown)</label>
+              <div class="field-meta-row">
+                <span id="badgeMineruToken" class="pill static"></span>
+                <button type="button" class="api-link-btn api-get-link-btn" data-target-input="cfgMineruToken" data-url="https://mineru.net/apiManage/token" title="点击在浏览器中打开 MinerU Token 管理页 (https://mineru.net/apiManage/token) 免费创建 Token">🔗 获取Token ↗</button>
+              </div>
+            </div>
             <div class="api-input-group">
               <input type="password" class="api-secret-input" id="cfgMineruToken" data-default-placeholder="粘贴或输入 MinerU Token（默认加密展示）" placeholder="粘贴或输入 MinerU Token（默认加密展示）" autocomplete="off" spellcheck="false" />
               <button type="button" class="btn sm api-vis-btn" data-target="cfgMineruToken" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
             </div>
           </div>
           <div class="field">
-            <label>📝 文档解析默认存放目录（支持工作区相对路径或本地绝对路径）</label>
+            <label for="cfgDoc2mdSubdirInput">📝 文档解析默认存放目录（支持工作区相对路径或本地绝对路径）</label>
             <input type="text" id="cfgDoc2mdSubdirInput" value="00-收件箱-待整理/文献解析" placeholder="如 00-收件箱-待整理/文献解析 或 D:\知识库\文献解析" />
           </div>
         </div>
@@ -1850,8 +1888,62 @@
         doc2mdBoundZoteroKey: null,
         doc2mdZoteroItems: [],
         doc2mdPollTimer: null,
+        draftNotesByPaperKey: new Map(),
+        draftTagsByPaperKey: new Map(),
+        activeDraftFocus: null,
         busy: false
       };
+
+      let isRebuildingPaperList = false;
+
+      function captureDraftAndFocusState() {
+        const activeEl = document.activeElement;
+        for (const inp of document.querySelectorAll(".inline-note-input, .inline-tags-input")) {
+          const pk = inp.dataset?.paperKey || inp.getAttribute("data-paper-key");
+          if (!pk) continue;
+          const isTags = inp.classList.contains("inline-tags-input");
+          const committedVal = inp.dataset?.committedValue ?? inp.getAttribute("data-committed-value") ?? "";
+          const isFocused = inp === activeEl || inp.focused === true;
+          if (isFocused) {
+            state.activeDraftFocus = {
+              paperKey: pk,
+              isTags,
+              inBasket: Boolean(inp.closest("#basketListContainer")),
+              selectionStart: typeof inp.selectionStart === "number" ? inp.selectionStart : null,
+              selectionEnd: typeof inp.selectionEnd === "number" ? inp.selectionEnd : null
+            };
+          }
+          if (inp.value !== committedVal || isFocused) {
+            if (isTags) state.draftTagsByPaperKey.set(pk, inp.value);
+            else state.draftNotesByPaperKey.set(pk, inp.value);
+          }
+        }
+      }
+
+      function restoreDraftFocusState() {
+        const focusInfo = state.activeDraftFocus;
+        if (!focusInfo?.paperKey) return;
+        const cls = focusInfo.isTags ? ".inline-tags-input" : ".inline-note-input";
+        const scope = focusInfo.inBasket
+          ? document.getElementById("basketListContainer") || document
+          : document.getElementById("mainPapersList") || document;
+        const candidates = [...scope.querySelectorAll(cls)];
+        const targetInp = candidates.find(
+          (el) => (el.dataset?.paperKey || el.getAttribute("data-paper-key")) === focusInfo.paperKey
+        );
+        if (targetInp) {
+          targetInp.focus({ preventScroll: true });
+          if (
+            typeof targetInp.setSelectionRange === "function" &&
+            focusInfo.selectionStart !== null &&
+            focusInfo.selectionEnd !== null
+          ) {
+            try {
+              targetInp.setSelectionRange(focusInfo.selectionStart, focusInfo.selectionEnd);
+            } catch {}
+          }
+        }
+      }
 
       function isAbstractExpanded(paperKey) {
         if (!paperKey) return false;
@@ -1989,7 +2081,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.9.2" },
+              appInfo: { name: "sanmu-paper-search", version: "1.9.3" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -3793,6 +3885,14 @@
         );
         const userTagsList = Array.isArray(p.user_tags) ? p.user_tags : [];
         const userNoteStr = p.user_note || "";
+        const committedTagsStr = userTagsList.join(", ");
+        const committedNoteStr = userNoteStr;
+        const displayTagsVal = state.draftTagsByPaperKey.has(p.paper_key)
+          ? state.draftTagsByPaperKey.get(p.paper_key)
+          : committedTagsStr;
+        const displayNoteVal = state.draftNotesByPaperKey.has(p.paper_key)
+          ? state.draftNotesByPaperKey.get(p.paper_key)
+          : committedNoteStr;
         const diffBadgeHtml =
           p.diff_status === "added"
             ? `<span class="pill ok static">🆕 新增文献</span>`
@@ -3891,8 +3991,8 @@
             }
             <div class="inline-note-tags-bar" data-paper-key="${esc(p.paper_key)}" onclick="event.stopPropagation();" style="margin-top:6px; display:flex; flex-wrap:wrap; gap:5px; align-items:center; font-size:11.5px;">
               ${userTagsList.map((t) => `<span class="pill purple static user-tag-pill">🏷 ${esc(t)}</span>`).join("")}
-              <input type="text" class="inline-tags-input" data-paper-key="${esc(p.paper_key)}" value="${esc(userTagsList.join(", "))}" placeholder="🏷 课题标签 (逗号分隔，如: 单原子Ni, 析氢)" style="width:auto; min-width:135px; flex:1; padding:2px 6px; font-size:11px;" />
-              <input type="text" class="inline-note-input" data-paper-key="${esc(p.paper_key)}" value="${esc(userNoteStr)}" placeholder="📝 随手批注 (回车/失焦保存，存Zotero自动建子笔记)" style="width:auto; min-width:175px; flex:2; padding:2px 6px; font-size:11px;" />
+              <input type="text" class="inline-tags-input" data-paper-key="${esc(p.paper_key)}" data-committed-value="${esc(committedTagsStr)}" value="${esc(displayTagsVal)}" placeholder="🏷 课题标签 (逗号分隔，如: 单原子Ni, 析氢)" style="width:auto; min-width:135px; flex:1; padding:2px 6px; font-size:11px;" />
+              <input type="text" class="inline-note-input" data-paper-key="${esc(p.paper_key)}" data-committed-value="${esc(committedNoteStr)}" value="${esc(displayNoteVal)}" placeholder="📝 随手批注 (回车/失焦保存，存Zotero自动建子笔记)" style="width:auto; min-width:175px; flex:2; padding:2px 6px; font-size:11px;" />
             </div>
             <div class="action-bar" onclick="event.stopPropagation();">
               <button class="btn sm basket-toggle-btn ${p.in_basket ? "success" : "primary"}" data-paper-key="${esc(p.paper_key)}">${p.in_basket ? "⭐ 已收藏" : "⭐ 收藏"}</button>
@@ -4295,7 +4395,7 @@
           });
         });
         const saveCardInlineNoteTags = async (barEl) => {
-          if (!barEl) return;
+          if (!barEl || isRebuildingPaperList) return;
           const pk = barEl.dataset.paperKey;
           const p = paperMap.get(pk);
           if (!p) return;
@@ -4306,6 +4406,8 @@
             .map((s) => s.trim())
             .filter(Boolean);
           const nextNote = noteEl ? noteEl.value.trim() : (p.user_note || "");
+          state.draftTagsByPaperKey.delete(pk);
+          state.draftNotesByPaperKey.delete(pk);
           await callTool(
             "manage_basket",
             {
@@ -4321,8 +4423,36 @@
           showBanner("✅ 已保存课题标签与随手批注（存入 Zotero 时将自动同步为标签与子笔记）", "success");
         };
         container.querySelectorAll(".inline-note-tags-bar").forEach((barEl) => {
+          const pk = barEl.dataset.paperKey;
           barEl.querySelectorAll("input").forEach((inp) => {
-            onAction(inp, "change", () => saveCardInlineNoteTags(barEl));
+            const isTags = inp.classList.contains("inline-tags-input");
+            inp.addEventListener("focus", () => {
+              state.activeDraftFocus = {
+                paperKey: pk,
+                isTags,
+                inBasket: Boolean(inp.closest("#basketListContainer")),
+                selectionStart: typeof inp.selectionStart === "number" ? inp.selectionStart : null,
+                selectionEnd: typeof inp.selectionEnd === "number" ? inp.selectionEnd : null
+              };
+            });
+            inp.addEventListener("input", () => {
+              if (!pk) return;
+              if (isTags) state.draftTagsByPaperKey.set(pk, inp.value);
+              else state.draftNotesByPaperKey.set(pk, inp.value);
+              if (state.activeDraftFocus?.paperKey === pk && state.activeDraftFocus?.isTags === isTags) {
+                state.activeDraftFocus.selectionStart = typeof inp.selectionStart === "number" ? inp.selectionStart : null;
+                state.activeDraftFocus.selectionEnd = typeof inp.selectionEnd === "number" ? inp.selectionEnd : null;
+              }
+            });
+            inp.addEventListener("blur", () => {
+              if (isRebuildingPaperList) return;
+              if (state.activeDraftFocus?.paperKey === pk && state.activeDraftFocus?.isTags === isTags) {
+                state.activeDraftFocus = null;
+              }
+            });
+            onAction(inp, "change", () => {
+              if (!isRebuildingPaperList) return saveCardInlineNoteTags(barEl);
+            });
             inp.addEventListener("keydown", (e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
                 e.preventDefault();
@@ -5187,13 +5317,20 @@
         const mainPapersEl = contentEl.querySelector("#mainPapersList");
         const refreshFilteredMainPapers = () => {
           if (!mainPapersEl) return;
-          const visiblePapers = filterAndSortPapers(papers);
-          if (visiblePapers.length === 0) {
-            mainPapersEl.innerHTML = `<div class="card"><p style="margin:0;color:var(--text-secondary);">当前筛选或关键词下暂无匹配文献，可点击「全部」或清空过滤词查看。</p></div>`;
-          } else {
-            mainPapersEl.innerHTML = visiblePapers.map((p) => renderPaperCardHtml(p)).join("");
-            bindPaperListEvents(mainPapersEl, papers);
+          captureDraftAndFocusState();
+          isRebuildingPaperList = true;
+          try {
+            const visiblePapers = filterAndSortPapers(papers);
+            if (visiblePapers.length === 0) {
+              mainPapersEl.innerHTML = `<div class="card"><p style="margin:0;color:var(--text-secondary);">当前筛选或关键词下暂无匹配文献，可点击「全部」或清空过滤词查看。</p></div>`;
+            } else {
+              mainPapersEl.innerHTML = visiblePapers.map((p) => renderPaperCardHtml(p)).join("");
+              bindPaperListEvents(mainPapersEl, papers);
+            }
+          } finally {
+            isRebuildingPaperList = false;
           }
+          restoreDraftFocusState();
           updateBatchSelectionCountUi();
         };
         if (mainPapersEl) {
@@ -6963,8 +7100,15 @@
         } else if (visibleBasket.length === 0) {
           container.innerHTML = `<p style="color:var(--text-secondary); margin:0;">当前课题标签「${esc(state.basketTagFilter)}」下暂无文献。</p>`;
         } else {
-          container.innerHTML = `<div class="paper-list" id="basketPapersList">${visibleBasket.map((p) => renderPaperCardHtml(p)).join("")}</div>`;
-          bindPaperListEvents(container.querySelector("#basketPapersList"), visibleBasket);
+          captureDraftAndFocusState();
+          isRebuildingPaperList = true;
+          try {
+            container.innerHTML = `<div class="paper-list" id="basketPapersList">${visibleBasket.map((p) => renderPaperCardHtml(p)).join("")}</div>`;
+            bindPaperListEvents(container.querySelector("#basketPapersList"), visibleBasket);
+          } finally {
+            isRebuildingPaperList = false;
+          }
+          restoreDraftFocusState();
         }
         updateCitationPreview();
       }
@@ -7165,8 +7309,12 @@
 
         const mainInput = document.getElementById("doc2mdMainFileInput");
         const siInput = document.getElementById("doc2mdSiFileInput");
-        if (mainInput && paper.local_pdf_path) {
-          mainInput.value = paper.local_pdf_path;
+        const pptxInput = document.getElementById("doc2mdPptxFileInput");
+        if (mainInput) {
+          mainInput.value = paper.local_pdf_path || "";
+        }
+        if (pptxInput) {
+          pptxInput.value = "";
         }
         const supplPdfs = (Array.isArray(paper.epmc_suppl_files) ? paper.epmc_suppl_files : []).filter((f) =>
           String(f || "").toLowerCase().endsWith(".pdf")
@@ -7324,7 +7472,19 @@
               arguments: { action: "status" }
             }, 15000);
             const sc = res?.structuredContent;
-            if (isPanelState(sc)) updatePanelData(sc);
+            if (isPanelState(sc)) {
+              const nextJobs = sc.doc2mdJobs || [];
+              const stillRunning = nextJobs.some((j) => j.status === "running");
+              if (state.panelData) {
+                state.panelData.doc2mdJobs = nextJobs;
+                if (sc.evidenceMap) state.panelData.evidenceMap = sc.evidenceMap;
+              }
+              renderDoc2mdJobsList(nextJobs);
+              scheduleDoc2mdPolling(nextJobs);
+              if (!stillRunning && sc) {
+                updatePanelData(sc);
+              }
+            }
           } catch {}
         }, 2500);
       }
@@ -7540,6 +7700,7 @@
 
       function updatePanelData(data) {
         if (disposed || !data) return;
+        captureDraftAndFocusState();
         const isFirstLoad = !state.panelData;
         if (state.panelData?.activeRun?.runId !== data.activeRun?.runId) {
           state.expandAllAbstracts = false;
@@ -7666,6 +7827,17 @@
           e.stopPropagation();
           const url = btn.dataset?.url || btn.getAttribute("data-url");
           if (url) await openExternalUrl(url);
+        });
+      });
+
+      document.querySelectorAll("#configPanel label[for]").forEach((lbl) => {
+        lbl.addEventListener("click", (e) => {
+          const targetId = lbl.getAttribute("for");
+          const targetEl = targetId ? document.getElementById(targetId) : null;
+          if (targetEl) {
+            e.stopPropagation();
+            targetEl.focus();
+          }
         });
       });
 

@@ -598,16 +598,29 @@ def _resolve_doc_id_from_query(client, query_or_id):
             "page_size": 3,
         })
         for item in (res.get("results") or []):
-            if isinstance(item, dict) and item.get("doc_id"):
+            if not isinstance(item, dict) or not item.get("doc_id"):
+                continue
+            item_doi = doi(item.get("doi")) or (
+                doi(str(item.get("unique_id") or "").split(":", 1)[1])
+                if str(item.get("unique_id") or "").lower().startswith("paper:10.")
+                else None
+            )
+            if item_doi == clean_d:
                 return str(item["doc_id"]).strip(), normalize_sciverse_meta_paper(item)
+        raise SourceError(f"No SciVerse fulltext doc_id found for DOI '{clean_d}'", 404)
     if text.lower().startswith("paper:"):
         res = request_sciverse(client, "POST", "/meta-search", payload={
             "filters": [{"field": "unique_id", "operator": "FILTER_OP_EQ", "value": text}],
             "page_size": 3,
         })
         for item in (res.get("results") or []):
-            if isinstance(item, dict) and item.get("doc_id"):
+            if (
+                isinstance(item, dict)
+                and item.get("doc_id")
+                and str(item.get("unique_id") or "").strip().lower() == text.lower()
+            ):
                 return str(item["doc_id"]).strip(), normalize_sciverse_meta_paper(item)
+        raise SourceError(f"No SciVerse fulltext doc_id found for '{text}'", 404)
     # Fallback: try agentic-search to locate a paper with fulltext doc_id
     ag = request_sciverse(client, "POST", "/agentic-search", payload={"query": text, "top_k": 3})
     for hit in (ag.get("hits") or []):
@@ -628,9 +641,18 @@ def _resolve_schema_id_from_query(client, query_or_id):
     res = request_sciverse(client, "POST", "/paper-schema/search", payload=payload)
     items = res.get("items") or []
     if clean_d:
+        req_arxiv = _extract_arxiv_id(clean_d)
         for it in items:
-            if isinstance(it, dict) and doi(it.get("doi")) == clean_d and it.get("schema_id"):
+            if not isinstance(it, dict) or not it.get("schema_id"):
+                continue
+            it_doi = doi(it.get("doi"))
+            it_arxiv = _extract_arxiv_id(it_doi or it.get("doi"), schema_id_val=it.get("schema_id"))
+            if it_doi == clean_d or (req_arxiv and it_arxiv and it_arxiv.lower() == req_arxiv.lower()):
                 return str(it["schema_id"]).strip(), normalize_sciverse_schema_paper(it)
+        raise SourceError(
+            f"No exact Paper Schema record found for DOI '{clean_d}' (Paper Schema primarily covers 1M+ AI/CS conference & arXiv papers)",
+            404,
+        )
     for it in items:
         if isinstance(it, dict) and it.get("schema_id"):
             return str(it["schema_id"]).strip(), normalize_sciverse_schema_paper(it)
@@ -1098,8 +1120,9 @@ def execute(args, client):
                 ps_filters["has_code"] = True
             if getattr(args, "has_data", False):
                 ps_filters["has_data"] = True
-            if target_id and doi(target_id):
-                ps_filters["doi"] = doi(target_id)
+            explicit_doi = doi(target_id) if target_id else (doi(query_text) if query_text else None)
+            if target_id and explicit_doi:
+                ps_filters["doi"] = explicit_doi
             if ps_filters:
                 body["filters"] = ps_filters
             if not body.get("query") and not body.get("filters"):
@@ -1107,17 +1130,26 @@ def execute(args, client):
 
             data = request_sciverse(client, "POST", "/paper-schema/search", payload=body)
             items = data.get("items") or []
+            if explicit_doi:
+                req_arxiv = _extract_arxiv_id(explicit_doi)
+                items = [
+                    it for it in items
+                    if isinstance(it, dict) and (
+                        doi(it.get("doi")) == explicit_doi
+                        or (req_arxiv and (_extract_arxiv_id(it.get("doi"), schema_id_val=it.get("schema_id")) or "").lower() == req_arxiv.lower())
+                    )
+                ]
             results_payload = items
             for it in items[:limit]:
                 p = normalize_sciverse_schema_paper(it)
                 if p:
                     papers.append(p)
             papers = deduplicate(papers)
-            extra["total"] = data.get("total")
+            extra["total"] = len(items) if explicit_doi else data.get("total")
             sources[source_key] = {
-                "status": "ok",
+                "status": "not_found" if (explicit_doi and not papers) else "ok",
                 "fetched": len(items),
-                "truncated": bool(data.get("next_cursor")),
+                "truncated": False if explicit_doi else bool(data.get("next_cursor")),
             }
 
         elif mode == "schema-materials":

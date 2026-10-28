@@ -792,6 +792,16 @@ test('v1.7.0 panel features: topic/author sort & topic filter, comprehensive rec
     assert.ok(getLinkBtns.some((b) => b.dataset.url === portalUrl));
   }
 
+  // Clicking the field <label for="cfgSciverseKey"> focuses the input and NEVER triggers ui/open-link
+  const postedCountBeforeLabelClick = p.posted.length;
+  const sciverseLabel = p.document.querySelector('#configPanel label[for="cfgSciverseKey"]');
+  assert.ok(sciverseLabel);
+  assert.equal(sciverseLabel.querySelector('.api-get-link-btn'), null);
+  sciverseLabel.click();
+  await flush();
+  assert.equal(p.posted.length, postedCountBeforeLabelClick);
+  assert.equal(p.document.getElementById('cfgSciverseKey').focused, true);
+
   // Clicking an API portal link opens the external URL via ui/open-link
   const sciverseLinkBtn = getLinkBtns.find((b) => b.dataset.url === 'https://sciverse.space');
   sciverseLinkBtn.click();
@@ -840,5 +850,115 @@ test('v1.7.0 panel features: topic/author sort & topic filter, comprehensive rec
   });
   await flush();
   assert.match(svInput.placeholder, /sci••••••56/);
+
+  // 10. v1.9.3 Issue 1a: Switching from Paper A (with local PDF) to Paper B (without local PDF) clears doc2mdMainFileInput and blocks starting
+  const paperWithPdf = {
+    ...paper('paper-a'),
+    title: 'Paper A With Local PDF',
+    identifiers: { doi: ['10.1234/a'] },
+    local_pdf_path: 'F:\\个人知识库\\A.pdf'
+  };
+  const paperWithoutPdf = {
+    ...paper('paper-b'),
+    title: 'Paper B Without Local PDF',
+    identifiers: { doi: ['10.1234/b'] },
+    local_pdf_path: null
+  };
+  p.prefillDoc2mdFromPaper(paperWithPdf);
+  assert.equal(p.document.getElementById('doc2mdMainFileInput').value, 'F:\\个人知识库\\A.pdf');
+  assert.equal(p.state.doc2mdBoundPaperKey, 'paper-a');
+
+  p.prefillDoc2mdFromPaper(paperWithoutPdf);
+  assert.equal(p.document.getElementById('doc2mdMainFileInput').value, '');
+  assert.equal(p.state.doc2mdBoundPaperKey, 'paper-b');
+  assert.equal(p.state.doc2mdBoundMeta.doi, '10.1234/b');
+
+  const toolCallsBeforeBlockedStart = tools(p).length;
+  await click(p, 'btnExecDoc2md');
+  assert.equal(tools(p).length, toolCallsBeforeBlockedStart);
+  assert.match(p.document.getElementById('bannerText').textContent, /请选择|浏览选文件/);
+
+  // 11. v1.9.3 Issue 8: Background doc2md status polling and paper list re-renders preserve uncommitted note drafts and input focus without triggering save
+  p.updatePanelData({
+    ...emptyState(),
+    activeRun: {
+      runId: 'draft-preserve-run',
+      run: { command: 'search', status: 'success', query: { text: 'draft' } },
+      papers: [{ ...paper('draft-p1'), user_note: 'Committed note' }]
+    },
+    doc2mdJobs: [
+      {
+        jobId: 'doc2md-running-1',
+        mode: 'research',
+        ocrEngine: 'mineru',
+        title: 'Running OCR Job',
+        status: 'running',
+        phaseLabel: '☁ MinerU OCR 识别中 (2/10 页)'
+      }
+    ]
+  });
+  await flush();
+
+  const noteInputBefore = p.document.querySelector('#mainPapersList .inline-note-input[data-paper-key="draft-p1"]');
+  assert.ok(noteInputBefore);
+  assert.equal(noteInputBefore.value, 'Committed note');
+  noteInputBefore.focus();
+  noteInputBefore.value = 'Uncommitted draft in progress...';
+  noteInputBefore.dispatchEvent({ type: 'input', bubbles: true });
+
+  const toolCallsBeforePoll = tools(p).length;
+  // Trigger the 2.5s doc2md polling timer while the job is still running
+  const pollTimerEntry = [...p.timers.values()].find((t) => t.ms === 2500);
+  assert.ok(pollTimerEntry);
+  const pollPromise = pollTimerEntry.fn();
+  await flush();
+  const statusReq = p.posted.at(-1);
+  assert.equal(statusReq.params.name, 'manage_doc2md');
+  assert.equal(statusReq.params.arguments.action, 'status');
+  p.reply(statusReq, {
+    structuredContent: {
+      ...emptyState(),
+      activeRun: {
+        runId: 'draft-preserve-run',
+        run: { command: 'search', status: 'success', query: { text: 'draft' } },
+        papers: [{ ...paper('draft-p1'), user_note: 'Committed note' }]
+      },
+      doc2mdJobs: [
+        {
+          jobId: 'doc2md-running-1',
+          mode: 'research',
+          ocrEngine: 'mineru',
+          title: 'Running OCR Job',
+          status: 'running',
+          phaseLabel: '☁ MinerU OCR 识别中 (6/10 页)'
+        }
+      ]
+    }
+  });
+  await pollPromise;
+  await flush();
+
+  // Running poll only refreshed the job queue, keeping the exact same input node, draft value, and focus
+  const noteInputAfterPoll = p.document.querySelector('#mainPapersList .inline-note-input[data-paper-key="draft-p1"]');
+  assert.equal(noteInputAfterPoll, noteInputBefore);
+  assert.equal(noteInputAfterPoll.value, 'Uncommitted draft in progress...');
+  assert.equal(noteInputAfterPoll.focused, true);
+
+  // Even when a full updatePanelData re-renders the paper list, uncommitted draft and focus are preserved and no save call is fired
+  const callsBeforeFullRefresh = tools(p).length;
+  p.updatePanelData({
+    ...emptyState(),
+    activeRun: {
+      runId: 'draft-preserve-run',
+      run: { command: 'search', status: 'success', query: { text: 'draft' } },
+      papers: [{ ...paper('draft-p1'), user_note: 'Committed note', citation_count: 99 }]
+    }
+  });
+  await flush();
+  assert.equal(tools(p).length, callsBeforeFullRefresh);
+  const noteInputAfterRebuild = p.document.querySelector('#mainPapersList .inline-note-input[data-paper-key="draft-p1"]');
+  assert.ok(noteInputAfterRebuild);
+  assert.equal(noteInputAfterRebuild.value, 'Uncommitted draft in progress...');
+  assert.equal(noteInputAfterRebuild.focused, true);
 });
 

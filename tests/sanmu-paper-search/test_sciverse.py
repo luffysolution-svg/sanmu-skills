@@ -318,6 +318,63 @@ class SciVerseTests(unittest.TestCase):
             self.assertEqual(code_bad, 2)
             self.assertFalse(bad_out.exists())
 
+    def test_explicit_doi_lookup_rejects_unrelated_fuzzy_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            citation_graph_called = False
+
+            def opener(req, timeout=30):
+                nonlocal citation_graph_called
+                url = req.full_url
+                if "/paper-schema/search" in url:
+                    return FakeResponse({
+                        "total": 1,
+                        "items": [{
+                            "schema_id": "unrelated-schema-id-12345678",
+                            "doi": "10.1234/unrelated",
+                            "title": "Unrelated Fuzzy Candidate Paper",
+                            "year": 2024,
+                        }],
+                    })
+                if "/citation-summary" in url or "/citation-graph" in url or "/paper-schema/materials" in url:
+                    citation_graph_called = True
+                    return FakeResponse({"nodes": [], "edges": []})
+                if "/meta-search" in url:
+                    return FakeResponse({
+                        "total_count": 1,
+                        "results": [{
+                            "unique_id": "paper:10.1234/unrelated",
+                            "doc_id": "f" * 64,
+                            "doi": "10.1234/unrelated",
+                            "title": "Unrelated Meta Candidate",
+                        }],
+                    })
+                raise AssertionError(f"Unexpected URL: {url}")
+
+            env = {"SCIVERSE_API_KEY": "sci_key_123", "SANMU_DISABLE_SCIVERSE_CRED_FILE": "1"}
+            for mode in ("schema-citations", "schema-materials"):
+                out_dir = Path(tmp) / f"sv-doi-miss-{mode}"
+                code = run_cli([
+                    "sciverse",
+                    "--mode", mode,
+                    "--id", "10.1234/requested",
+                    "--out", str(out_dir),
+                ], client=_providers.Client(env=env, opener=opener, sleep=lambda _: None))
+                self.assertEqual(code, 3)
+                self.assertFalse(citation_graph_called)
+                run_data = json.loads((out_dir / "run.json").read_text(encoding="utf-8"))
+                self.assertEqual(run_data["status"], "failed")
+                papers = json.loads((out_dir / "papers.json").read_text(encoding="utf-8"))
+                self.assertEqual(papers, [])
+
+            out_content = Path(tmp) / "sv-doi-miss-content"
+            code_cnt = run_cli([
+                "sciverse",
+                "--mode", "content",
+                "--id", "10.1234/requested",
+                "--out", str(out_content),
+            ], client=_providers.Client(env=env, opener=opener, sleep=lambda _: None))
+            self.assertEqual(code_cnt, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

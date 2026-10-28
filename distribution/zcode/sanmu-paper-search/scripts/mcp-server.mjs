@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -193,6 +194,60 @@ function readJsonSafe(filePath, fallback) {
   }
 }
 
+const WAIT_SYNC_ARRAY = typeof SharedArrayBuffer === "function" ? new Int32Array(new SharedArrayBuffer(4)) : null;
+
+function sleepSyncMs(ms) {
+  if (WAIT_SYNC_ARRAY && ms > 0) {
+    try {
+      Atomics.wait(WAIT_SYNC_ARRAY, 0, 0, ms);
+      return;
+    } catch {}
+  }
+  const end = Date.now() + ms;
+  while (Date.now() < end) {}
+}
+
+function withFileLockSync(targetFilePath, fn, timeoutMs = 5000) {
+  mkdirSync(dirname(targetFilePath), { recursive: true });
+  const lockPath = `${targetFilePath}.lock`;
+  const deadline = Date.now() + timeoutMs;
+  let acquired = false;
+  while (!acquired) {
+    try {
+      writeFileSync(lockPath, JSON.stringify({ pid: process.pid, time: Date.now() }), {
+        encoding: "utf8",
+        mode: 0o600,
+        flag: "wx"
+      });
+      acquired = true;
+    } catch (err) {
+      if (err && err.code === "EEXIST") {
+        try {
+          const st = statSync(lockPath);
+          if (Date.now() - st.mtimeMs > 10000) {
+            rmSync(lockPath, { force: true });
+            continue;
+          }
+        } catch {}
+        if (Date.now() >= deadline) {
+          rmSync(lockPath, { force: true });
+          continue;
+        }
+        sleepSyncMs(10);
+        continue;
+      }
+      throw err;
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try {
+      rmSync(lockPath, { force: true });
+    } catch {}
+  }
+}
+
 function writeJsonSafe(filePath, data) {
   mkdirSync(dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
@@ -260,46 +315,48 @@ function maskCredentialValue(val, isEmail = false) {
 }
 
 function savePanelConfig(patch) {
-  const current = loadPanelConfig();
-  const next = { ...current };
-  const secretKeys = new Set([
-    "openalexApiKey",
-    "s2ApiKey",
-    "exaApiKey",
-    "serperApiKey",
-    "easyscholarSecretKey",
-    "ai4scholarApiKey",
-    "sciverseApiKey",
-    "mineruApiToken",
-    "mineruApiKey"
-  ]);
-  for (const [k, v] of Object.entries(patch || {})) {
-    if (k === "clearKeys" || v === undefined || v === null) continue;
-    if (typeof v === "string") {
-      if (secretKeys.has(k)) {
-        const cleaned = cleanSecretInput(v, k === "easyscholarSecretKey");
-        if (cleaned !== "") {
-          next[k] = cleaned;
-          if (k === "mineruApiToken" && "mineruApiKey" in next) {
-            delete next.mineruApiKey;
+  return withFileLockSync(CONFIG_PATH, () => {
+    const current = loadPanelConfig();
+    const next = { ...current };
+    const secretKeys = new Set([
+      "openalexApiKey",
+      "s2ApiKey",
+      "exaApiKey",
+      "serperApiKey",
+      "easyscholarSecretKey",
+      "ai4scholarApiKey",
+      "sciverseApiKey",
+      "mineruApiToken",
+      "mineruApiKey"
+    ]);
+    for (const [k, v] of Object.entries(patch || {})) {
+      if (k === "clearKeys" || v === undefined || v === null) continue;
+      if (typeof v === "string") {
+        if (secretKeys.has(k)) {
+          const cleaned = cleanSecretInput(v, k === "easyscholarSecretKey");
+          if (cleaned !== "") {
+            next[k] = cleaned;
+            if (k === "mineruApiToken" && "mineruApiKey" in next) {
+              delete next.mineruApiKey;
+            }
           }
+        } else if (v.trim() !== "" || k === "politeEmail") {
+          next[k] = v.trim();
         }
-      } else if (v.trim() !== "" || k === "politeEmail") {
-        next[k] = v.trim();
+      } else {
+        next[k] = v;
       }
-    } else {
-      next[k] = v;
     }
-  }
-  if (Array.isArray(patch?.clearKeys)) {
-    for (const k of patch.clearKeys) {
-      if (k in next) next[k] = "";
-      if (k === "mineruApiToken" && "mineruApiKey" in next) next.mineruApiKey = "";
-      if (k === "mineruApiKey" && "mineruApiToken" in next) next.mineruApiToken = "";
+    if (Array.isArray(patch?.clearKeys)) {
+      for (const k of patch.clearKeys) {
+        if (k in next) next[k] = "";
+        if (k === "mineruApiToken" && "mineruApiKey" in next) next.mineruApiKey = "";
+        if (k === "mineruApiKey" && "mineruApiToken" in next) next.mineruApiToken = "";
+      }
     }
-  }
-  writeJsonSafe(CONFIG_PATH, next);
-  return next;
+    writeJsonSafe(CONFIG_PATH, next);
+    return next;
+  });
 }
 
 function loadState() {
@@ -341,6 +398,17 @@ function saveState(state) {
   }
   writeJsonSafe(STATE_PATH, state);
   return state;
+}
+
+function updateStateTransaction(mutator) {
+  return withFileLockSync(STATE_PATH, () => {
+    const state = loadState();
+    const res = mutator(state);
+    if (res !== false) {
+      saveState(state);
+    }
+    return state;
+  });
 }
 
 function isAbsolutePath(p) {
@@ -507,38 +575,164 @@ function scanSaveDirPdfIndex(customDir = null) {
   return { byExactStem, entries };
 }
 
-function matchLocalSavedPdf(paper, pdfIndex) {
-  if (!paper || !pdfIndex || !pdfIndex.entries.length) return null;
-  const stem = makeSafeFileStem(paper.year, paper.title, "paper").toLowerCase();
-  if (pdfIndex.byExactStem.has(stem)) {
-    return pdfIndex.byExactStem.get(stem);
+const localPdfFirstPageTextCache = new Map();
+
+function extractPdfFirstPageTextSync(pdfPath) {
+  if (!pdfPath || !existsSync(pdfPath)) return "";
+  const resolved = resolve(pdfPath);
+  const sig = `${resolved}|${fileStatSignature(resolved)}`;
+  if (localPdfFirstPageTextCache.has(sig)) {
+    return localPdfFirstPageTextCache.get(sig);
   }
+  let buf;
+  try {
+    buf = readFileSync(resolved);
+  } catch {
+    return "";
+  }
+  if (!inspectPdfBufferNode(buf)) {
+    localPdfFirstPageTextCache.set(sig, "");
+    return "";
+  }
+  let text = "";
+  const pyRt = resolvePythonRuntime();
+  if (pyRt.supported) {
+    try {
+      const res = spawnSync(
+        pyRt.cmd,
+        [
+          ...pyRt.prefixArgs,
+          "-c",
+          "import fitz, sys\nwith fitz.open(sys.argv[1]) as doc:\n    print(doc[0].get_text() if len(doc) else '')",
+          resolved
+        ],
+        { encoding: "utf8", timeout: 8000, windowsHide: true }
+      );
+      if (res.status === 0 && typeof res.stdout === "string") {
+        text = res.stdout;
+      }
+    } catch {}
+  }
+  localPdfFirstPageTextCache.set(sig, text);
+  return text;
+}
+
+function verifyLocalPdfIdentitySync(pdfPath, paper) {
+  if (!pdfPath || !paper || !existsSync(pdfPath)) {
+    return { status: "needs_review", matched: false };
+  }
+  const targetDoi = normalizeDoi(paper?.identifiers?.doi?.[0] || "");
+  const clean = (s) => String(s || "").toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, "");
+  const targetTitle = clean(paper?.title || "");
+  if (!targetDoi && !targetTitle) {
+    return { status: "not_checked", matched: false };
+  }
+  const rawText = extractPdfFirstPageTextSync(pdfPath);
+  if (!rawText || !rawText.trim()) {
+    return { status: "needs_review", matched: false };
+  }
+  const heading = String(rawText)
+    .split(/^\s*(?:references|bibliography|参考文献)\s*[:：]?\s*$/im)[0]
+    .slice(0, 5000);
+  const observedDois = new Set(
+    (heading.match(/10\.\d{4,9}\/[^\s<>"']+/gi) || [])
+      .map((d) => normalizeDoi(d))
+      .filter(Boolean)
+  );
+  const doiFound = Boolean(targetDoi && observedDois.has(targetDoi));
+  const hasConflictingDoi = Boolean(targetDoi && observedDois.size > 0 && !doiFound);
+  const titleFound = Boolean(targetTitle && clean(heading).includes(targetTitle));
+  const matched = Boolean((targetDoi ? doiFound : titleFound) && (targetTitle ? titleFound : true) && !hasConflictingDoi);
+  return {
+    status: matched ? "matched" : "needs_review",
+    matched,
+    doi_found: doiFound,
+    title_found: titleFound,
+    has_conflicting_doi: hasConflictingDoi
+  };
+}
+
+function buildEvidencePdfOwnersMap(state) {
+  const ownersByPath = new Map();
+  for (const [k, ev] of Object.entries(state?.evidenceMap || {})) {
+    if (ev?.pdfPath && typeof ev.pdfPath === "string" && existsSync(ev.pdfPath)) {
+      ownersByPath.set(resolve(ev.pdfPath), k);
+    }
+  }
+  return ownersByPath;
+}
+
+function matchLocalSavedPdfCandidate(paper, pdfIndex, currentPaperKey = null, ownersByPath = null) {
+  if (!paper || !pdfIndex || !pdfIndex.entries.length) return null;
+  const isOwnedByOther = (fullPath) => {
+    if (!fullPath || !ownersByPath) return false;
+    const owner = ownersByPath.get(resolve(fullPath));
+    return Boolean(owner && currentPaperKey && owner !== currentPaperKey);
+  };
   const doi = paper.identifiers?.doi?.[0];
   if (doi) {
     const cleanDoi = normalizeDoi(doi);
     const doiAlnum = cleanDoi.replace(/[^a-z0-9]+/g, "");
     const doiTail = (cleanDoi.split("/").pop() || "").replace(/[^a-z0-9]+/g, "");
     for (const item of pdfIndex.entries) {
+      if (isOwnedByOther(item.fullPath)) continue;
       if ((doiAlnum.length >= 8 && item.normAlnum.includes(doiAlnum)) ||
           (doiTail.length >= 7 && item.normAlnum.includes(doiTail))) {
         return item.fullPath;
       }
     }
   }
+  const stem = makeSafeFileStem(paper.year, paper.title, "paper").toLowerCase();
+  if (pdfIndex.byExactStem.has(stem)) {
+    const exactHit = pdfIndex.byExactStem.get(stem);
+    if (!isOwnedByOther(exactHit)) return exactHit;
+  }
   if (paper.title && String(paper.title).trim().length >= 8) {
-    const normTitle = String(paper.title)
+    const normFullTitle = String(paper.title)
       .toLowerCase()
-      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "")
-      .slice(0, 48);
-    if (normTitle.length >= 8) {
+      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "");
+    const normStemTitle = String(paper.title)
+      .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 76)
+      .toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "");
+    if (normFullTitle.length >= 8) {
       for (const item of pdfIndex.entries) {
-        if (item.stemLower.startsWith(stem) || item.normAlnum.includes(normTitle)) {
+        if (isOwnedByOther(item.fullPath)) continue;
+        if (item.stemLower === stem || item.normAlnum.includes(normFullTitle) || (normStemTitle.length >= 12 && item.normAlnum.includes(normStemTitle))) {
           return item.fullPath;
         }
       }
     }
   }
   return null;
+}
+
+function resolveVerifiedLocalPdfForPaper(paper, state, pdfIndex = null, ownersByPath = null) {
+  if (!paper) return { localPdf: null, candidatePdf: null };
+  const key = paper.paper_key || computePaperKey(paper);
+  const savedEv = state?.evidenceMap?.[key] || {};
+  // 1. Priority: explicitly recorded paper_key -> pdfPath in state.evidenceMap
+  if (savedEv.pdfPath && existsSync(savedEv.pdfPath)) {
+    return { localPdf: savedEv.pdfPath, candidatePdf: savedEv.pdfPath };
+  }
+  const owners = ownersByPath || buildEvidencePdfOwnersMap(state);
+  const candidate =
+    (paper.local_pdf_path && existsSync(paper.local_pdf_path) && (!owners.has(resolve(paper.local_pdf_path)) || owners.get(resolve(paper.local_pdf_path)) === key)
+      ? paper.local_pdf_path
+      : null) ||
+    matchLocalSavedPdfCandidate(paper, pdfIndex, key, owners);
+  if (!candidate) {
+    return { localPdf: null, candidatePdf: null };
+  }
+  // 2. Filename match or unrecorded path is only a candidate; require first-page identity verification before auto-associating
+  const check = verifyLocalPdfIdentitySync(candidate, paper);
+  if (check.matched) {
+    return { localPdf: candidate, candidatePdf: candidate };
+  }
+  return { localPdf: null, candidatePdf: candidate };
 }
 
 function resolveCredential(panelVal, userConfigEnvName, sysEnvNames) {
@@ -1573,12 +1767,15 @@ async function savePaperToLocalZotero(paper, collectionKey = "") {
     throw new Error("Zotero 未返回新建条目的 Key。");
   }
 
-  // If paper already has a downloaded local PDF on disk (or auto-discovered in saveDir), attach it to the new Zotero item!
+  // If paper already has a recorded or identity-verified local PDF on disk, attach it to the new Zotero item!
   let pdfAttached = false;
   let attachmentKey = null;
-  const localPdfPath =
-    (paper?.local_pdf_path && existsSync(paper.local_pdf_path) ? paper.local_pdf_path : null) ||
-    matchLocalSavedPdf(paper, scanSaveDirPdfIndex());
+  const { localPdf: localPdfPath } = resolveVerifiedLocalPdfForPaper(
+    paper,
+    curState,
+    scanSaveDirPdfIndex(),
+    buildEvidencePdfOwnersMap(curState)
+  );
   if (localPdfPath && existsSync(localPdfPath)) {
     try {
       const pdfBytes = readFileSync(localPdfPath);
@@ -1768,9 +1965,9 @@ async function rememberZoteroImport(baseUrl, serverId, apiKey, itemKey, paperKey
     if (child?.data?.parentItem !== itemKey) throw new Error("子条目父条目不匹配。");
     record.children[childKey] = { version: child.version ?? child.data.version, snapshot: zoteroItemSnapshot(child) };
   }
-  const state = loadState();
-  state.zoteroImports = { ...(state.zoteroImports || {}), [itemKey]: record };
-  saveState(state);
+  updateStateTransaction((state) => {
+    state.zoteroImports = { ...(state.zoteroImports || {}), [itemKey]: record };
+  });
   return record;
 }
 
@@ -1800,11 +1997,19 @@ async function deletePaperFromLocalZotero(itemKey, record) {
     return !saved || child.data?.parentItem !== itemKey || (child.version ?? child.data?.version) !== saved.version || zoteroItemSnapshot(child) !== saved.snapshot;
   })) throw new Error("Zotero 条目已新增或修改附件/笔记，未执行删除。");
   for (const [childKey, childRec] of Object.entries(record.children || {})) {
-    await fetch(`${baseUrl}/api/users/0/items/${childKey}`, {
-      method: "DELETE",
-      headers: { ...headers, ...(Number.isInteger(childRec?.version) ? { "If-Unmodified-Since-Version": String(childRec.version) } : {}) },
-      signal: AbortSignal.timeout(8000)
-    }).catch(() => {});
+    let childDelResp;
+    try {
+      childDelResp = await fetch(`${baseUrl}/api/users/0/items/${childKey}`, {
+        method: "DELETE",
+        headers: { ...headers, ...(Number.isInteger(childRec?.version) ? { "If-Unmodified-Since-Version": String(childRec.version) } : {}) },
+        signal: AbortSignal.timeout(8000)
+      });
+    } catch (err) {
+      throw new Error(`撤销 Zotero 子条目 (${childKey}) 失败 (${err?.message || "network error"})，已停止删除父条目并保留导入记录。`);
+    }
+    if (!childDelResp.ok && childDelResp.status !== 404) {
+      throw new Error(`撤销 Zotero 子条目 (${childKey}) 失败 (HTTP ${childDelResp.status})，已停止删除父条目并保留导入记录。`);
+    }
   }
   const delResp = await fetch(`${baseUrl}/api/users/0/items/${itemKey}`, {
     method: "DELETE", headers: { ...headers, "If-Unmodified-Since-Version": String(record.version) }, signal: AbortSignal.timeout(10000)
@@ -1832,13 +2037,14 @@ function createEnrichContext(state) {
   return {
     basketKeys: new Set((state?.basket || []).map((p) => p.paper_key || computePaperKey(p))),
     pdfIndex: scanSaveDirPdfIndex(),
+    ownersByPath: buildEvidencePdfOwnersMap(state),
     rankCache: readJsonSafe(EASYSCHOLAR_CACHE_PATH, {}) || {}
   };
 }
 
 function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null, sharedCtx = null) {
   const ctx = sharedCtx || createEnrichContext(state);
-  const { basketKeys, pdfIndex, rankCache } = ctx;
+  const { basketKeys, pdfIndex, ownersByPath, rankCache } = ctx;
   return (papers || []).map((rawP, idx) => {
     const key = rawP.paper_key || computePaperKey(rawP);
     const savedEv = state.evidenceMap?.[key] || {};
@@ -1859,13 +2065,12 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null, sha
       }
     }
     venueRank = compactVenueRank(venueRank);
-    const explicitLocalPdf =
-      savedEv.pdfPath && existsSync(savedEv.pdfPath)
-        ? savedEv.pdfPath
-        : p.local_pdf_path && existsSync(p.local_pdf_path)
-          ? p.local_pdf_path
-          : null;
-    const localPdf = explicitLocalPdf || matchLocalSavedPdf(p, pdfIndex) || null;
+    const { localPdf, candidatePdf } = resolveVerifiedLocalPdfForPaper(
+      { ...p, paper_key: key },
+      state,
+      pdfIndex,
+      ownersByPath
+    );
 
     let stage = savedEv.stage || p.handoff_stage || "discovered";
     if (
@@ -1978,6 +2183,7 @@ function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null, sha
       user_tags: userTags,
       user_note: userNote,
       local_pdf_path: localPdf,
+      ...(candidatePdf && !localPdf ? { candidate_local_pdf_path: candidatePdf } : {}),
       ...(epmcSavedDir ? { epmc_saved_dir: epmcSavedDir } : {}),
       ...(epmcSupplFiles.length ? { epmc_suppl_files: epmcSupplFiles } : {}),
       ...(sciverseSavedDir ? { sciverse_saved_dir: sciverseSavedDir } : {}),
@@ -2002,7 +2208,8 @@ function extractDoisFromText(text) {
 }
 
 function parseRawItemToCandidatePaper(flatItem, idx, state, sharedCtx = null) {
-  const dois = flatItem.extracted_dois || [];
+  const verifiedDois = flatItem.verified_dois || [];
+  const candidateDois = flatItem.extracted_dois || [];
   const yearMatch = String(flatItem.publicationDate || flatItem.filingDate || "").match(/\b(19|20)\d{2}\b/);
   const year = flatItem.year || (yearMatch ? Number(yearMatch[0]) : null);
 
@@ -2042,8 +2249,9 @@ function parseRawItemToCandidatePaper(flatItem, idx, state, sharedCtx = null) {
     venue = `Serper (${flatItem.serper_type})`;
   }
 
+  // Never populate identifiers.doi from snippet/text; snippet DOIs remain unverified clues in candidate_dois.
   const identifiers = {};
-  if (dois.length) identifiers.doi = dois;
+  if (verifiedDois.length) identifiers.doi = verifiedDois;
   if (flatItem.publicationNumber) identifiers.patent = [flatItem.publicationNumber];
 
   const oaLocations = [];
@@ -2063,6 +2271,7 @@ function parseRawItemToCandidatePaper(flatItem, idx, state, sharedCtx = null) {
     venue,
     authors,
     identifiers,
+    ...(candidateDois.length ? { candidate_dois: candidateDois } : {}),
     citation_count: flatItem.citedBy ?? null,
     url: flatItem.link || flatItem.url || "",
     pdfUrl: flatItem.pdfUrl || null,
@@ -2112,6 +2321,10 @@ function normalizeRawResults(resultsRaw, state, sharedCtx = null) {
     const entityDoi = Array.isArray(flat.entities)
       ? flat.entities.find((e) => e?.type === "publication" && e?.properties?.doi)?.properties?.doi
       : null;
+    const verifiedText = entityDoi
+      ? String(entityDoi)
+      : [flat.url, flat.link, flat.doi].filter(Boolean).join(" ");
+    const verifiedDois = extractDoisFromText(verifiedText);
     const snippetText = entityDoi
       ? String(entityDoi)
       : [flat.url, flat.link, flat.doi, flat.snippet, flat.text ? String(flat.text).split(/\n##\s+References\b/i)[0] : ""]
@@ -2121,6 +2334,7 @@ function normalizeRawResults(resultsRaw, state, sharedCtx = null) {
     const enrichedItem = {
       ...flat,
       index: idx + 1,
+      verified_dois: verifiedDois,
       extracted_dois: extractedDois
     };
     // General web/maps/shop snippets can mention unrelated DOIs and are not paper identities.
@@ -3218,26 +3432,26 @@ async function claimBrowserPdf(input = {}) {
   };
   writeJsonSafe(join(outDir, "acquisition.json"), acq);
 
-  const state = loadState();
   const key = input.paperKey || (cleanDoi ? `doi:${cleanDoi.toLowerCase()}` : null);
-  if (key) {
-    const prev = state.evidenceMap[key] || {};
-    state.evidenceMap[key] = {
-      ...prev,
-      stage: prev.stage === "read" ? "read" : identityStatus === "matched" ? "identity_checked" : "file_obtained",
-      pdfPath: savedPdfPath,
-      acquisition: acq,
-      updatedAt: new Date().toISOString()
-    };
-  }
-  if (key && Array.isArray(state.basket)) {
-    state.basket = state.basket.map((bp) =>
-      (bp.paper_key || computePaperKey(bp)) === key
-        ? { ...bp, local_pdf_path: savedPdfPath }
-        : bp
-    );
-  }
-  saveState(state);
+  updateStateTransaction((state) => {
+    if (key) {
+      const prev = state.evidenceMap[key] || {};
+      state.evidenceMap[key] = {
+        ...prev,
+        stage: prev.stage === "read" ? "read" : identityStatus === "matched" ? "identity_checked" : "file_obtained",
+        pdfPath: savedPdfPath,
+        acquisition: acq,
+        updatedAt: new Date().toISOString()
+      };
+    }
+    if (key && Array.isArray(state.basket)) {
+      state.basket = state.basket.map((bp) =>
+        (bp.paper_key || computePaperKey(bp)) === key
+          ? { ...bp, local_pdf_path: savedPdfPath }
+          : bp
+      );
+    }
+  });
 
   const panelState = await getFullPanelState();
   return {
@@ -3794,25 +4008,54 @@ function inspectLocalDocumentFile(rawPath) {
   let siblingSiPdfPath = null;
   try {
     const entries = readdirSync(dir, { withFileTypes: true });
+    const stemLower = stem.toLowerCase().trim();
+    const selfIsSi = isSupplementalFilename(basename(fullPath));
+    const exactSiCandidates = [];
+    const prefixSiCandidates = [];
     for (const entry of entries) {
       if (!entry.isFile()) continue;
       const candPath = join(dir, entry.name);
       if (candPath === fullPath) continue;
       const candExt = extname(entry.name).toLowerCase();
       const candStem = basename(entry.name, candExt);
-      if (ext === ".pptx" && candExt === ".pdf" && candStem.toLowerCase() === stem.toLowerCase()) {
+      const candStemLower = candStem.toLowerCase().trim();
+      if (ext === ".pptx" && candExt === ".pdf" && candStemLower === stemLower) {
         siblingPdfPath = candPath;
-      } else if (ext === ".pdf" && candExt === ".pptx" && candStem.toLowerCase() === stem.toLowerCase()) {
+      } else if (ext === ".pdf" && candExt === ".pptx" && candStemLower === stemLower) {
         siblingPptxPath = candPath;
-      } else if (
-        ext === ".pdf" &&
-        candExt === ".pdf" &&
-        !isSupplementalFilename(entry.name) === false &&
-        (candStem.toLowerCase().startsWith(stem.toLowerCase()) ||
-          stem.toLowerCase().startsWith(candStem.toLowerCase().replace(/[-_.\s]*(?:si|suppl|supporting|supplement|appendix|补充|附图).*$/i, "")))
-      ) {
-        siblingSiPdfPath = candPath;
+      } else if (ext === ".pdf" && candExt === ".pdf" && !selfIsSi && isSupplementalFilename(entry.name)) {
+        const strippedPrefix = candStemLower
+          .replace(/[-_.\s]*(?:si|suppl|supporting|supplement|appendix|mmc\d*|moesm\d*|esm|补充|附图).*$/i, "")
+          .trim();
+        // Reject empty stripped prefix (e.g., "Supplement.pdf" -> "") so startsWith("") never matches everything
+        if (!strippedPrefix) continue;
+        if (strippedPrefix === stemLower) {
+          exactSiCandidates.push({ path: candPath, candStemLower });
+        } else if (
+          candStemLower.startsWith(stemLower) &&
+          /^[-_.\s]/.test(candStemLower.slice(stemLower.length))
+        ) {
+          prefixSiCandidates.push({ path: candPath, candStemLower });
+        } else if (
+          strippedPrefix.length >= 6 &&
+          stemLower.startsWith(strippedPrefix) &&
+          /^[-_.\s]/.test(stemLower.slice(strippedPrefix.length))
+        ) {
+          prefixSiCandidates.push({ path: candPath, candStemLower });
+        }
       }
+    }
+    if (exactSiCandidates.length === 1) {
+      siblingSiPdfPath = exactSiCandidates[0].path;
+    } else if (exactSiCandidates.length > 1) {
+      const canonicalHit = exactSiCandidates.filter(
+        (c) => c.candStemLower === `${stemLower}-si` || c.candStemLower === `${stemLower}_si`
+      );
+      if (canonicalHit.length === 1) {
+        siblingSiPdfPath = canonicalHit[0].path;
+      }
+    } else if (prefixSiCandidates.length === 1) {
+      siblingSiPdfPath = prefixSiCandidates[0].path;
     }
   } catch {}
   return {
@@ -4416,7 +4659,7 @@ async function autoGenerateBookChapters(pdfPath, manifestPath, outChaptersPath) 
   return res.parsed?.chapters || [];
 }
 
-function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir, stateSiDir = null) {
+function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir, stateSiDir = null, explicitReports = null) {
   const mdFiles = [];
   let primaryMarkdownPath = null;
   let siMarkdownPath = null;
@@ -4465,32 +4708,47 @@ function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir, stateS
     siImageCount = countFilesRec(join(siOutDir, "images")).length;
   }
 
-  const effectiveStateSiDir = stateSiDir || (jobDir ? join(jobDir, "state-si") : null);
-  const researchReport = stateMainDir ? readJsonSafe(join(stateMainDir, "research", "research-report.json"), null) : null;
-  const siResearchReport = effectiveStateSiDir ? readJsonSafe(join(effectiveStateSiDir, "research", "research-report.json"), null) : null;
+  const useExplicit = Boolean(explicitReports && typeof explicitReports === "object");
+  const effectiveStateSiDir = useExplicit ? null : (stateSiDir || (jobDir ? join(jobDir, "state-si") : null));
+  const researchReport = !useExplicit && stateMainDir ? readJsonSafe(join(stateMainDir, "research", "research-report.json"), null) : null;
+  const siResearchReport = !useExplicit && effectiveStateSiDir ? readJsonSafe(join(effectiveStateSiDir, "research", "research-report.json"), null) : null;
   const buildReport = readJsonSafe(join(outDir, "build-report.json"), null);
-  const formulasPath = stateMainDir && existsSync(join(stateMainDir, "research", "formulas.json"))
-    ? join(stateMainDir, "research", "formulas.json")
-    : join(jobDir, "formulas.json");
-  const siFormulasPath = effectiveStateSiDir && existsSync(join(effectiveStateSiDir, "research", "formulas.json"))
-    ? join(effectiveStateSiDir, "research", "formulas.json")
+  const formulasPath = useExplicit && explicitReports.formulasPath
+    ? explicitReports.formulasPath
+    : stateMainDir && existsSync(join(stateMainDir, "research", "formulas.json"))
+      ? join(stateMainDir, "research", "formulas.json")
+      : join(jobDir, "formulas.json");
+  const siFormulasPath = useExplicit && explicitReports.siFormulasPath
+    ? explicitReports.siFormulasPath
+    : effectiveStateSiDir && existsSync(join(effectiveStateSiDir, "research", "formulas.json"))
+      ? join(effectiveStateSiDir, "research", "formulas.json")
+      : null;
+  const mathReportPath = useExplicit && explicitReports.mathReportPath
+    ? explicitReports.mathReportPath
+    : stateMainDir && existsSync(join(stateMainDir, "research", "math-report.json"))
+      ? join(stateMainDir, "research", "math-report.json")
+      : join(jobDir, "math-report.json");
+  const siMathReportPath = useExplicit && explicitReports.siMathReportPath
+    ? explicitReports.siMathReportPath
+    : effectiveStateSiDir && existsSync(join(effectiveStateSiDir, "research", "math-report.json"))
+      ? join(effectiveStateSiDir, "research", "math-report.json")
+      : null;
+  const valOutPath = useExplicit && explicitReports.validateOutputPath
+    ? explicitReports.validateOutputPath
+    : join(jobDir, "validate-output.json");
+  const siValOutPath = useExplicit && explicitReports.siValidateOutputPath
+    ? explicitReports.siValidateOutputPath
     : null;
-  const mathReportPath = stateMainDir && existsSync(join(stateMainDir, "research", "math-report.json"))
-    ? join(stateMainDir, "research", "math-report.json")
-    : join(jobDir, "math-report.json");
-  const siMathReportPath = effectiveStateSiDir && existsSync(join(effectiveStateSiDir, "research", "math-report.json"))
-    ? join(effectiveStateSiDir, "research", "math-report.json")
-    : null;
-  const valOutPath = join(jobDir, "validate-output.json");
 
   const formulas = readJsonSafe(formulasPath, []);
   const siFormulas = siFormulasPath ? readJsonSafe(siFormulasPath, []) : [];
   const mathReport = readJsonSafe(mathReportPath, null);
   const siMathReport = siMathReportPath ? readJsonSafe(siMathReportPath, null) : null;
   const valOut = readJsonSafe(valOutPath, null);
+  const siValOut = siValOutPath ? readJsonSafe(siValOutPath, null) : null;
 
-  const mainFormulaCount = Array.isArray(formulas) && formulas.length > 0 ? formulas.length : researchReport?.formula_count ?? 0;
-  const siFormulaCount = Array.isArray(siFormulas) && siFormulas.length > 0 ? siFormulas.length : siResearchReport?.formula_count ?? 0;
+  const mainFormulaCount = Array.isArray(formulas) ? formulas.length : researchReport?.formula_count ?? 0;
+  const siFormulaCount = Array.isArray(siFormulas) && siFormulasPath ? siFormulas.length : siResearchReport?.formula_count ?? 0;
   const formulaCount = mainFormulaCount + siFormulaCount;
 
   const countMathFailures = (mr) =>
@@ -4502,13 +4760,20 @@ function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir, stateS
   const mathErrors = countMathFailures(mathReport) + countMathFailures(siMathReport);
   const mathPassed = mathErrors === 0;
 
-  const mainValPassed = researchReport
-    ? researchReport.automatic_checks === "pass"
-    : valOut
-      ? Boolean(valOut.ok ?? (valOut.status === "pass" && !valOut.errors?.length))
+  const isValReportOk = (vo) => Boolean(vo.ok ?? (vo.status === "pass" && (!Array.isArray(vo.errors) || vo.errors.length === 0)));
+  const mainValPassed = useExplicit
+    ? (valOut ? isValReportOk(valOut) : true)
+    : researchReport
+      ? researchReport.automatic_checks === "pass"
+      : valOut
+        ? isValReportOk(valOut)
+        : true;
+  const siValPassed = useExplicit
+    ? (siValOut ? isValReportOk(siValOut) : true)
+    : siResearchReport
+      ? siResearchReport.automatic_checks === "pass"
       : true;
-  const siValPassed = siResearchReport ? siResearchReport.automatic_checks === "pass" : true;
-  const outputValidationPassed = mainValPassed && siValPassed;
+  const outputValidationPassed = mainValPassed && siValPassed && mathPassed;
 
   const warnings = [];
   if (buildReport?.review && typeof buildReport.review === "object") {
@@ -4537,14 +4802,17 @@ function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir, stateS
       }
     }
   };
-  collectValidateIssuesFromReport(researchReport, siResearchReport ? "主文" : "");
-  collectValidateIssuesFromReport(siResearchReport, "SI");
-  if (valOut) {
-    for (const err of (valOut.errors || []).slice(0, 8)) {
-      warnings.push(`结构校验错误: ${err}`);
+  if (!useExplicit) {
+    collectValidateIssuesFromReport(researchReport, siResearchReport ? "主文" : "");
+    collectValidateIssuesFromReport(siResearchReport, "SI");
+  }
+  for (const [vo, tag] of [[valOut, siValOut ? "主文" : ""], [siValOut, "SI"]]) {
+    if (!vo) continue;
+    for (const err of (vo.errors || []).slice(0, 8)) {
+      warnings.push(`${tag ? `[${tag}] ` : ""}结构校验错误: ${err}`);
     }
-    for (const w of (valOut.warnings || []).slice(0, 6)) {
-      warnings.push(`结构校验提示: ${w}`);
+    for (const w of (vo.warnings || []).slice(0, 6)) {
+      warnings.push(`${tag ? `[${tag}] ` : ""}结构校验提示: ${w}`);
     }
   }
   for (const mr of [mathReport, siMathReport]) {
@@ -4580,6 +4848,31 @@ function collectDoc2mdOutputStats(outDir, siOutDir, stateMainDir, jobDir, stateS
     chapters: Array.isArray(buildReport?.chapters) ? buildReport.chapters : [],
     previewExcerpt
   };
+}
+
+function extractResearchBuildFailureDetail(pyRes, fallback) {
+  const rep = pyRes?.parsed;
+  if (rep && Array.isArray(rep.commands)) {
+    for (const cmd of rep.commands) {
+      if (cmd && cmd.returncode && cmd.returncode !== 0) {
+        const detail = String(cmd.stderr || cmd.stdout || "").trim();
+        if (detail) return `${fallback}: ${detail}`;
+      }
+    }
+  }
+  return pythonFailure(pyRes, fallback);
+}
+
+function assertResearchBuildSucceeded(pyRes, fallbackMsg, requirePass = false) {
+  const checks = pyRes?.parsed?.automatic_checks;
+  if (pyRes.exitCode !== 0) {
+    if (!checks || checks === "build_failed" || checks === "not_run" || requirePass) {
+      throw new Error(extractResearchBuildFailureDetail(pyRes, fallbackMsg));
+    }
+  }
+  if (checks === "build_failed" || checks === "not_run") {
+    throw new Error(extractResearchBuildFailureDetail(pyRes, fallbackMsg));
+  }
 }
 
 function runDoc2mdPythonWithProgress(scriptPath, args, jobId, phaseLabelPrefix, timeoutMs = 1800000) {
@@ -4882,9 +5175,7 @@ async function executeDoc2mdJob(jobId, options = {}) {
         }
         // Build SI first so all #Figure S* / #Table S* anchors exist on disk when main paper runs validate_output.py
         const siRes = await runPython(buildResearchPy, siArgs, 300000);
-        if (siRes.exitCode !== 0 && !existsSync(join(siOutDir, "00-目录.md"))) {
-          throw new Error(pythonFailure(siRes, "补充材料 (SI) Markdown 装配失败"));
-        }
+        assertResearchBuildSucceeded(siRes, "补充材料 (SI) Markdown 装配失败", false);
       }
 
       let mainRes = await runPython(buildResearchPy, buildMainArgs(true), 300000);
@@ -4896,13 +5187,12 @@ async function executeDoc2mdJob(jobId, options = {}) {
         // Fallback without uncorroborated external metadata so custom/cropped PDFs still build cleanly
         mainRes = await runPython(buildResearchPy, buildMainArgs(false), 300000);
       }
-      if (mainRes.exitCode !== 0 && !existsSync(join(outDir, "00-目录.md"))) {
-        throw new Error(pythonFailure(mainRes, "科研论文 Markdown 装配失败"));
-      }
+      assertResearchBuildSucceeded(mainRes, "科研论文 Markdown 装配失败", false);
 
       if (hasSi && siArgs) {
-        // Re-run SI validation (cache_hit=true, <0.5s) now that main paper markdown exists on disk
-        await runPython(buildResearchPy, siArgs, 120000);
+        // Re-run SI build & validation now that main paper markdown exists on disk, and verify its result
+        const siFinalRes = await runPython(buildResearchPy, siArgs, 120000);
+        assertResearchBuildSucceeded(siFinalRes, "补充材料 (SI) 最终复核与装配失败", false);
       }
     } else if (mode === "slides") {
       const slideArgs = [
@@ -4992,31 +5282,31 @@ async function executeDoc2mdJob(jobId, options = {}) {
       input.paperKey ||
       (input.metadata?.doi ? `doi:${normalizeDoi(input.metadata.doi)}` : null);
     if (linkedKey) {
-      const state = loadState();
-      const prev = state.evidenceMap[linkedKey] || {};
-      state.evidenceMap[linkedKey] = {
-        ...prev,
-        stage: prev.stage === "read" ? "read" : "identity_checked",
-        doc2md_out_dir: outDir,
-        doc2md_md_path: stats.primaryMarkdownPath || null,
-        doc2md_si_out_dir: siOutDir || null,
-        doc2md_job_id: jobId,
-        updatedAt: new Date().toISOString()
-      };
-      if (Array.isArray(state.basket)) {
-        state.basket = state.basket.map((bp) =>
-          (bp.paper_key || computePaperKey(bp)) === linkedKey
-            ? {
-                ...bp,
-                doc2md_out_dir: outDir,
-                doc2md_md_path: stats.primaryMarkdownPath || null,
-                doc2md_si_out_dir: siOutDir || null,
-                doc2md_job_id: jobId
-              }
-            : bp
-        );
-      }
-      saveState(state);
+      updateStateTransaction((state) => {
+        const prev = state.evidenceMap[linkedKey] || {};
+        state.evidenceMap[linkedKey] = {
+          ...prev,
+          stage: prev.stage === "read" ? "read" : "identity_checked",
+          doc2md_out_dir: outDir,
+          doc2md_md_path: stats.primaryMarkdownPath || null,
+          doc2md_si_out_dir: siOutDir || null,
+          doc2md_job_id: jobId,
+          updatedAt: new Date().toISOString()
+        };
+        if (Array.isArray(state.basket)) {
+          state.basket = state.basket.map((bp) =>
+            (bp.paper_key || computePaperKey(bp)) === linkedKey
+              ? {
+                  ...bp,
+                  doc2md_out_dir: outDir,
+                  doc2md_md_path: stats.primaryMarkdownPath || null,
+                  doc2md_si_out_dir: siOutDir || null,
+                  doc2md_job_id: jobId
+                }
+              : bp
+          );
+        }
+      });
     }
 
     return completedJob;
@@ -5036,13 +5326,26 @@ async function executeDoc2mdJob(jobId, options = {}) {
   }
 }
 
-async function runStandaloneDoc2mdValidators(outDir, jobDir, validateOutputPy, extractFormulasPy, validateMathCjs) {
-  const valRes = await runPython(validateOutputPy, [outDir, "--images-dir", "images", "--json"], 60000);
-  if (valRes.parsed) {
-    writeJsonSafe(join(jobDir, "validate-output.json"), valRes.parsed);
+async function runStandaloneDoc2mdValidators(
+  outDir,
+  jobDir,
+  validateOutputPy,
+  extractFormulasPy,
+  validateMathCjs,
+  resourceRoot = null,
+  prefix = ""
+) {
+  const valArgs = [outDir, "--images-dir", "images", "--json"];
+  if (resourceRoot) {
+    valArgs.push("--resource-root", resourceRoot);
   }
-  const formulasJson = join(jobDir, "formulas.json");
-  const mathReportJson = join(jobDir, "math-report.json");
+  const valOutPath = join(jobDir, `${prefix}validate-output.json`);
+  const formulasJson = join(jobDir, `${prefix}formulas.json`);
+  const mathReportJson = join(jobDir, `${prefix}math-report.json`);
+  const valRes = await runPython(validateOutputPy, valArgs, 60000);
+  if (valRes.parsed) {
+    writeJsonSafe(valOutPath, valRes.parsed);
+  }
   const extRes = await runPython(extractFormulasPy, [outDir, "--out", formulasJson], 60000);
   if (extRes.exitCode === 0 && existsSync(formulasJson)) {
     const formulas = readJsonSafe(formulasJson, []);
@@ -5059,6 +5362,11 @@ async function runStandaloneDoc2mdValidators(outDir, jobDir, validateOutputPy, e
       windowsHide: true
     });
   }
+  return {
+    validateOutputPath: valOutPath,
+    formulasPath: formulasJson,
+    mathReportPath: mathReportJson
+  };
 }
 
 async function startKatexPreviewServer(outDir, requestedPort = 8766, openInBrowser = true) {
@@ -5210,10 +5518,47 @@ async function startOrRunDoc2mdJob(input = {}) {
     }
   }
 
-  const outDir = join(baseSaveDir, folderStem);
+  const jobId = makeRunId(`doc2md-${mode}`);
+  let outDir = join(baseSaveDir, folderStem);
+  let priorJobToSeedStateFrom = null;
+  if (existsSync(outDir)) {
+    const recentJobs = listRecentDoc2mdJobs(50);
+    const matchingPriorJob = recentJobs.find((pj) => pj?.outDir && resolve(pj.outDir) === resolve(outDir)) || null;
+    const isSameSource = Boolean(
+      matchingPriorJob &&
+        ((pdfPath && matchingPriorJob.input?.pdfPath && resolve(matchingPriorJob.input.pdfPath) === resolve(pdfPath)) ||
+          (pptxPath && matchingPriorJob.input?.pptxPath && resolve(matchingPriorJob.input.pptxPath) === resolve(pptxPath)) ||
+          (existingRawDir &&
+            matchingPriorJob.input?.existingRawDir &&
+            resolve(matchingPriorJob.input.existingRawDir) ===
+              resolve(isAbsolutePath(existingRawDir) ? existingRawDir : resolve(WORKSPACE_ROOT, existingRawDir))))
+    );
+    if (matchingPriorJob && (isSameSource || Boolean(input.outputFolderName))) {
+      priorJobToSeedStateFrom = matchingPriorJob;
+    } else if (!input.outputFolderName) {
+      outDir = uniqueDestination(baseSaveDir, folderStem, input.paperKey || metadata.doi || jobId);
+      folderStem = basename(outDir);
+    }
+  }
   const siOutDir = mode === "research" && siPdfPath ? `${outDir} - SI` : null;
 
-  const jobId = makeRunId(`doc2md-${mode}`);
+  if (priorJobToSeedStateFrom) {
+    try {
+      const prevJobDir = resolveDoc2mdJobDir(priorJobToSeedStateFrom.jobId, false);
+      const nextJobDir = resolveDoc2mdJobDir(jobId, false);
+      for (const stateSub of ["state-main", "state-si"]) {
+        for (const stateFile of [".build-ownership.json", "build-report.json"]) {
+          const prevFile = join(prevJobDir, stateSub, stateFile);
+          if (existsSync(prevFile)) {
+            const nextStateSubDir = join(nextJobDir, stateSub);
+            mkdirSync(nextStateSubDir, { recursive: true });
+            copyFileSync(prevFile, join(nextStateSubDir, stateFile));
+          }
+        }
+      }
+    } catch {}
+  }
+
   const displayTitle = metadata.title || fallbackStem;
   const initialJob = saveDoc2mdJob(jobId, {
     jobId,
@@ -5387,29 +5732,63 @@ async function manageDoc2mdAction(input = {}) {
     }
     assertReadablePath(targetOut);
     const scriptsDir = resolveDoc2mdScriptsDir();
+    const isTempValDir = !job;
     const jobDir = job ? resolveDoc2mdJobDir(job.jobId, true) : mkdtempSync(join(DOC2MD_JOBS_DIR, ".val-"));
-    await runStandaloneDoc2mdValidators(
-      targetOut,
-      jobDir,
-      join(scriptsDir, "validate_output.py"),
-      join(scriptsDir, "extract_formulas.py"),
-      join(scriptsDir, "validate_math.cjs")
-    );
-    const stats = collectDoc2mdOutputStats(
-      targetOut,
-      job?.siOutDir || null,
-      job ? join(resolveDoc2mdJobDir(job.jobId, true), "state-main") : jobDir,
-      jobDir
-    );
-    let updatedJob = job;
-    if (job) {
-      updatedJob = saveDoc2mdJob(job.jobId, { ...job, stats });
+    try {
+      const siOutDir = job?.siOutDir && existsSync(job.siOutDir) ? resolve(job.siOutDir) : null;
+      const resourceRoot = siOutDir ? dirname(targetOut) : null;
+      const mainReports = await runStandaloneDoc2mdValidators(
+        targetOut,
+        jobDir,
+        join(scriptsDir, "validate_output.py"),
+        join(scriptsDir, "extract_formulas.py"),
+        join(scriptsDir, "validate_math.cjs"),
+        resourceRoot,
+        ""
+      );
+      let siReports = null;
+      if (siOutDir) {
+        siReports = await runStandaloneDoc2mdValidators(
+          siOutDir,
+          jobDir,
+          join(scriptsDir, "validate_output.py"),
+          join(scriptsDir, "extract_formulas.py"),
+          join(scriptsDir, "validate_math.cjs"),
+          dirname(targetOut),
+          "si-"
+        );
+      }
+      const stats = collectDoc2mdOutputStats(
+        targetOut,
+        siOutDir,
+        null,
+        jobDir,
+        null,
+        {
+          ...mainReports,
+          ...(siReports
+            ? {
+                siValidateOutputPath: siReports.validateOutputPath,
+                siFormulasPath: siReports.formulasPath,
+                siMathReportPath: siReports.mathReportPath
+              }
+            : {})
+        }
+      );
+      let updatedJob = job;
+      if (job) {
+        updatedJob = saveDoc2mdJob(job.jobId, { ...job, stats });
+      }
+      const panelState = await getFullPanelState();
+      return {
+        text: `🔍 校验完成（\`${targetOut}\`）：Markdown ${stats.markdownCount} 份 · 图片 ${stats.totalImageCount} 张 · 公式 ${stats.formulaCount} 处（结构校验: ${stats.outputValidationPassed ? "通过" : "未通过"} · KaTeX: ${stats.mathPassed ? "100% 通过" : `${stats.mathErrors} 处报错`}）`,
+        structured: { ...panelState, activeDoc2mdJob: updatedJob, validationStats: stats }
+      };
+    } finally {
+      if (isTempValDir && existsSync(jobDir)) {
+        rmSync(jobDir, { recursive: true, force: true });
+      }
     }
-    const panelState = await getFullPanelState();
-    return {
-      text: `🔍 校验完成（\`${targetOut}\`）：Markdown ${stats.markdownCount} 份 · 图片 ${stats.totalImageCount} 张 · 公式 ${stats.formulaCount} 处（KaTeX: ${stats.mathPassed ? "100% 通过" : `${stats.mathErrors} 处报错`}）`,
-      structured: { ...panelState, activeDoc2mdJob: updatedJob, validationStats: stats }
-    };
   }
   if (act === "preview") {
     const job = input.jobId ? loadDoc2mdJob(input.jobId) : null;
@@ -5748,9 +6127,9 @@ const TOOLS = [
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Search failed");
-      const state = loadState();
-      recordMainRunNavigation(state, runId);
-      saveState(state);
+      updateStateTransaction((state) => {
+        recordMainRunNavigation(state, runId);
+      });
 
       const panelState = await getFullPanelState(runId);
       return {
@@ -5798,12 +6177,15 @@ const TOOLS = [
       }
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Lookup failed");
-      const state = loadState();
+      let activeTargetRunId = runId;
       if (!input.preserveActiveRun) {
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        updateStateTransaction((state) => {
+          recordMainRunNavigation(state, runId);
+        });
+      } else {
+        activeTargetRunId = loadState().lastRunId;
       }
-      const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
+      const panelState = await getFullPanelState(activeTargetRunId);
       let subRun = null;
       if (input.preserveActiveRun) {
         const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
@@ -5872,13 +6254,16 @@ const TOOLS = [
       }
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Related exploration failed");
-      const latestState = loadState();
+      let activeTargetRunId = runId;
       if (!input.preserveActiveRun) {
-        recordMainRunNavigation(latestState, runId);
-        saveState(latestState);
+        updateStateTransaction((latestState) => {
+          recordMainRunNavigation(latestState, runId);
+        });
+      } else {
+        activeTargetRunId = loadState().lastRunId;
       }
 
-      const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
+      const panelState = await getFullPanelState(activeTargetRunId);
       let subRun = null;
       if (input.preserveActiveRun) {
         const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
@@ -5958,13 +6343,16 @@ const TOOLS = [
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       // A confirmed S2 author ID must never silently become an OpenAlex name search.
       requirePythonBundle(pyRes, outDir, "Author query failed");
-      const state = loadState();
+      let activeTargetRunId = runId;
       if (!input.preserveActiveRun) {
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        updateStateTransaction((state) => {
+          recordMainRunNavigation(state, runId);
+        });
+      } else {
+        activeTargetRunId = loadState().lastRunId;
       }
 
-      const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
+      const panelState = await getFullPanelState(activeTargetRunId);
       let subRun = null;
       if (input.preserveActiveRun) {
         const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
@@ -6094,29 +6482,32 @@ const TOOLS = [
             }
           };
           collectSupplFiles(join(exportedSaveDir, "supplementary"));
-          const exportState = loadState();
-          exportState.runExports = { ...(exportState.runExports || {}), [runId]: exportedSaveDir };
           const firstKey = firstPaper.paper_key || (firstPaper.title || firstPaper.identifiers ? computePaperKey(firstPaper) : null);
-          if (firstKey) {
-            const prevEv = exportState.evidenceMap[firstKey] || {};
-            exportState.evidenceMap[firstKey] = {
-              ...prevEv,
-              epmc_saved_dir: join(exportedSaveDir, "supplementary"),
-              epmc_suppl_files: copiedSupplFiles,
-              updatedAt: new Date().toISOString()
-            };
-          }
-          saveState(exportState);
+          updateStateTransaction((exportState) => {
+            exportState.runExports = { ...(exportState.runExports || {}), [runId]: exportedSaveDir };
+            if (firstKey) {
+              const prevEv = exportState.evidenceMap[firstKey] || {};
+              exportState.evidenceMap[firstKey] = {
+                ...prevEv,
+                epmc_saved_dir: join(exportedSaveDir, "supplementary"),
+                epmc_suppl_files: copiedSupplFiles,
+                updatedAt: new Date().toISOString()
+              };
+            }
+          });
         }
       }
 
-      const state = loadState();
+      let activeTargetRunId = runId;
       if (!input.preserveActiveRun) {
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        updateStateTransaction((state) => {
+          recordMainRunNavigation(state, runId);
+        });
+      } else {
+        activeTargetRunId = loadState().lastRunId;
       }
 
-      const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
+      const panelState = await getFullPanelState(activeTargetRunId);
       let subRun = null;
       if (input.preserveActiveRun) {
         const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
@@ -6172,9 +6563,9 @@ const TOOLS = [
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Exa search failed");
-      const state = loadState();
-      recordMainRunNavigation(state, runId);
-      saveState(state);
+      updateStateTransaction((state) => {
+        recordMainRunNavigation(state, runId);
+      });
 
       const panelState = await getFullPanelState(runId);
       return {
@@ -6244,9 +6635,9 @@ const TOOLS = [
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "Serper search failed");
-      const state = loadState();
-      recordMainRunNavigation(state, runId);
-      saveState(state);
+      updateStateTransaction((state) => {
+        recordMainRunNavigation(state, runId);
+      });
 
       const panelState = await getFullPanelState(runId);
       return {
@@ -6346,27 +6737,27 @@ const TOOLS = [
         acq.saved_dir = destDir;
         writeJsonSafe(acqPath, acq);
 
-        const state = loadState();
         const key = input.paperKey || (input.doi ? `doi:${String(input.doi).toLowerCase()}` : null);
-        if (key) {
-          const prev = state.evidenceMap[key] || {};
-          state.evidenceMap[key] = {
-            ...prev,
-            stage: prev.stage === "read" ? "read" : acq.identity?.status === "matched" ? "identity_checked" : "file_obtained",
-            pdfPath: savedPdfPath,
-            acquisition: acq,
-            updatedAt: new Date().toISOString()
-          };
-        }
-        // Also update basket item if present
-        if (key && Array.isArray(state.basket)) {
-          state.basket = state.basket.map((bp) =>
-            (bp.paper_key || computePaperKey(bp)) === key
-              ? { ...bp, local_pdf_path: savedPdfPath }
-              : bp
-          );
-        }
-        saveState(state);
+        updateStateTransaction((state) => {
+          if (key) {
+            const prev = state.evidenceMap[key] || {};
+            state.evidenceMap[key] = {
+              ...prev,
+              stage: prev.stage === "read" ? "read" : acq.identity?.status === "matched" ? "identity_checked" : "file_obtained",
+              pdfPath: savedPdfPath,
+              acquisition: acq,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          // Also update basket item if present
+          if (key && Array.isArray(state.basket)) {
+            state.basket = state.basket.map((bp) =>
+              (bp.paper_key || computePaperKey(bp)) === key
+                ? { ...bp, local_pdf_path: savedPdfPath }
+                : bp
+            );
+          }
+        });
 
         const panelState = await getFullPanelState();
         return {
@@ -6400,43 +6791,46 @@ const TOOLS = [
 
       const pyRes = await runPython(PAPER_SEARCH_PY, args);
       requirePythonBundle(pyRes, outDir, "OA resolution failed");
-      const state = loadState();
       const resolvedRaw = readJsonSafe(join(outDir, "papers.json"), []);
-      if (Array.isArray(resolvedRaw) && resolvedRaw.length > 0) {
-        for (const rp of resolvedRaw) {
-          const pKey = (resolvedRaw.length === 1 ? input.paperKey : null) || rp.paper_key || computePaperKey(rp);
-          if (!pKey) continue;
-          const prevEv = state.evidenceMap[pKey] || {};
-          const prevEnriched = prevEv.enriched || {};
-          const mergedOa = [...(prevEnriched.oa_locations || []), ...(rp.oa_locations || [])];
-          state.evidenceMap[pKey] = {
-            ...prevEv,
-            enriched: {
-              ...prevEnriched,
-              ...(rp.pdfUrl ? { pdfUrl: rp.pdfUrl } : {}),
-              identifiers: { ...(prevEnriched.identifiers || {}), ...(rp.identifiers || {}) },
-              oa_locations: mergedOa
-            },
-            updatedAt: new Date().toISOString()
-          };
-          if (Array.isArray(state.basket)) {
-            state.basket = state.basket.map((bp) =>
-              (bp.paper_key || computePaperKey(bp)) === pKey
-                ? {
-                    ...bp,
-                    ...(rp.pdfUrl ? { pdfUrl: rp.pdfUrl } : {}),
-                    oa_locations: [...(bp.oa_locations || []), ...(rp.oa_locations || [])]
-                  }
-                : bp
-            );
+      let activeTargetRunId = runId;
+      updateStateTransaction((state) => {
+        if (Array.isArray(resolvedRaw) && resolvedRaw.length > 0) {
+          for (const rp of resolvedRaw) {
+            const pKey = (resolvedRaw.length === 1 ? input.paperKey : null) || rp.paper_key || computePaperKey(rp);
+            if (!pKey) continue;
+            const prevEv = state.evidenceMap[pKey] || {};
+            const prevEnriched = prevEv.enriched || {};
+            const mergedOa = [...(prevEnriched.oa_locations || []), ...(rp.oa_locations || [])];
+            state.evidenceMap[pKey] = {
+              ...prevEv,
+              enriched: {
+                ...prevEnriched,
+                ...(rp.pdfUrl ? { pdfUrl: rp.pdfUrl } : {}),
+                identifiers: { ...(prevEnriched.identifiers || {}), ...(rp.identifiers || {}) },
+                oa_locations: mergedOa
+              },
+              updatedAt: new Date().toISOString()
+            };
+            if (Array.isArray(state.basket)) {
+              state.basket = state.basket.map((bp) =>
+                (bp.paper_key || computePaperKey(bp)) === pKey
+                  ? {
+                      ...bp,
+                      ...(rp.pdfUrl ? { pdfUrl: rp.pdfUrl } : {}),
+                      oa_locations: [...(bp.oa_locations || []), ...(rp.oa_locations || [])]
+                    }
+                  : bp
+              );
+            }
           }
         }
-      }
-      if (!input.preserveActiveRun) {
-        recordMainRunNavigation(state, runId);
-      }
-      saveState(state);
-      const panelState = await getFullPanelState(input.preserveActiveRun ? state.lastRunId : runId);
+        if (!input.preserveActiveRun) {
+          recordMainRunNavigation(state, runId);
+        } else {
+          activeTargetRunId = state.lastRunId;
+        }
+      });
+      const panelState = await getFullPanelState(activeTargetRunId);
       let subRun = null;
       if (input.preserveActiveRun) {
         const subProbe = await probeLocalZotero(Array.isArray(resolvedRaw) ? resolvedRaw : []);
@@ -6477,11 +6871,13 @@ const TOOLS = [
     execute: async (input) => {
       const op = input.operation || "load";
       if (op === "load") {
-        const state = loadState();
         if (input.runId) {
           resolveRunDir(input.runId);
-          recordMainRunNavigation(state, input.runId);
-          saveState(state);
+          updateStateTransaction((state) => {
+            recordMainRunNavigation(state, input.runId);
+          });
+        } else {
+          loadState();
         }
         const panelState = await getFullPanelState(input.runId);
         return {
@@ -6503,13 +6899,13 @@ const TOOLS = [
             deletedCount++;
           }
         }
-        const state = loadState();
-        state.runNavHistory = (state.runNavHistory || []).filter((id) => !targets.includes(id));
-        if (state.lastRunId && targets.includes(state.lastRunId)) {
-          const remaining = listRecentRuns(1);
-          state.lastRunId = remaining[0]?.runId || null;
-        }
-        saveState(state);
+        updateStateTransaction((state) => {
+          state.runNavHistory = (state.runNavHistory || []).filter((id) => !targets.includes(id));
+          if (state.lastRunId && targets.includes(state.lastRunId)) {
+            const remaining = listRecentRuns(1);
+            state.lastRunId = remaining[0]?.runId || null;
+          }
+        });
         const panelState = await getFullPanelState();
         return {
           text: `已删除 ${deletedCount} 条历史记录。`,
@@ -6526,10 +6922,10 @@ const TOOLS = [
             }
           }
         }
-        const state = loadState();
-        state.lastRunId = null;
-        state.runNavHistory = [];
-        saveState(state);
+        updateStateTransaction((state) => {
+          state.lastRunId = null;
+          state.runNavHistory = [];
+        });
         const panelState = await getFullPanelState();
         return {
           text: `已清空全部 ${deletedCount} 条搜索历史记录（收藏篮中的文献已保留）。`,
@@ -6545,9 +6941,9 @@ const TOOLS = [
         if (input.zoteroJsonPath) args.push("--zotero", input.zoteroJsonPath);
         const pyRes = await runPython(PAPER_SEARCH_PY, args);
         requirePythonBundle(pyRes, outDir, "Merge failed");
-        const state = loadState();
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        updateStateTransaction((state) => {
+          recordMainRunNavigation(state, runId);
+        });
         const panelState = await getFullPanelState(runId);
         return {
           text: summarizeRunForModel(panelState.activeRun),
@@ -6569,9 +6965,9 @@ const TOOLS = [
         ];
         const pyRes = await runPython(PAPER_SEARCH_PY, args);
         requirePythonBundle(pyRes, outDir, "Diff failed");
-        const state = loadState();
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        updateStateTransaction((state) => {
+          recordMainRunNavigation(state, runId);
+        });
         const panelState = await getFullPanelState(runId);
         return {
           text: summarizeRunForModel(panelState.activeRun),
@@ -6748,38 +7144,38 @@ const TOOLS = [
       if (act === "save_to_zotero") {
         if (!input.paper) throw new Error("未提供要存入 Zotero 的论文数据");
         const zRes = await savePaperToLocalZotero(input.paper, input.collectionKey || "");
-        state = loadState();
         const key = input.paper.paper_key || computePaperKey(input.paper);
-        const prev = state.evidenceMap[key] || {};
-        state.evidenceMap[key] = {
-          ...prev,
-          zoteroUndoneKey: null,
-          zoteroUndoneAt: null,
-          zoteroMatch: {
-            matched: true,
-            itemKey: zRes.itemKey,
-            attachmentKey: zRes.attachmentKey || null,
-            noteKey: zRes.noteKey || null,
-            createdZoteroItems: zRes.createdZoteroItems || [zRes.itemKey],
-            createdByPlugin: Boolean(state.zoteroImports?.[zRes.itemKey]),
-            undoAvailable: Boolean(state.zoteroImports?.[zRes.itemKey]),
-            selectUri: zRes.selectUri,
-            collections: zRes.collections || []
-          },
-          updatedAt: new Date().toISOString()
-        };
-        if (!zRes.alreadyExists && zRes.undoAvailable) {
-          state.lastZoteroImport = {
-            paperKey: key,
-            itemKey: zRes.itemKey,
-            attachmentKey: zRes.attachmentKey || null,
-            noteKey: zRes.noteKey || null,
-            createdZoteroItems: zRes.createdZoteroItems || [zRes.itemKey],
-            title: input.paper.title || key,
-            timestamp: new Date().toISOString()
+        updateStateTransaction((latestState) => {
+          const prev = latestState.evidenceMap[key] || {};
+          latestState.evidenceMap[key] = {
+            ...prev,
+            zoteroUndoneKey: null,
+            zoteroUndoneAt: null,
+            zoteroMatch: {
+              matched: true,
+              itemKey: zRes.itemKey,
+              attachmentKey: zRes.attachmentKey || null,
+              noteKey: zRes.noteKey || null,
+              createdZoteroItems: zRes.createdZoteroItems || [zRes.itemKey],
+              createdByPlugin: Boolean(latestState.zoteroImports?.[zRes.itemKey]),
+              undoAvailable: Boolean(latestState.zoteroImports?.[zRes.itemKey]),
+              selectUri: zRes.selectUri,
+              collections: zRes.collections || []
+            },
+            updatedAt: new Date().toISOString()
           };
-        }
-        saveState(state);
+          if (!zRes.alreadyExists && zRes.undoAvailable) {
+            latestState.lastZoteroImport = {
+              paperKey: key,
+              itemKey: zRes.itemKey,
+              attachmentKey: zRes.attachmentKey || null,
+              noteKey: zRes.noteKey || null,
+              createdZoteroItems: zRes.createdZoteroItems || [zRes.itemKey],
+              title: input.paper.title || key,
+              timestamp: new Date().toISOString()
+            };
+          }
+        });
         const panelState = await getFullPanelState();
         return {
           text: zRes.alreadyExists
@@ -6805,25 +7201,25 @@ const TOOLS = [
         }
         const delRes = await deletePaperFromLocalZotero(targetKey, importRecord);
         invalidateZoteroProbeCache(pKey);
-        state = loadState();
-        delete state.zoteroImports[targetKey];
-        if (pKey && state.evidenceMap[pKey]) {
-          delete state.evidenceMap[pKey].zoteroMatch;
-          state.evidenceMap[pKey].zoteroUndoneKey = targetKey;
-          state.evidenceMap[pKey].zoteroUndoneAt = Date.now();
-          state.evidenceMap[pKey].updatedAt = new Date().toISOString();
-        }
-        for (const [k, ev] of Object.entries(state.evidenceMap || {})) {
-          if (ev?.zoteroMatch?.itemKey === targetKey) {
-            delete state.evidenceMap[k].zoteroMatch;
-            state.evidenceMap[k].zoteroUndoneKey = targetKey;
-            state.evidenceMap[k].zoteroUndoneAt = Date.now();
+        updateStateTransaction((latestState) => {
+          delete latestState.zoteroImports[targetKey];
+          if (pKey && latestState.evidenceMap[pKey]) {
+            delete latestState.evidenceMap[pKey].zoteroMatch;
+            latestState.evidenceMap[pKey].zoteroUndoneKey = targetKey;
+            latestState.evidenceMap[pKey].zoteroUndoneAt = Date.now();
+            latestState.evidenceMap[pKey].updatedAt = new Date().toISOString();
           }
-        }
-        if (state.lastZoteroImport?.itemKey === targetKey) {
-          state.lastZoteroImport = null;
-        }
-        saveState(state);
+          for (const [k, ev] of Object.entries(latestState.evidenceMap || {})) {
+            if (ev?.zoteroMatch?.itemKey === targetKey) {
+              delete latestState.evidenceMap[k].zoteroMatch;
+              latestState.evidenceMap[k].zoteroUndoneKey = targetKey;
+              latestState.evidenceMap[k].zoteroUndoneAt = Date.now();
+            }
+          }
+          if (latestState.lastZoteroImport?.itemKey === targetKey) {
+            latestState.lastZoteroImport = null;
+          }
+        });
         const panelState = await getFullPanelState();
         return {
           text: `↩ 已撤销导入并从本机 Zotero 库中移除条目 \`${targetKey}\`。`,
@@ -6834,26 +7230,26 @@ const TOOLS = [
         if (!input.paper) throw new Error("未提供要补全摘要的论文数据");
         const key = input.paper.paper_key || computePaperKey(input.paper);
         const enriched = await enrichPaperAbstractAndMetadata(input.paper);
-        state = loadState();
-        const prev = state.evidenceMap[key] || {};
-        state.evidenceMap[key] = {
-          ...prev,
-          stage:
-            prev.stage && prev.stage !== "discovered"
-              ? prev.stage
-              : enriched.abstract
-                ? "metadata_checked"
-                : "discovered",
-          enriched: { ...(prev.enriched || {}), ...enriched },
-          updatedAt: new Date().toISOString()
-        };
-        // Also update basket if present
-        if (Array.isArray(state.basket)) {
-          state.basket = state.basket.map((bp) =>
-            (bp.paper_key || computePaperKey(bp)) === key ? { ...bp, ...enriched } : bp
-          );
-        }
-        saveState(state);
+        updateStateTransaction((latestState) => {
+          const prev = latestState.evidenceMap[key] || {};
+          latestState.evidenceMap[key] = {
+            ...prev,
+            stage:
+              prev.stage && prev.stage !== "discovered"
+                ? prev.stage
+                : enriched.abstract
+                  ? "metadata_checked"
+                  : "discovered",
+            enriched: { ...(prev.enriched || {}), ...enriched },
+            updatedAt: new Date().toISOString()
+          };
+          // Also update basket if present
+          if (Array.isArray(latestState.basket)) {
+            latestState.basket = latestState.basket.map((bp) =>
+              (bp.paper_key || computePaperKey(bp)) === key ? { ...bp, ...enriched } : bp
+            );
+          }
+        });
         const panelState = await getFullPanelState();
         return {
           text: enriched.abstract
@@ -6862,65 +7258,66 @@ const TOOLS = [
           structured: { ...panelState, enrichedPaperKey: key, enrichedData: enriched }
         };
       }
-      if (act === "add" && (input.paper || (Array.isArray(input.papers) && input.papers.length))) {
-        const itemsToAdd = Array.isArray(input.papers) && input.papers.length ? input.papers : [input.paper];
-        for (const pItem of itemsToAdd) {
-          if (!pItem || typeof pItem !== "object") continue;
-          const key = pItem.paper_key || computePaperKey(pItem);
-          const mergedTags = input.user_tags !== undefined
-            ? normalizeUserTags(input.user_tags)
-            : pItem.user_tags !== undefined
-              ? normalizeUserTags(pItem.user_tags)
-              : undefined;
-          const mergedNote = input.user_note !== undefined
-            ? String(input.user_note ?? "").trim()
-            : pItem.user_note !== undefined
-              ? String(pItem.user_note ?? "").trim()
-              : undefined;
-          if (mergedTags !== undefined || mergedNote !== undefined) {
-            setPaperNoteAndTags(state, key, mergedTags, mergedNote, pItem);
+      updateStateTransaction((latestState) => {
+        if (act === "add" && (input.paper || (Array.isArray(input.papers) && input.papers.length))) {
+          const itemsToAdd = Array.isArray(input.papers) && input.papers.length ? input.papers : [input.paper];
+          for (const pItem of itemsToAdd) {
+            if (!pItem || typeof pItem !== "object") continue;
+            const key = pItem.paper_key || computePaperKey(pItem);
+            const mergedTags = input.user_tags !== undefined
+              ? normalizeUserTags(input.user_tags)
+              : pItem.user_tags !== undefined
+                ? normalizeUserTags(pItem.user_tags)
+                : undefined;
+            const mergedNote = input.user_note !== undefined
+              ? String(input.user_note ?? "").trim()
+              : pItem.user_note !== undefined
+                ? String(pItem.user_note ?? "").trim()
+                : undefined;
+            if (mergedTags !== undefined || mergedNote !== undefined) {
+              setPaperNoteAndTags(latestState, key, mergedTags, mergedNote, pItem);
+            }
+            const exists = latestState.basket.some((p) => (p.paper_key || computePaperKey(p)) === key);
+            if (!exists) {
+              latestState.basket.push({
+                ...pItem,
+                paper_key: key,
+                ...(mergedTags !== undefined ? { user_tags: mergedTags } : {}),
+                ...(mergedNote !== undefined ? { user_note: mergedNote } : {})
+              });
+            } else if (mergedTags !== undefined || mergedNote !== undefined) {
+              latestState.basket = latestState.basket.map((bp) =>
+                (bp.paper_key || computePaperKey(bp)) === key
+                  ? {
+                      ...bp,
+                      ...(mergedTags !== undefined ? { user_tags: mergedTags } : {}),
+                      ...(mergedNote !== undefined ? { user_note: mergedNote } : {})
+                    }
+                  : bp
+              );
+            }
           }
-          const exists = state.basket.some((p) => (p.paper_key || computePaperKey(p)) === key);
-          if (!exists) {
-            state.basket.push({
-              ...pItem,
-              paper_key: key,
-              ...(mergedTags !== undefined ? { user_tags: mergedTags } : {}),
-              ...(mergedNote !== undefined ? { user_note: mergedNote } : {})
-            });
-          } else if (mergedTags !== undefined || mergedNote !== undefined) {
-            state.basket = state.basket.map((bp) =>
-              (bp.paper_key || computePaperKey(bp)) === key
-                ? {
-                    ...bp,
-                    ...(mergedTags !== undefined ? { user_tags: mergedTags } : {}),
-                    ...(mergedNote !== undefined ? { user_note: mergedNote } : {})
-                  }
-                : bp
-            );
+        } else if (act === "remove" && input.paperKey) {
+          latestState.basket = latestState.basket.filter(
+            (p) => (p.paper_key || computePaperKey(p)) !== input.paperKey
+          );
+        } else if (act === "clear") {
+          latestState.basket = [];
+        } else if ((act === "update_evidence" || act === "set_note_tags") && (input.paperKey || input.paper)) {
+          const targetKey = String(input.paperKey || input.paper?.paper_key || computePaperKey(input.paper)).trim();
+          const prev = latestState.evidenceMap[targetKey] || {};
+          latestState.evidenceMap[targetKey] = {
+            ...prev,
+            ...(input.stage ? { stage: input.stage } : {}),
+            ...(input.basis ? { basis: input.basis } : {}),
+            ...(input.reason !== undefined ? { reason: input.reason } : {}),
+            updatedAt: new Date().toISOString()
+          };
+          if (input.user_tags !== undefined || input.user_note !== undefined) {
+            setPaperNoteAndTags(latestState, targetKey, input.user_tags, input.user_note, input.paper);
           }
         }
-      } else if (act === "remove" && input.paperKey) {
-        state.basket = state.basket.filter(
-          (p) => (p.paper_key || computePaperKey(p)) !== input.paperKey
-        );
-      } else if (act === "clear") {
-        state.basket = [];
-      } else if ((act === "update_evidence" || act === "set_note_tags") && (input.paperKey || input.paper)) {
-        const targetKey = String(input.paperKey || input.paper?.paper_key || computePaperKey(input.paper)).trim();
-        const prev = state.evidenceMap[targetKey] || {};
-        state.evidenceMap[targetKey] = {
-          ...prev,
-          ...(input.stage ? { stage: input.stage } : {}),
-          ...(input.basis ? { basis: input.basis } : {}),
-          ...(input.reason !== undefined ? { reason: input.reason } : {}),
-          updatedAt: new Date().toISOString()
-        };
-        if (input.user_tags !== undefined || input.user_note !== undefined) {
-          setPaperNoteAndTags(state, targetKey, input.user_tags, input.user_note, input.paper);
-        }
-      }
-      saveState(state);
+      });
       const panelState = await getFullPanelState();
       return {
         text: `收藏篮与阅读进度已更新（当前收藏共 ${panelState.basket.length} 篇文献）。`,
@@ -6953,8 +7350,8 @@ const TOOLS = [
       }
     },
     execute: async (input) => {
-      const state = loadState();
-      const targetRun = input?.runId || (!input?.venues?.length ? state.lastRunId : null);
+      const initialState = loadState();
+      const targetRun = input?.runId || (!input?.venues?.length ? initialState.lastRunId : null);
       const venuesList = Array.isArray(input?.venues)
         ? input.venues.map((v) => String(v || "").trim()).filter(Boolean)
         : [];
@@ -6990,11 +7387,15 @@ const TOOLS = [
         }
       }
       const preserve = input?.preserveActiveRun !== undefined ? Boolean(input.preserveActiveRun) : Boolean(targetRun);
+      let activeTargetRunId = runId;
       if (!preserve) {
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        updateStateTransaction((latestState) => {
+          recordMainRunNavigation(latestState, runId);
+        });
+      } else {
+        activeTargetRunId = loadState().lastRunId;
       }
-      const panelState = await getFullPanelState(preserve ? state.lastRunId : runId);
+      const panelState = await getFullPanelState(activeTargetRunId);
       const rankResults = readJsonSafe(join(outDir, "results.json"), []);
       const lines = ["### 🏆 easyScholar 期刊/会议等级查询结果："];
       for (const r of Array.isArray(rankResults) ? rankResults : []) {
@@ -7125,14 +7526,15 @@ const TOOLS = [
       const pyRes = await runPython(PAPER_SEARCH_PY, args, 180000);
       requirePythonBundle(pyRes, outDir, `AI4Scholar (${mode}) failed`);
 
-      const state = loadState();
+      let activeTargetRunId = runId;
       if (!input?.preserveActiveRun && mode !== "credits") {
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        updateStateTransaction((state) => {
+          recordMainRunNavigation(state, runId);
+        });
+      } else {
+        activeTargetRunId = loadState().lastRunId;
       }
-      const panelState = await getFullPanelState(
-        input?.preserveActiveRun || mode === "credits" ? state.lastRunId : runId
-      );
+      const panelState = await getFullPanelState(activeTargetRunId);
       let bundle = panelState.activeRun?.runId === runId ? panelState.activeRun : null;
       if (!bundle) {
         const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
@@ -7338,12 +7740,12 @@ const TOOLS = [
         }
       }
 
-      const state = loadState();
-      if (Object.keys(copiedPaths).length > 0) {
-        state.runExports = { ...(state.runExports || {}), [runId]: destDir };
-      }
-      recordMainRunNavigation(state, runId);
-      saveState(state);
+      updateStateTransaction((state) => {
+        if (Object.keys(copiedPaths).length > 0) {
+          state.runExports = { ...(state.runExports || {}), [runId]: destDir };
+        }
+        recordMainRunNavigation(state, runId);
+      });
 
       const panelState = await getFullPanelState(runId);
       return {
@@ -7688,34 +8090,37 @@ const TOOLS = [
             } catch {}
           }
 
-          const exportState = loadState();
-          exportState.runExports = { ...(exportState.runExports || {}), [runId]: exportedSaveDir };
           const targetKey =
             input?.paperKey ||
             firstPaper.paper_key ||
             (firstPaper.title || firstPaper.identifiers ? computePaperKey(firstPaper) : null);
-          if (targetKey) {
-            const prevEv = exportState.evidenceMap[targetKey] || {};
-            exportState.evidenceMap[targetKey] = {
-              ...prevEv,
-              sciverse_saved_dir: exportedSaveDir,
-              ...(exportedFigureFiles.length ? { sciverse_figure_files: exportedFigureFiles } : {}),
-              ...(exportedExcerptPath ? { sciverse_excerpt_path: exportedExcerptPath } : {}),
-              ...(exportedMaterialsPath ? { sciverse_materials_path: exportedMaterialsPath } : {}),
-              updatedAt: new Date().toISOString()
-            };
-          }
-          saveState(exportState);
+          updateStateTransaction((exportState) => {
+            exportState.runExports = { ...(exportState.runExports || {}), [runId]: exportedSaveDir };
+            if (targetKey) {
+              const prevEv = exportState.evidenceMap[targetKey] || {};
+              exportState.evidenceMap[targetKey] = {
+                ...prevEv,
+                sciverse_saved_dir: exportedSaveDir,
+                ...(exportedFigureFiles.length ? { sciverse_figure_files: exportedFigureFiles } : {}),
+                ...(exportedExcerptPath ? { sciverse_excerpt_path: exportedExcerptPath } : {}),
+                ...(exportedMaterialsPath ? { sciverse_materials_path: exportedMaterialsPath } : {}),
+                updatedAt: new Date().toISOString()
+              };
+            }
+          });
         }
       }
 
-      const state = loadState();
+      let activeTargetRunId = runId;
       if (!input?.preserveActiveRun) {
-        recordMainRunNavigation(state, runId);
-        saveState(state);
+        updateStateTransaction((state) => {
+          recordMainRunNavigation(state, runId);
+        });
+      } else {
+        activeTargetRunId = loadState().lastRunId;
       }
 
-      const panelState = await getFullPanelState(input?.preserveActiveRun ? state.lastRunId : runId);
+      const panelState = await getFullPanelState(activeTargetRunId);
       let subRun = null;
       if (input?.preserveActiveRun) {
         const subRaw = readJsonSafe(join(outDir, "papers.json"), []);
@@ -8140,7 +8545,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.9.2"
+          version: "1.9.3"
         }
       }
     };
@@ -8234,15 +8639,16 @@ async function handleRequest(message) {
       validateInput(TOOLS.find((tool) => tool.name === "manage_basket").inputSchema, input);
       validateToolInput("manage_basket", input);
       const operation = toolQueue.then(async () => {
-        const state = loadState();
-        const saved = setPaperNoteAndTags(
-          state,
-          params?.paperKey,
-          params?.user_tags ?? params?.userTags,
-          params?.user_note ?? params?.userNote,
-          params?.paper
-        );
-        saveState(state);
+        let saved;
+        updateStateTransaction((state) => {
+          saved = setPaperNoteAndTags(
+            state,
+            params?.paperKey,
+            params?.user_tags ?? params?.userTags,
+            params?.user_note ?? params?.userNote,
+            params?.paper
+          );
+        });
         const panelState = await getFullPanelState();
         return {
           text: `已保存文献标签与随手批注 (${saved.paperKey})。`,
