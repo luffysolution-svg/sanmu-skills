@@ -27,14 +27,14 @@
       "versions": [
         {
           "version": "1.10.1",
-          "publishTimestamp": 1793171864,
+          "publishTimestamp": 1793195565,
           "source": {
             "type": "git",
             "url": "https://github.com/luffysolution-svg/sanmu-skills.git",
-            "commit": "27fcd00e5bb3b15356318c074b512a26a1ea7254"
+            "commit": "f7d44c788814a51e0de8bc344758e9460cc46829"
           },
           "engines": {
-            "dsh": ">=0.2.2-alpha.2 <0.3.0"
+            "dsh": ">=0.2.1-rc.1 <0.3.0"
           }
         }
       ]
