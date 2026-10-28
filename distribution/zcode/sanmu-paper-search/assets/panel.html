@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>三木文献检索 (Sanmu Paper Search)</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <style>
     :root {
       --bg-primary: var(--color-background-primary, #ffffff);
@@ -921,8 +922,18 @@
     <!-- Top Header & Compact Status Strip -->
     <div class="topbar">
       <div class="brand">
+        <svg class="brand-logo" viewBox="0 0 512 512" width="22" height="22" style="border-radius:6px; flex-shrink:0; box-shadow:0 1px 3px rgba(0,0,0,0.12);" aria-label="Logo">
+          <rect x="16" y="16" width="480" height="480" rx="108" fill="#0F172A" stroke="#38BDF8" stroke-width="8"/>
+          <path d="M 256 368 C 210 338, 140 334, 96 352 C 92 280, 96 220, 100 216 C 146 198, 214 204, 256 236 Z" fill="#2563EB"/>
+          <path d="M 256 368 C 302 338, 372 334, 416 352 C 420 280, 416 220, 412 216 C 366 198, 298 204, 256 236 Z" fill="#1D4ED8"/>
+          <path d="M 170 195 C 130 195, 120 150, 160 135 C 190 125, 205 160, 170 195 Z" fill="#10B981"/>
+          <path d="M 342 195 C 382 195, 392 150, 352 135 C 322 125, 307 160, 342 195 Z" fill="#059669"/>
+          <path d="M 256 80 C 220 130, 230 180, 256 210 C 282 180, 292 130, 256 80 Z" fill="#34D399"/>
+          <circle cx="256" cy="272" r="52" fill="none" stroke="#F59E0B" stroke-width="20"/>
+          <line x1="294" y1="310" x2="336" y2="352" stroke="#F59E0B" stroke-width="22" stroke-linecap="round"/>
+        </svg>
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.10.0</span>
+        <span class="brand-sub">v1.10.1</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -2081,7 +2092,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.10.0" },
+              appInfo: { name: "sanmu-paper-search", version: "1.10.1" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -2284,10 +2295,10 @@
             content: [{ type: "text", text: promptText }]
           }, 10000);
           if (res?.isError) throw new Error("宿主未接收消息");
-          showBanner("已发送到当前 ZCode 对话框！", "success");
+          showBanner("已发送到当前客户端对话框！", "success");
         } catch {
           await copyTextToClipboard(promptText);
-          showBanner("已将分析指令复制到剪贴板，可直接粘贴到对话框。", "success");
+          showBanner("已自动复制精读与分析指令！请直接在当前会话（Claude/Codex/Pi/DSH）中粘贴发送给助手。", "info");
         }
       }
 

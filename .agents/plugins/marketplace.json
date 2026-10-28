@@ -3,6 +3,9 @@
   "plugins": [
     {
       "name": "sanmu-skills",
+      "displayName": "三木文献检索",
+      "icon": "./assets/icon.png",
+      "description": "在对话侧栏与 Agent 中使用三木文献检索与文档解析：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse、AI4Scholar、easyScholar、Serper、Exa、OA PDF/SI 下载与本机 Zotero 联动，以及 sanmu-doc2md 学术文档转 Markdown 知识库。",
       "source": {
         "source": "local",
         "path": "./"

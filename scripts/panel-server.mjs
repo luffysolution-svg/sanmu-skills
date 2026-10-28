@@ -436,6 +436,9 @@ export async function startPanelServer({
     .find((path) => existsSync(path));
   if (!panelPath) throw new Error(`Cannot find assets/panel.html under ${hostRoot}`);
   const html = await readFile(panelPath, "utf8");
+  const faviconPath = [join(hostRoot, "assets", "favicon.ico"), join(canonicalRoot, "assets", "favicon.ico")]
+    .find((path) => existsSync(path));
+  const faviconBuffer = faviconPath ? await readFile(faviconPath) : null;
   const cliPath = join(hostRoot, "scripts", "sanmu.mjs");
   const entry = existsSync(cliPath) ? cliPath
     : [join(hostRoot, "scripts", "mcp-server.mjs"), join(canonicalRoot, "scripts", "mcp-server.mjs")]
@@ -476,7 +479,7 @@ export async function startPanelServer({
     if (!isObject(params)) throw rpcError(-32602, "RPC params must be an object");
     if (method === "ui/initialize") return {
       protocolVersion: "2026-01-26",
-      hostInfo: { name: "sanmu-browser", version: "1.10.0" },
+      hostInfo: { name: "sanmu-browser", version: "1.10.1" },
       hostCapabilities: { serverTools: {}, openLinks: {} },
       hostContext: { theme: "light", locale: "zh-CN", displayMode: "standalone" }
     };
@@ -514,12 +517,15 @@ export async function startPanelServer({
     }
     const url = new URL(request.url, origin);
     if (["GET", "HEAD"].includes(request.method)) {
+      if (url.pathname === "/favicon.ico") {
+        if (faviconBuffer) return respond(request, response, 200, faviconBuffer, "image/x-icon");
+        return respond(request, response, 204);
+      }
       const tokens = url.searchParams.getAll("token");
       const launched = tokens.length === 1 && safeEqual(tokens[0], launchToken);
       if (tokens.length && !launched) throw httpError(403, "Invalid launch token");
       if (!launched && !authenticated(request)) throw httpError(401, "请使用 sanmu panel 提供的完整本地链接打开面板。");
       if (launched) response.setHeader("Set-Cookie", `${cookieName}=${cookieSecret}; HttpOnly; SameSite=Strict; Path=/`);
-      if (url.pathname === "/favicon.ico") return respond(request, response, 204);
       const frameId = url.pathname === "/host" ? "sanmu-panel-frame" : undefined;
       let page = html;
       if (frameId) page = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>三木文献检索</title><style>html,body{height:100%;margin:0}iframe{display:block;width:100%;height:100%;border:0}</style></head><body><iframe id="sanmu-panel-frame" title="Sanmu Paper Search" src="/panel"></iframe></body></html>';
@@ -585,7 +591,7 @@ export async function startPanelServer({
   server.once("close", () => { if (!closed) void close(); });
   try {
     const initialization = await client.request("initialize", {
-      protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "sanmu-browser", version: "1.10.0" }
+      protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "sanmu-browser", version: "1.10.1" }
     }, Math.min(rpcTimeoutMs, 30000));
     client.notify("notifications/initialized");
     toolsResult = { tools: [] };

@@ -1,0 +1,29 @@
+{
+  "name": "sanmu-skills",
+  "owner": {
+    "name": "三木 / Sanmu",
+    "url": "https://github.com/luffysolution-svg"
+  },
+  "metadata": {
+    "description": "三木的科研 Agent Skills：文档解析、文献精读与文献检索。"
+  },
+  "plugins": [
+    {
+      "name": "sanmu-skills",
+      "source": "./",
+      "version": "1.10.1",
+      "displayName": "三木文献检索",
+      "displayName_i18n": {
+        "zh-CN": "三木文献检索",
+        "en-US": "Sanmu Paper Search"
+      },
+      "icon": "./assets/icon.png",
+      "description": "在对话侧栏与 Agent 中使用三木文献检索与文档解析：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse、AI4Scholar、easyScholar、Serper、Exa、OA PDF/SI 下载与本机 Zotero 联动，以及 sanmu-doc2md 学术文档转 Markdown 知识库。",
+      "description_i18n": {
+        "zh-CN": "在对话侧栏与 Agent 中使用三木文献检索与文档解析：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse、AI4Scholar、easyScholar、Serper、Exa、OA PDF/SI 下载与本机 Zotero 联动，以及 sanmu-doc2md 学术文档转 Markdown 知识库。",
+        "en": "Search, verify, and explore academic literature in a side panel: literature search, citation graph, paper reader, document conversion, and Zotero integration."
+      },
+      "category": "productivity"
+    }
+  ]
+}

@@ -13,7 +13,7 @@ const extensionPath = join(repoRoot, "extensions", "pi.ts");
 const skillNames = ["sanmu-doc2md", "sanmu-paper-reader", "sanmu-paper-search"];
 const packageManifest = {
   name: "sanmu-skills",
-  version: "1.10.0",
+  version: "1.10.1",
   type: "module",
   pi: { extensions: ["./extensions/pi.ts"], skills: ["./skills"] },
 };

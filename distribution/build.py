@@ -19,11 +19,15 @@ ROOT = Path(__file__).resolve().parents[1]
 ROOT_RUNTIME_FILES = (
     "scripts/sanmu.mjs", "scripts/runtime.mjs", "scripts/panel-server.mjs", "scripts/zotero-tools.mjs",
 )
+ROOT_ASSET_FILES = (
+    "assets/favicon.ico", "assets/icon-64.png", "assets/icon.png", "assets/icon.svg",
+    "assets/logo.png", "assets/logo.svg", "assets/panel.html",
+)
 ROOT_HOST_FILES = (
     "plugin.json", "mcp.json", ".mcp.json", ".claude-plugin/plugin.json",
     ".claude-plugin/marketplace.json", ".codex-plugin/plugin.json", ".codex-plugin/mcp-env.json",
-    ".agents/plugins/marketplace.json", "package.json", "cordis.patch.yml",
-    *ROOT_RUNTIME_FILES, "extensions/pi.ts",
+    ".agents/plugins/marketplace.json", ".zcode-plugin/plugin.json", "marketplace.json", "package.json", "cordis.patch.yml",
+    *ROOT_RUNTIME_FILES, "scripts/mcp-server.mjs", *ROOT_ASSET_FILES, "extensions/pi.ts",
 )
 ZCODE_SHELL_DIR = "distribution/zcode/sanmu-paper-search"
 CANONICAL_RUNTIME_FILES = tuple(f"{ZCODE_SHELL_DIR}/{path}" for path in (
@@ -205,7 +209,7 @@ def validate_patch(root, path, files):
 def zcode_sources(files):
     sources = {path: f"{ZCODE_SHELL_DIR}/{path}" for path in ZCODE_SHELL_FILES}
     sources["LICENSE"] = "LICENSE"
-    sources.update({path: path for path in files if path.startswith("skills/") or path in ROOT_RUNTIME_FILES})
+    sources.update({path: path for path in files if path.startswith("skills/") or path in ROOT_RUNTIME_FILES or path in ROOT_ASSET_FILES})
     # Older ZCode hosts and MCP engines also discover search tools at scripts/.
     prefix = "skills/sanmu-paper-search/scripts/"
     for path in files:
@@ -219,7 +223,7 @@ def zcode_sources(files):
 
 def validate_hosts(root, release, files):
     version = release["version"]
-    manifests = ("plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "package.json")
+    manifests = ("plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", ".zcode-plugin/plugin.json", "package.json")
     for path in manifests:
         plugin = read_json(root / path)
         if plugin.get("name") != release["name"] or plugin.get("version") != version:
@@ -240,7 +244,7 @@ def validate_hosts(root, release, files):
         if path == "mcp.json" and config.get("$schema") != "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json":
             raise ValueError("Invalid portable MCP schema: mcp.json")
         validate_mcp(config, files, path, variable, "scripts/sanmu.mjs", cli=True)
-    for path in (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"):
+    for path in (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json", "marketplace.json"):
         market = read_json(root / path)
         entries = market.get("plugins", [])
         if market.get("name") != release["name"] or [p.get("name") for p in entries] != [release["name"]]:
@@ -248,7 +252,7 @@ def validate_hosts(root, release, files):
         if any(p.get("version", version) != version for p in entries):
             raise ValueError(f"Marketplace version differs from release manifest: {path}")
         source = entries[0].get("source")
-        if path.startswith(".claude-plugin/"):
+        if path.startswith(".claude-plugin/") or path == "marketplace.json":
             valid = source in {".", "./"} if isinstance(source, str) else False
         else:
             valid = isinstance(source, dict) and source.get("source") == "local" and source.get("path") in {".", "./"}

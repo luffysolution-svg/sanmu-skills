@@ -8665,7 +8665,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.10.0"
+          version: "1.10.1"
         }
       }
     };
