@@ -6078,11 +6078,11 @@ const TOOLS = [
       const panel = portableHost && process.env.SANMU_PANEL_WORKER !== "1" ? await ensureBrowserPanel() : null;
       return {
         text: panel
-          ? `三木科研工作台已就绪，本机浏览器可直接打开：${panel.origin}/\n（若需带鉴权参数亦可使用：${panel.url}）\n${panelState.activeRun ? summarizeRunForModel(panelState.activeRun) : "可使用完整检索、关系图谱、收藏篮、API 配置和文档解析功能。"}`
+          ? `三木科研工作台已就绪，请在本机浏览器打开：${panel.url}\n${panelState.activeRun ? summarizeRunForModel(panelState.activeRun) : "可使用完整检索、关系图谱、收藏篮、API 配置和文档解析功能。"}`
           : panelState.activeRun
             ? summarizeRunForModel(panelState.activeRun)
             : "三木文献检索工作台已就绪。可选择文献源、配置 API 或直接发起检索。",
-        structured: { ...panelState, ...(panel ? { panelUrl: panel.url, origin: panel.origin } : {}) }
+        structured: { ...panelState, ...(panel ? { panelUrl: panel.url } : {}) }
       };
     }
   },

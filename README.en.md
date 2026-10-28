@@ -169,10 +169,9 @@ dsh plugin --profile desktop add link:<absolute-path-to-repo>
 
 #### Verification and Capabilities
 
-- **Permanent Right Sidebar Tab**: Once installed and activated, a permanent "三木文献检索" (Sanmu Research) tab is mounted in the DSH right sidebar, along with a quick-launch card in the "Start" guide panel. Clicking it opens the interactive research workbench right inside the DSH split view.
-- **Redaction-Safe Browser Access**: When the agent calls `open_panel`, it outputs both authenticated launch URLs and direct local loopback links. Even if clients (DSH, Codex, etc.) redact query tokens to `[REDACTED]`, copying and opening the link in your browser (or opening `http://127.0.0.1:55497/`) automatically completes local security authentication and loads the workbench.
 - **Automatic Skills Mounting**: All three skills (`sanmu-paper-search`, `sanmu-doc2md`, `sanmu-paper-reader`) are discovered and loaded into the DSH skills registry.
 - **MCP Tools & Workbench**: 24 research MCP tools are exposed under `mcp__sanmu-paper-search__*`. Use `open_panel` or run `sanmu panel` to open the interactive browser workbench.
+- **Redaction-Safe Browser Access**: When the agent outputs panel URLs, clients like DSH or Codex automatically redact tokens to `?token=[REDACTED]`. The workbench includes loopback-safe authentication, allowing direct access in your browser without 401 authorization errors.
 - **Host Dependencies**: The optional `@deepseek-ai/dsh-mcp-client` and `@deepseek-ai/dsh-skill-filesystem` peer dependencies are provided by the DSH host runtime. A profile MCP process shares its initial workspace; pass explicit `saveDir` for other workspaces, or set `SANMU_WORKSPACE_ROOT` before starting it.
 
 ### ZCode

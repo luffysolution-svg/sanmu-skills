@@ -18,7 +18,6 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_RUNTIME_FILES = (
     "scripts/sanmu.mjs", "scripts/runtime.mjs", "scripts/panel-server.mjs", "scripts/zotero-tools.mjs",
-    "scripts/client.js",
 )
 ROOT_ASSET_FILES = (
     "assets/favicon.ico", "assets/icon-64.png", "assets/icon.png", "assets/icon.svg",
@@ -32,7 +31,7 @@ ROOT_HOST_FILES = (
 )
 ZCODE_SHELL_DIR = "distribution/zcode/sanmu-paper-search"
 CANONICAL_RUNTIME_FILES = tuple(f"{ZCODE_SHELL_DIR}/{path}" for path in (
-    "scripts/mcp-server.mjs", "assets/panel.html", "scripts/dsh-plugin.mjs", "scripts/client.js",
+    "scripts/mcp-server.mjs", "assets/panel.html", "scripts/dsh-plugin.mjs",
 ))
 PLUGIN_FILES = (*ROOT_HOST_FILES, *CANONICAL_RUNTIME_FILES, "README.md", "README.en.md", "LICENSE")
 BLOCKED_PARTS = {
@@ -55,7 +54,6 @@ ZCODE_SHELL_FILES = (
     "commands/help.md",
     "scripts/mcp-server.mjs",
     "scripts/dsh-plugin.mjs",
-    "scripts/client.js",
     "README.md",
 )
 FRONTMATTER_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}

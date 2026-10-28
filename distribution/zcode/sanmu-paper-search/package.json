@@ -6,7 +6,6 @@
   "main": "./scripts/dsh-plugin.mjs",
   "exports": {
     ".": "./scripts/dsh-plugin.mjs",
-    "./client": "./scripts/client.js",
     "./package.json": "./package.json"
   },
   "license": "MIT",
@@ -30,13 +29,6 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime"
-      ]
     },
     "manifestVersion": 1
   },

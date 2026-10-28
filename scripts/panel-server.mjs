@@ -470,6 +470,7 @@ export async function startPanelServer({
     response.writeHead(status, {
       "Content-Type": contentType, "Content-Length": Buffer.byteLength(body),
       "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "SAMEORIGIN",
       "Content-Security-Policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob: https: http:; font-src 'self' data:; frame-src 'self'; frame-ancestors 'self' http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'; object-src 'none'"
     });
     response.end(request.method === "HEAD" ? undefined : body);
@@ -525,8 +526,7 @@ export async function startPanelServer({
       const tokens = [
         ...url.searchParams.getAll("token"),
         ...url.searchParams.getAll("auth"),
-        ...url.searchParams.getAll("sid"),
-        ...url.searchParams.getAll("k")
+        ...url.searchParams.getAll("sid")
       ];
       const validToken = tokens.some((t) => safeEqual(t, launchToken));
       const hasRedactedToken = tokens.some((t) => t === "[REDACTED]" || !t.trim() || t.toLowerCase() === "redacted");

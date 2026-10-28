@@ -29,7 +29,6 @@
   "main": "./distribution/zcode/sanmu-paper-search/scripts/dsh-plugin.mjs",
   "exports": {
     ".": "./distribution/zcode/sanmu-paper-search/scripts/dsh-plugin.mjs",
-    "./client": "./scripts/client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -43,7 +42,6 @@
     "LICENSE",
     "README.en.md",
     "README.md",
-    "scripts/client.js",
     "assets/favicon.ico",
     "assets/icon-64.png",
     "assets/icon.png",
@@ -53,7 +51,6 @@
     "assets/panel.html",
     "cordis.patch.yml",
     "distribution/zcode/sanmu-paper-search/assets/panel.html",
-    "distribution/zcode/sanmu-paper-search/scripts/client.js",
     "distribution/zcode/sanmu-paper-search/scripts/dsh-plugin.mjs",
     "distribution/zcode/sanmu-paper-search/scripts/mcp-server.mjs",
     "extensions/pi.ts",
@@ -158,13 +155,6 @@
     "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime"
-      ]
     }
   },
   "peerDependencies": {
