@@ -207,7 +207,37 @@ function sleepSyncMs(ms) {
   while (Date.now() < end) {}
 }
 
+function readLockOwner(lockPath) {
+  try {
+    const owner = JSON.parse(readFileSync(lockPath, "utf8"));
+    return { pid: Number(owner?.pid) || 0, time: Number(owner?.time) || 0 };
+  } catch {
+    return null;
+  }
+}
+
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return Boolean(err && err.code === "EPERM");
+  }
+}
+
+const fileLockDepth = new Map();
+
 function withFileLockSync(targetFilePath, fn, timeoutMs = 5000) {
+  const depth = fileLockDepth.get(targetFilePath) || 0;
+  if (depth > 0) {
+    fileLockDepth.set(targetFilePath, depth + 1);
+    try {
+      return fn();
+    } finally {
+      fileLockDepth.set(targetFilePath, depth);
+    }
+  }
   mkdirSync(dirname(targetFilePath), { recursive: true });
   const lockPath = `${targetFilePath}.lock`;
   const deadline = Date.now() + timeoutMs;
@@ -222,16 +252,18 @@ function withFileLockSync(targetFilePath, fn, timeoutMs = 5000) {
       acquired = true;
     } catch (err) {
       if (err && err.code === "EEXIST") {
-        try {
-          const st = statSync(lockPath);
-          if (Date.now() - st.mtimeMs > 10000) {
-            rmSync(lockPath, { force: true });
-            continue;
-          }
-        } catch {}
-        if (Date.now() >= deadline) {
+        const owner = readLockOwner(lockPath);
+        // Never steal a lock from a live process: doing so silently allows two
+        // writers to apply stale snapshots. Only reclaim provably dead owners
+        // (or an unreadable/leftover lock owned by this same pid).
+        if (!owner || !isProcessAlive(owner.pid) || owner.pid === process.pid) {
           rmSync(lockPath, { force: true });
           continue;
+        }
+        if (Date.now() >= deadline) {
+          throw new Error(
+            `插件状态正被进程 ${owner.pid} 写入，请稍后重试（未强行抢占锁）。`
+          );
         }
         sleepSyncMs(10);
         continue;
@@ -239,9 +271,11 @@ function withFileLockSync(targetFilePath, fn, timeoutMs = 5000) {
       throw err;
     }
   }
+  fileLockDepth.set(targetFilePath, 1);
   try {
     return fn();
   } finally {
+    fileLockDepth.set(targetFilePath, 0);
     try {
       rmSync(lockPath, { force: true });
     } catch {}
@@ -5342,25 +5376,45 @@ async function runStandaloneDoc2mdValidators(
   const valOutPath = join(jobDir, `${prefix}validate-output.json`);
   const formulasJson = join(jobDir, `${prefix}formulas.json`);
   const mathReportJson = join(jobDir, `${prefix}math-report.json`);
-  const valRes = await runPython(validateOutputPy, valArgs, 60000);
-  if (valRes.parsed) {
-    writeJsonSafe(valOutPath, valRes.parsed);
+  // Clear previous reports first: a crashed validator must not leave an older
+  // report that a later run would read as its own result.
+  for (const stalePath of [valOutPath, formulasJson, mathReportJson]) {
+    rmSync(stalePath, { force: true });
   }
+  const valRes = await runPython(validateOutputPy, valArgs, 60000);
+  if (!valRes.parsed || typeof valRes.parsed.rawText === "string") {
+    throw new Error(
+      `结构校验未产出报告（exit ${valRes.exitCode}）：${String(valRes.stderr || "").trim().slice(0, 400) || "无输出"}`
+    );
+  }
+  writeJsonSafe(valOutPath, valRes.parsed);
   const extRes = await runPython(extractFormulasPy, [outDir, "--out", formulasJson], 60000);
-  if (extRes.exitCode === 0 && existsSync(formulasJson)) {
+  // Exit 1 = 发现定界/解析错误，但清单已写出，属可报告结果；无清单或其它退出码才算执行失败。
+  if (!existsSync(formulasJson) || ![0, 1].includes(extRes.exitCode)) {
+    throw new Error(
+      `公式提取失败（exit ${extRes.exitCode}）：${String(extRes.stderr || "").trim().slice(0, 400) || "无输出"}`
+    );
+  }
+  {
     const formulas = readJsonSafe(formulasJson, []);
     const { childEnv } = getEffectiveConfig();
     const mathArgs = [validateMathCjs, formulasJson, "--report", mathReportJson];
     if (!Array.isArray(formulas) || formulas.length === 0) {
       mathArgs.push("--allow-empty");
     }
-    spawnSync("node", mathArgs, {
+    const mathRes = spawnSync("node", mathArgs, {
       cwd: dirname(validateMathCjs),
       env: childEnv,
       encoding: "utf8",
       timeout: 30000,
       windowsHide: true
     });
+    // Exit 1 =公式编译错误（报告仍有效）；崩溃/超时/无报告才算执行失败。
+    if (!existsSync(mathReportJson) || ![0, 1].includes(mathRes.status)) {
+      throw new Error(
+        `KaTeX 校验未产出报告（exit ${mathRes.status}）：${String(mathRes.stderr || mathRes.error?.message || "").trim().slice(0, 400) || "无输出"}`
+      );
+    }
   }
   return {
     validateOutputPath: valOutPath,
@@ -8545,7 +8599,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.9.3"
+          version: "1.9.4"
         }
       }
     };
