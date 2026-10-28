@@ -301,18 +301,20 @@ def execute(args, client):
     if args.command == "doctor":
         from _sciverse import has_sciverse_token
         env = client.env
+        has_env = lambda k: bool(str(env.get(k) or "").strip())
         return {"schema": SCHEMA, "status": "success", "python_supported": sys.version_info >= (3, 10),
-                "configuration": {"semantic_scholar_api_key": bool(env.get("S2_API_KEY") or env.get("SEMANTIC_SCHOLAR_API_KEY")),
-                                  "openalex_api_key": bool(env.get("OPENALEX_API_KEY")),
-                                  "serper_api_key": bool(env.get("SERPER_API_KEY")),
-                                  "exa_api_key": bool(env.get("EXA_API_KEY", "").strip()),
-                                  "easyscholar_secret_key": bool(re.sub(r"\s+", "", env.get("EASYSCHOLAR_SECRET_KEY", ""))),
-                                  "ai4scholar_api_key": bool(env.get("AI4SCHOLAR_API_KEY", "").strip()),
+                "configuration": {"semantic_scholar_api_key": has_env("S2_API_KEY") or has_env("SEMANTIC_SCHOLAR_API_KEY"),
+                                  "openalex_api_key": has_env("OPENALEX_API_KEY"),
+                                  "serper_api_key": has_env("SERPER_API_KEY"),
+                                  "exa_api_key": has_env("EXA_API_KEY"),
+                                  "easyscholar_secret_key": bool(re.sub(r"\s+", "", str(env.get("EASYSCHOLAR_SECRET_KEY") or ""))),
+                                  "ai4scholar_api_key": has_env("AI4SCHOLAR_API_KEY"),
                                   "sciverse_api_key": has_sciverse_token(env),
-                                  "openalex_email": bool(env.get("OPENALEX_EMAIL")),
-                                  "unpaywall_email": bool(env.get("UNPAYWALL_EMAIL")),
-                                  "crossref_email": bool(env.get("CROSSREF_EMAIL")),
-                                  "polite_email": bool(env.get("POLITE_EMAIL")),
+                                  "mineru_api_token": has_env("MINERU_API_TOKEN"),
+                                  "openalex_email": has_env("OPENALEX_EMAIL"),
+                                  "unpaywall_email": has_env("UNPAYWALL_EMAIL"),
+                                  "crossref_email": has_env("CROSSREF_EMAIL"),
+                                  "polite_email": has_env("POLITE_EMAIL"),
                                   "europepmc_public_access": True}}, 0
     if args.command == "check":
         result = check_bundle(args.run, args.include_metadata)

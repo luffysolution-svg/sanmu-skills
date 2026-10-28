@@ -1,6 +1,6 @@
 {
   "name": "sanmu-paper-search",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "description": "在对话侧栏与 Agent 中使用三木文献检索与文档解析：支持 OpenAlex、Semantic Scholar、Crossref、Europe PMC、SciVerse (全文语义RAG/原文切片与配图/Paper Schema)、AI4Scholar (S2/Google Scholar/Patents/PubMed/科研绘图/自动引文)、Serper、Exa AI、easyScholar 期刊分区/IF 标注、OA PDF / SI 下载、本机 Zotero 双向联动，以及 sanmu-doc2md 学术文档转 Obsidian Markdown 知识库（论文+SI双链、课件与教材解析）。",
   "author": {
     "name": "Sanmu (Wu Sen)"
@@ -45,49 +45,49 @@
       "type": "string",
       "default": "",
       "title": "MinerU API Token (文档解析 PDF/PPTX/教材转 Markdown)",
-      "description": "可选。用于「📝 文档解析」执行云端高精度公式/表格/双栏 OCR（sanmu-doc2md），支持论文+SI双链、课件讲义与长篇教材切片；已配系统环境变量 MINERU_API_TOKEN 时无需重复填写。"
+      "description": "可选。用于「📝 文档解析」执行云端高精度公式/表格/双栏 OCR（sanmu-doc2md），获取地址：https://mineru.net/apiManage/token"
     },
     "sciverseApiKey": {
       "type": "string",
       "default": "",
       "title": "SciVerse API Key (全文语义RAG / 原文切片与配图 / Paper Schema)",
-      "description": "可选。填入 SciVerse 密钥 (sci_...) 后可解锁全文语义片段检索 (Agentic RAG)、按 Unicode 码点偏移读取论文原文 Markdown 与下载高清原图、引文网络追踪，以及 Paper Schema 论文结构拆解与复现材料包。"
+      "description": "可选。填入 SciVerse 密钥 (sci_...) 解锁全文语义片段检索、原文 Markdown 切片与原图、Paper Schema 复现材料包，获取地址：https://sciverse.space"
     },
     "ai4scholarApiKey": {
       "type": "string",
       "default": "",
       "title": "AI4Scholar API Key (S2 / Google Scholar / 专利 / PubMed / 科研绘图)",
-      "description": "可选。填入 AI4Scholar 密钥后可一站式解锁高速 Semantic Scholar、Google Scholar、Google Patents、PubMed、Nano Draw 科研绘图与 Auto-Cite 自动引文。"
+      "description": "可选。填入 AI4Scholar 密钥一站式解锁高速 S2、Google Scholar、Google Patents、PubMed、Nano Draw 科研绘图与 Auto-Cite，获取地址：https://ai4scholar.net"
     },
     "easyscholarSecretKey": {
       "type": "string",
       "default": "",
       "title": "easyScholar Secret Key (期刊分区 / 影响因子 / CCF / 预警)",
-      "description": "可选。填入 easyScholar 开放接口密钥后，自动为检索到的论文标注中科院升级版分区、JCR Q1-Q4、SCI 影响因子、CCF 等级与预警状态。"
+      "description": "可选。填入 easyScholar 开放接口密钥自动标注中科院升级版分区、JCR Q1-Q4、SCI 影响因子、CCF 等级与预警状态，获取地址：https://www.easyscholar.cc"
     },
     "serperApiKey": {
       "type": "string",
       "default": "",
       "title": "Serper API Key (Google Scholar / 专利)",
-      "description": "可选。用于 Google Scholar 谷歌学术、Google Patents 专利与学术网页补搜；也可直接在右侧「三木文献检索」面板内随时设置。"
+      "description": "可选。用于 Google Scholar 谷歌学术、Google Patents 专利与学术网页补搜，获取地址：https://serper.dev/api-key"
     },
     "exaApiKey": {
       "type": "string",
       "default": "",
       "title": "Exa API Key (AI 语义搜论文)",
-      "description": "可选。用于 Exa 自然语言/中文语义搜论文；也可直接在右侧「三木文献检索」面板内随时设置。"
+      "description": "可选。用于 Exa 自然语言/中文语义搜论文，获取地址：https://dashboard.exa.ai/api-keys"
     },
     "s2ApiKey": {
       "type": "string",
       "default": "",
       "title": "Semantic Scholar API Key (可选)",
-      "description": "可选。不填时默认使用免费公共池；填入后可享独立高速限流配额。"
+      "description": "可选。不填时默认使用免费公共池；填入后可享独立高速限流配额，申请地址：https://www.semanticscholar.org/product/api#api-key-form"
     },
     "openalexApiKey": {
       "type": "string",
       "default": "",
       "title": "OpenAlex API Key (可选)",
-      "description": "可选。不填时默认免费直连 OpenAlex。"
+      "description": "可选。不填时默认免费直连 OpenAlex；获取地址：https://openalex.org/settings/api"
     },
     "zoteroUrl": {
       "type": "string",

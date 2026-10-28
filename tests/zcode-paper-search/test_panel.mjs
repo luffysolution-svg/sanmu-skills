@@ -768,5 +768,77 @@ test('v1.7.0 panel features: topic/author sort & topic filter, comprehensive rec
   await flush();
   assert.equal(p.document.getElementById('tabCountDoc2md').textContent, '1');
   assert.match(p.document.getElementById('doc2mdJobsListContainer').innerHTML, /KaTeX浏览器渲染预览/);
+
+  // 9. v1.9.2 API Configuration UI: official portal links, paste cleaning, default password masking & optional plaintext preview toggle
+  const expectedPortals = [
+    ['cfgSciverseKey', 'https://sciverse.space'],
+    ['cfgAi4scholarKey', 'https://ai4scholar.net'],
+    ['cfgEasyscholarKey', 'https://www.easyscholar.cc'],
+    ['cfgSerperKey', 'https://serper.dev/api-key'],
+    ['cfgExaKey', 'https://dashboard.exa.ai/api-keys'],
+    ['cfgS2Key', 'https://www.semanticscholar.org/product/api#api-key-form'],
+    ['cfgOpenalexKey', 'https://openalex.org/settings/api'],
+    ['cfgMineruToken', 'https://mineru.net/apiManage/token']
+  ];
+  const getLinkBtns = p.document.querySelectorAll('.api-get-link-btn');
+  assert.equal(getLinkBtns.length, 9);
+  for (const [inputId, portalUrl] of expectedPortals) {
+    const inp = p.document.getElementById(inputId);
+    assert.ok(inp);
+    assert.equal(inp.getAttribute('type'), 'password');
+    const visBtn = p.document.querySelector(`.api-vis-btn[data-target="${inputId}"]`);
+    assert.ok(visBtn);
+    assert.equal(visBtn.textContent, '👁 预览');
+    assert.ok(getLinkBtns.some((b) => b.dataset.url === portalUrl));
+  }
+
+  // Clicking an API portal link opens the external URL via ui/open-link
+  const sciverseLinkBtn = getLinkBtns.find((b) => b.dataset.url === 'https://sciverse.space');
+  sciverseLinkBtn.click();
+  await flush();
+  const openLinkReq = p.posted.at(-1);
+  assert.equal(openLinkReq.method, 'ui/open-link');
+  assert.equal(openLinkReq.params.url, 'https://sciverse.space/');
+  p.reply(openLinkReq, {});
+  await flush();
+
+  // Pasting into a secret input strips Bearer prefix/quotes/whitespace while staying masked (type="password")
+  const svInput = p.document.getElementById('cfgSciverseKey');
+  svInput.dispatchEvent({
+    type: 'paste',
+    clipboardData: { getData: () => '  "Bearer sci_paste_test_123456" \n' }
+  });
+  assert.equal(svInput.value, 'sci_paste_test_123456');
+  assert.equal(svInput.getAttribute('type'), 'password');
+
+  // Clicking preview button toggles to plaintext (type="text") and back to masked (type="password")
+  const svVisBtn = p.document.querySelector('.api-vis-btn[data-target="cfgSciverseKey"]');
+  svVisBtn.click();
+  assert.equal(svInput.getAttribute('type'), 'text');
+  assert.equal(svVisBtn.textContent, '🙈 隐藏');
+  assert.equal(svVisBtn.classList.contains('active'), true);
+
+  svVisBtn.click();
+  assert.equal(svInput.getAttribute('type'), 'password');
+  assert.equal(svVisBtn.textContent, '👁 预览');
+  assert.equal(svVisBtn.classList.contains('active'), false);
+
+  // Saving config resets any previewed input back to default masked state and updates masked placeholder
+  svVisBtn.click();
+  assert.equal(svInput.getAttribute('type'), 'text');
+  await click(p, 'btnSaveConfig');
+  assert.equal(svInput.getAttribute('type'), 'password');
+  assert.equal(svVisBtn.textContent, '👁 预览');
+  const saveCall = tools(p).at(-1);
+  assert.equal(saveCall.params.name, 'save_config');
+  assert.equal(saveCall.params.arguments.sciverseApiKey, 'sci_paste_test_123456');
+  answer(p, {
+    ...emptyState(),
+    configStatus: {
+      sciverse_api_key: { configured: true, source: 'panel', masked: 'sci••••••56', portalUrl: 'https://sciverse.space' }
+    }
+  });
+  await flush();
+  assert.match(svInput.placeholder, /sci••••••56/);
 });
 

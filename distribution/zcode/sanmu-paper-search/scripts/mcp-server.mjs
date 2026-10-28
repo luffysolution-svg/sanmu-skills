@@ -73,7 +73,13 @@ const FETCH_PDF_PY = join(PLUGIN_ROOT, "scripts", "fetch_pdf.py");
 mkdirSync(RUNS_DIR, { recursive: true });
 mkdirSync(DOC2MD_JOBS_DIR, { recursive: true });
 
+let cachedDoc2mdScriptsDir = null;
+let cachedKatexInfo = null;
+
 function resolveDoc2mdScriptsDir() {
+  if (cachedDoc2mdScriptsDir && existsSync(join(cachedDoc2mdScriptsDir, "build_markdown.py"))) {
+    return cachedDoc2mdScriptsDir;
+  }
   const candidates = [
     join(PLUGIN_ROOT, "skills", "sanmu-doc2md", "scripts"),
     resolve(PLUGIN_ROOT, "..", "..", "skills", "sanmu-doc2md", "scripts"),
@@ -85,13 +91,22 @@ function resolveDoc2mdScriptsDir() {
   ];
   for (const dir of candidates) {
     try {
-      if (existsSync(join(dir, "build_markdown.py"))) return dir;
+      if (existsSync(join(dir, "build_markdown.py"))) {
+        cachedDoc2mdScriptsDir = dir;
+        return dir;
+      }
     } catch {}
   }
   return candidates[0];
 }
 
 function resolveKatexNodeModules(doc2mdScriptsDir = resolveDoc2mdScriptsDir()) {
+  if (
+    cachedKatexInfo?.nodeModulesDir &&
+    existsSync(join(cachedKatexInfo.nodeModulesDir, "katex", "package.json"))
+  ) {
+    return cachedKatexInfo;
+  }
   const candidates = [
     join(doc2mdScriptsDir, "node_modules"),
     join(resolve(__dirname, "..", "..", "..", "..", "skills", "sanmu-doc2md", "scripts"), "node_modules"),
@@ -105,10 +120,11 @@ function resolveKatexNodeModules(doc2mdScriptsDir = resolveDoc2mdScriptsDir()) {
     try {
       if (existsSync(join(nmDir, "katex", "package.json"))) {
         const distDir = join(nmDir, "katex", "dist");
-        return {
+        cachedKatexInfo = {
           nodeModulesDir: nmDir,
           katexDistDir: existsSync(distDir) ? distDir : null
         };
+        return cachedKatexInfo;
       }
     } catch {}
   }
@@ -207,6 +223,42 @@ function loadPanelConfig() {
   return readStoredObject(CONFIG_PATH);
 }
 
+const API_PORTAL_URLS = {
+  sciverse_api_key: "https://sciverse.space",
+  ai4scholar_api_key: "https://ai4scholar.net",
+  easyscholar_secret_key: "https://www.easyscholar.cc",
+  polite_email: "https://unpaywall.org/products/api",
+  serper_api_key: "https://serper.dev/api-key",
+  exa_api_key: "https://dashboard.exa.ai/api-keys",
+  semantic_scholar_api_key: "https://www.semanticscholar.org/product/api#api-key-form",
+  openalex_api_key: "https://openalex.org/settings/api",
+  mineru_api_token: "https://mineru.net/apiManage/token"
+};
+
+function cleanSecretInput(raw, stripAllWhitespace = false) {
+  if (typeof raw !== "string") return "";
+  let s = raw.trim().replace(/^["']+|["']+$/g, "").trim();
+  s = s.replace(/^Bearer\s+/i, "").trim();
+  if (stripAllWhitespace) {
+    s = s.replace(/\s+/g, "");
+  }
+  return s;
+}
+
+function maskCredentialValue(val, isEmail = false) {
+  const s = String(val || "").trim();
+  if (!s) return "";
+  if (isEmail) {
+    const atIdx = s.indexOf("@");
+    if (atIdx > 2) return `${s.slice(0, 2)}•••${s.slice(atIdx)}`;
+    return s;
+  }
+  if (s.length >= 10) {
+    return `${s.slice(0, 3)}••••••${s.slice(-2)}`;
+  }
+  return "••••••••";
+}
+
 function savePanelConfig(patch) {
   const current = loadPanelConfig();
   const next = { ...current };
@@ -225,8 +277,13 @@ function savePanelConfig(patch) {
     if (k === "clearKeys" || v === undefined || v === null) continue;
     if (typeof v === "string") {
       if (secretKeys.has(k)) {
-        const cleaned = k === "easyscholarSecretKey" ? v.replace(/\s+/g, "").trim() : v.trim();
-        if (cleaned !== "") next[k] = cleaned;
+        const cleaned = cleanSecretInput(v, k === "easyscholarSecretKey");
+        if (cleaned !== "") {
+          next[k] = cleaned;
+          if (k === "mineruApiToken" && "mineruApiKey" in next) {
+            delete next.mineruApiKey;
+          }
+        }
       } else if (v.trim() !== "" || k === "politeEmail") {
         next[k] = v.trim();
       }
@@ -237,6 +294,8 @@ function savePanelConfig(patch) {
   if (Array.isArray(patch?.clearKeys)) {
     for (const k of patch.clearKeys) {
       if (k in next) next[k] = "";
+      if (k === "mineruApiToken" && "mineruApiKey" in next) next.mineruApiKey = "";
+      if (k === "mineruApiKey" && "mineruApiToken" in next) next.mineruApiToken = "";
     }
   }
   writeJsonSafe(CONFIG_PATH, next);
@@ -341,10 +400,40 @@ function redactSecrets(value) {
       secrets.add(cfg[key].replace(/\s+/g, "").trim());
     }
   }
+  const explicitEnvSecretKeys = new Set([
+    "USER_CONFIG_OPENALEX_API_KEY",
+    "USER_CONFIG_S2_API_KEY",
+    "USER_CONFIG_EXA_API_KEY",
+    "USER_CONFIG_SERPER_API_KEY",
+    "USER_CONFIG_EASYSCHOLAR_SECRET_KEY",
+    "USER_CONFIG_AI4SCHOLAR_API_KEY",
+    "USER_CONFIG_SCIVERSE_API_KEY",
+    "USER_CONFIG_MINERU_API_TOKEN",
+    "OPENALEX_API_KEY",
+    "S2_API_KEY",
+    "SEMANTIC_SCHOLAR_API_KEY",
+    "EXA_API_KEY",
+    "SERPER_API_KEY",
+    "EASYSCHOLAR_SECRET_KEY",
+    "AI4SCHOLAR_API_KEY",
+    "SCIVERSE_API_KEY",
+    "SCIVERSE_API_TOKEN",
+    "MINERU_API_TOKEN"
+  ]);
   for (const [key, val] of Object.entries(process.env)) {
-    if (/(?:API_KEY|TOKEN|SECRET|SECRET_KEY|PASSWORD)$/i.test(key) && val && !val.startsWith("${")) {
-      secrets.add(val);
-      secrets.add(val.replace(/\s+/g, "").trim());
+    if (!val || typeof val !== "string" || val.startsWith("${")) continue;
+    const trimmed = val.trim();
+    if (!trimmed) continue;
+    if (explicitEnvSecretKeys.has(key)) {
+      secrets.add(trimmed);
+      secrets.add(trimmed.replace(/\s+/g, ""));
+    } else if (
+      /(?:API_KEY|TOKEN|SECRET|SECRET_KEY|PASSWORD)$/i.test(key) &&
+      trimmed.length >= 6 &&
+      !/^(?:true|false|null|none|undefined|\d+)$/i.test(trimmed)
+    ) {
+      secrets.add(trimmed);
+      secrets.add(trimmed.replace(/\s+/g, ""));
     }
   }
   for (const keyFile of [ZOTERO_KEYS_PATH, OFFICIAL_ZOTERO_KEYS_PATH]) {
@@ -518,7 +607,14 @@ function getEffectiveConfig() {
     "USER_CONFIG_MINERU_API_TOKEN",
     ["MINERU_API_TOKEN"]
   );
-  const zoteroUrl = validateZoteroUrl(resolveCredential(cfg.zoteroUrl, "USER_CONFIG_ZOTERO_URL", []).value || "http://127.0.0.1:23119");
+  let zoteroUrl = "http://127.0.0.1:23119";
+  try {
+    zoteroUrl = validateZoteroUrl(
+      resolveCredential(cfg.zoteroUrl, "USER_CONFIG_ZOTERO_URL", []).value || "http://127.0.0.1:23119"
+    );
+  } catch {
+    zoteroUrl = "http://127.0.0.1:23119";
+  }
   const exportSubdir = resolveCredential(cfg.exportSubdir, "USER_CONFIG_EXPORT_SUBDIR", []).value || "00-收件箱-待整理/文献检索";
   const doc2mdSubdir = resolveCredential(cfg.doc2mdSubdir, "USER_CONFIG_DOC2MD_SUBDIR", []).value || "00-收件箱-待整理/文献解析";
   const doc2mdScriptsDir = resolveDoc2mdScriptsDir();
@@ -568,18 +664,60 @@ function getEffectiveConfig() {
     childEnv,
     status: {
       python_runtime: { configured: pyRt.supported, source: pyRt.version ? `Python ${pyRt.version}` : "missing" },
-      polite_email: { configured: Boolean(polite.value), source: polite.source },
-      openalex_api_key: { configured: Boolean(openalex.value), source: openalex.source },
+      polite_email: {
+        configured: Boolean(polite.value),
+        source: polite.source,
+        masked: maskCredentialValue(polite.value, true),
+        portalUrl: API_PORTAL_URLS.polite_email
+      },
+      openalex_api_key: {
+        configured: Boolean(openalex.value),
+        source: openalex.source,
+        masked: maskCredentialValue(openalex.value),
+        portalUrl: API_PORTAL_URLS.openalex_api_key
+      },
       semantic_scholar_api_key: {
         configured: Boolean(s2.value || ai4scholar.value),
-        source: s2.value ? s2.source : ai4scholar.value ? `ai4scholar (${ai4scholar.source})` : "none"
+        source: s2.value ? s2.source : ai4scholar.value ? `ai4scholar (${ai4scholar.source})` : "none",
+        masked: maskCredentialValue(s2.value || ai4scholar.value),
+        portalUrl: API_PORTAL_URLS.semantic_scholar_api_key
       },
-      exa_api_key: { configured: Boolean(exa.value), source: exa.source },
-      serper_api_key: { configured: Boolean(serper.value), source: serper.source },
-      easyscholar_secret_key: { configured: Boolean(easyscholar.value), source: easyscholar.source },
-      ai4scholar_api_key: { configured: Boolean(ai4scholar.value), source: ai4scholar.source },
-      sciverse_api_key: { configured: Boolean(sciverse.value), source: sciverse.source },
-      mineru_api_token: { configured: Boolean(mineru.value), source: mineru.source },
+      exa_api_key: {
+        configured: Boolean(exa.value),
+        source: exa.source,
+        masked: maskCredentialValue(exa.value),
+        portalUrl: API_PORTAL_URLS.exa_api_key
+      },
+      serper_api_key: {
+        configured: Boolean(serper.value),
+        source: serper.source,
+        masked: maskCredentialValue(serper.value),
+        portalUrl: API_PORTAL_URLS.serper_api_key
+      },
+      easyscholar_secret_key: {
+        configured: Boolean(easyscholar.value),
+        source: easyscholar.source,
+        masked: maskCredentialValue(easyscholar.value),
+        portalUrl: API_PORTAL_URLS.easyscholar_secret_key
+      },
+      ai4scholar_api_key: {
+        configured: Boolean(ai4scholar.value),
+        source: ai4scholar.source,
+        masked: maskCredentialValue(ai4scholar.value),
+        portalUrl: API_PORTAL_URLS.ai4scholar_api_key
+      },
+      sciverse_api_key: {
+        configured: Boolean(sciverse.value),
+        source: sciverse.source,
+        masked: maskCredentialValue(sciverse.value),
+        portalUrl: API_PORTAL_URLS.sciverse_api_key
+      },
+      mineru_api_token: {
+        configured: Boolean(mineru.value),
+        source: mineru.source,
+        masked: maskCredentialValue(mineru.value),
+        portalUrl: API_PORTAL_URLS.mineru_api_token
+      },
       katex_validator: { configured: Boolean(katexInfo.nodeModulesDir), source: katexInfo.nodeModulesDir ? "local" : "missing" },
       europepmc_public_access: { configured: true, source: "public" }
     },
@@ -587,6 +725,7 @@ function getEffectiveConfig() {
       politeEmail: cfg.politeEmail || "",
       politeEmailConfigured: Boolean(polite.value),
       politeEmailSource: polite.source,
+      apiPortalUrls: API_PORTAL_URLS,
       zoteroUrl,
       exportSubdir,
       resolvedExportDir: isAbsolutePath(exportSubdir)
@@ -1098,44 +1237,48 @@ async function probeLocalZotero(papers, forceRefresh = false) {
   let colMap = new Map();
   let collections = [];
 
-  if (
-    !forceRefresh &&
-    zoteroStatusCache.baseUrl === baseUrl &&
-    nowMs - zoteroStatusCache.checkedAt < ZOTERO_CACHE_TTL_MS
-  ) {
-    zoteroOnline = zoteroStatusCache.zoteroOnline;
-    serverId = zoteroStatusCache.serverId;
-    colMap = zoteroStatusCache.colMap;
-    collections = zoteroStatusCache.collections;
-  } else {
-    try {
-      const pingResp = await fetch(`${baseUrl}/api/`, {
-        method: "GET",
-        headers: { "Zotero-Allowed-Request": "1" },
-        signal: AbortSignal.timeout(1200)
-      });
-      serverId = pingResp.headers.get("zotero-server-id") || null;
-      zoteroOnline = pingResp.ok && Boolean(serverId || pingResp.headers.get("zotero-api-version"));
-    } catch {
-      zoteroOnline = false;
-    }
-    if (zoteroOnline) {
-      const colRes = await fetchZoteroCollectionsMap(baseUrl);
-      colMap = colRes.colMap;
-      collections = colRes.collections;
-    } else {
-      zoteroPaperMatchCache.clear();
-    }
-    zoteroStatusCache.checkedAt = Date.now();
-    zoteroStatusCache.baseUrl = baseUrl;
-    zoteroStatusCache.zoteroOnline = zoteroOnline;
-    zoteroStatusCache.serverId = serverId;
-    zoteroStatusCache.colMap = colMap;
-    zoteroStatusCache.collections = collections;
+  try {
+    const pingResp = await fetch(`${baseUrl}/api/`, {
+      method: "GET",
+      headers: { "Zotero-Allowed-Request": "1" },
+      signal: AbortSignal.timeout(1200)
+    });
+    serverId = pingResp.headers.get("zotero-server-id") || null;
+    zoteroOnline = pingResp.ok && Boolean(serverId || pingResp.headers.get("zotero-api-version"));
+  } catch {
+    zoteroOnline = false;
   }
 
   if (!zoteroOnline) {
+    zoteroPaperMatchCache.clear();
+    zoteroStatusCache.checkedAt = nowMs;
+    zoteroStatusCache.baseUrl = baseUrl;
+    zoteroStatusCache.zoteroOnline = false;
+    zoteroStatusCache.serverId = null;
+    zoteroStatusCache.colMap = new Map();
+    zoteroStatusCache.collections = [];
     return { zoteroOnline: false, serverId: null, collections: [], matches: {} };
+  }
+
+  if (
+    !forceRefresh &&
+    zoteroStatusCache.zoteroOnline &&
+    zoteroStatusCache.baseUrl === baseUrl &&
+    zoteroStatusCache.serverId === serverId &&
+    nowMs - zoteroStatusCache.checkedAt < ZOTERO_CACHE_TTL_MS
+  ) {
+    colMap = zoteroStatusCache.colMap;
+    collections = zoteroStatusCache.collections;
+  } else {
+    const colRes = await fetchZoteroCollectionsMap(baseUrl);
+    colMap = colRes.colMap;
+    collections = colRes.collections;
+    zoteroStatusCache.checkedAt = Date.now();
+    zoteroStatusCache.baseUrl = baseUrl;
+    zoteroStatusCache.zoteroOnline = true;
+    zoteroStatusCache.serverId = serverId;
+    zoteroStatusCache.colMap = colMap;
+    zoteroStatusCache.collections = collections;
   }
 
   if (!Array.isArray(papers) || papers.length === 0) {
@@ -1144,9 +1287,14 @@ async function probeLocalZotero(papers, forceRefresh = false) {
 
   const norm = (s) => String(s || "").toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, "");
   const matches = {};
+  const seenKeys = new Set();
+  const uncachedTasks = [];
 
   for (const paper of papers.slice(0, 30)) {
+    if (!paper) continue;
     const key = paper.paper_key || computePaperKey(paper);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
     const cacheKey = `${baseUrl}::${key}`;
     if (!forceRefresh) {
       const cached = zoteroPaperMatchCache.get(cacheKey);
@@ -1155,7 +1303,10 @@ async function probeLocalZotero(papers, forceRefresh = false) {
         continue;
       }
     }
+    uncachedTasks.push({ paper, key, cacheKey });
+  }
 
+  const probeSinglePaper = async ({ paper, key, cacheKey }) => {
     const doi = paper?.identifiers?.doi?.[0];
     const cleanDoi = normalizeDoi(doi);
     const targetTitle = norm(paper.title);
@@ -1168,7 +1319,7 @@ async function probeLocalZotero(papers, forceRefresh = false) {
     }
     if (!queryCandidates.length) {
       zoteroPaperMatchCache.set(cacheKey, { checkedAt: Date.now(), matchedObj: null });
-      continue;
+      return;
     }
 
     let matchedObj = null;
@@ -1220,6 +1371,11 @@ async function probeLocalZotero(papers, forceRefresh = false) {
     if (matchedObj) {
       matches[key] = matchedObj;
     }
+  };
+
+  const CONCURRENCY = 5;
+  for (let i = 0; i < uncachedTasks.length; i += CONCURRENCY) {
+    await Promise.all(uncachedTasks.slice(i, i + CONCURRENCY).map(probeSinglePaper));
   }
   return { zoteroOnline, serverId, collections, matches };
 }
@@ -1317,7 +1473,7 @@ async function savePaperToLocalZotero(paper, collectionKey = "") {
   const pKey = paper.paper_key || computePaperKey(paper);
   invalidateZoteroProbeCache(pKey);
   // First check if already in Zotero
-  const probe = await probeLocalZotero([paper], true);
+  const probe = await probeLocalZotero([paper], false);
   if (!probe.zoteroOnline) {
     throw new Error("未检测到本机 Zotero 桌面端在线，请先启动 Zotero。");
   }
@@ -1672,10 +1828,17 @@ function compactVenueRank(vr) {
   return rest;
 }
 
-function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null) {
-  const basketKeys = new Set((state.basket || []).map((p) => p.paper_key || computePaperKey(p)));
-  const pdfIndex = scanSaveDirPdfIndex();
-  const rankCache = readJsonSafe(EASYSCHOLAR_CACHE_PATH, {}) || {};
+function createEnrichContext(state) {
+  return {
+    basketKeys: new Set((state?.basket || []).map((p) => p.paper_key || computePaperKey(p))),
+    pdfIndex: scanSaveDirPdfIndex(),
+    rankCache: readJsonSafe(EASYSCHOLAR_CACHE_PATH, {}) || {}
+  };
+}
+
+function enrichPapersList(papers, state, zoteroMatches = {}, runMeta = null, sharedCtx = null) {
+  const ctx = sharedCtx || createEnrichContext(state);
+  const { basketKeys, pdfIndex, rankCache } = ctx;
   return (papers || []).map((rawP, idx) => {
     const key = rawP.paper_key || computePaperKey(rawP);
     const savedEv = state.evidenceMap?.[key] || {};
@@ -1838,7 +2001,7 @@ function extractDoisFromText(text) {
   return [...new Set(matches.map((m) => normalizeDoi(m)).filter((d) => /^10\.\d{4,9}\/\S+$/.test(d)))];
 }
 
-function parseRawItemToCandidatePaper(flatItem, idx, state) {
+function parseRawItemToCandidatePaper(flatItem, idx, state, sharedCtx = null) {
   const dois = flatItem.extracted_dois || [];
   const yearMatch = String(flatItem.publicationDate || flatItem.filingDate || "").match(/\b(19|20)\d{2}\b/);
   const year = flatItem.year || (yearMatch ? Number(yearMatch[0]) : null);
@@ -1911,10 +2074,10 @@ function parseRawItemToCandidatePaper(flatItem, idx, state) {
     provenance: [{ provider: flatItem.serper_type ? `serper:${flatItem.serper_type}` : "raw_search" }]
   };
 
-  return enrichPapersList([rawPaper], state)[0];
+  return enrichPapersList([rawPaper], state, {}, null, sharedCtx)[0];
 }
 
-function normalizeRawResults(resultsRaw, state) {
+function normalizeRawResults(resultsRaw, state, sharedCtx = null) {
   let rawArray = [];
   let containerMeta = null;
   if (Array.isArray(resultsRaw)) {
@@ -1929,6 +2092,7 @@ function normalizeRawResults(resultsRaw, state) {
   } else {
     return [];
   }
+  const ctx = sharedCtx || createEnrichContext(state);
 
   return rawArray.map((item, idx) => {
     const isWrappedSerper =
@@ -1961,7 +2125,7 @@ function normalizeRawResults(resultsRaw, state) {
     };
     // General web/maps/shop snippets can mention unrelated DOIs and are not paper identities.
     enrichedItem.candidate_paper = flat.serper_type === "scholar"
-      ? parseRawItemToCandidatePaper(enrichedItem, idx, state) : null;
+      ? parseRawItemToCandidatePaper(enrichedItem, idx, state, ctx) : null;
     return enrichedItem;
   });
 }
@@ -2161,7 +2325,7 @@ function formatRunHumanSummary(runJson, acqJson, paperCount, resultCount) {
   };
 }
 
-function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
+function loadRunBundle(runIdOrPath, zoteroMatches = {}, sharedCtx = null) {
   const runDir = resolveRunDir(runIdOrPath);
   if (!existsSync(runDir)) {
     throw new Error(`Run directory not found: ${runIdOrPath}`);
@@ -2238,9 +2402,10 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
   const hasFetchedFiles = existsSync(join(runDir, "fulltext.xml")) ||
     Boolean(supplManifest?.files?.some((file) => isWithin(runDir, resolve(runDir, file.path)) && existsSync(resolve(runDir, file.path))));
   const state = loadState();
+  const ctx = sharedCtx || createEnrichContext(state);
   let papers = enrichPapersList(papersRaw, state, zoteroMatches, {
     fetchedPaperKey: hasFetchedFiles && papersRaw[0] ? computePaperKey(papersRaw[0]) : null
-  });
+  }, ctx);
   const exportedSaveDirForRun = state.runExports?.[runId] || rawRunJson.exported_save_dir || null;
   const supplDeliverables = files.filter((f) => f.path.startsWith("supplementary/"));
   if (papers.length > 0 && supplDeliverables.length > 0) {
@@ -2271,7 +2436,7 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
       };
     });
     if (removedList.length > 0) {
-      const enrichedRemoved = enrichPapersList(removedList, state, zoteroMatches).map((rp, idx) => ({
+      const enrichedRemoved = enrichPapersList(removedList, state, zoteroMatches, null, ctx).map((rp, idx) => ({
         ...rp,
         index: papers.length + idx + 1,
         diff_status: "removed",
@@ -2291,7 +2456,7 @@ function loadRunBundle(runIdOrPath, zoteroMatches = {}) {
     (cmdName === "exa" && (rawRunJson.unconverted_result_count > 0 || papers.length === 0)) ||
     (cmdName === "ai4scholar" && ai4sMode === "s2-snippets" && papers.length === 0) ||
     (cmdName === "sciverse" && ["catalog", "schema-entities", "schema-in-paper"].includes(sciverseMode) && papers.length === 0);
-  const enrichedResults = shouldIncludeRawResults ? normalizeRawResults(resultsRaw, state) : [];
+  const enrichedResults = shouldIncludeRawResults ? normalizeRawResults(resultsRaw, state, ctx) : [];
 
   const normalizedCandidates = Array.isArray(rawRunJson.author_candidates)
     ? rawRunJson.author_candidates.map((c) => {
@@ -2349,40 +2514,69 @@ function countNormalizedResults(resultsRaw) {
   return 0;
 }
 
+const runSummaryCache = new Map();
+
+function fileStatSignature(filePath) {
+  try {
+    if (!existsSync(filePath)) return "0:0";
+    const st = statSync(filePath);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return "0:0";
+  }
+}
+
 function listRecentRuns(limit = 40) {
   if (!existsSync(RUNS_DIR)) return [];
-  const entries = readdirSync(RUNS_DIR, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
-    .map((e) => {
+  const dirEntries = [];
+  for (const e of readdirSync(RUNS_DIR, { withFileTypes: true })) {
+    if (!e.isDirectory() || e.name.startsWith(".")) continue;
+    try {
       const dir = join(RUNS_DIR, e.name);
       const st = statSync(dir);
-      const runJson = readJsonSafe(join(dir, "run.json"), null);
-      const acqJson = readJsonSafe(join(dir, "acquisition.json"), null);
-      const papers = readJsonSafe(join(dir, "papers.json"), []);
-      const resultsRaw = readJsonSafe(join(dir, "results.json"), null);
-      const paperCount = Array.isArray(papers) ? papers.length : 0;
-      const resultCount = countNormalizedResults(resultsRaw);
-      const cmd = runJson?.command || runJson?.action || (acqJson ? "fetch_pdf" : "search");
-      const human = formatRunHumanSummary(runJson, acqJson, paperCount, resultCount);
-      return {
-        runId: e.name,
-        runDir: dir,
-        mtimeMs: st.mtimeMs,
-        timestamp: runJson?.created_at || runJson?.timestamp || acqJson?.retrieved_at || new Date(st.mtimeMs).toISOString(),
-        action: cmd,
-        modeLabel: human.modeLabel,
-        humanTitle: human.title,
-        humanSubtitle: human.subtitle,
-        status: runJson?.status || acqJson?.status || "unknown",
-        query: runJson?.query || acqJson?.requested_identity || {},
-        paperCount,
-        resultCount,
-        savedPath: acqJson?.saved_pdf_path || runJson?.exported_save_dir || null,
-        sourceStatuses: runJson?.source_status || runJson?.source_statuses || {}
-      };
-    })
-    .sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return entries.slice(0, limit);
+      dirEntries.push({ name: e.name, dir, mtimeMs: st.mtimeMs });
+    } catch {}
+  }
+  dirEntries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return dirEntries.slice(0, limit).map(({ name, dir, mtimeMs }) => {
+    const sig = [
+      mtimeMs,
+      fileStatSignature(join(dir, "run.json")),
+      fileStatSignature(join(dir, "acquisition.json")),
+      fileStatSignature(join(dir, "papers.json")),
+      fileStatSignature(join(dir, "results.json"))
+    ].join("|");
+    const cached = runSummaryCache.get(dir);
+    if (cached && cached.sig === sig) {
+      return cached.entry;
+    }
+    const runJson = readJsonSafe(join(dir, "run.json"), null);
+    const acqJson = readJsonSafe(join(dir, "acquisition.json"), null);
+    const papers = readJsonSafe(join(dir, "papers.json"), []);
+    const resultsRaw = readJsonSafe(join(dir, "results.json"), null);
+    const paperCount = Array.isArray(papers) ? papers.length : 0;
+    const resultCount = countNormalizedResults(resultsRaw);
+    const cmd = runJson?.command || runJson?.action || (acqJson ? "fetch_pdf" : "search");
+    const human = formatRunHumanSummary(runJson, acqJson, paperCount, resultCount);
+    const entry = {
+      runId: name,
+      runDir: dir,
+      mtimeMs,
+      timestamp: runJson?.created_at || runJson?.timestamp || acqJson?.retrieved_at || new Date(mtimeMs).toISOString(),
+      action: cmd,
+      modeLabel: human.modeLabel,
+      humanTitle: human.title,
+      humanSubtitle: human.subtitle,
+      status: runJson?.status || acqJson?.status || "unknown",
+      query: runJson?.query || acqJson?.requested_identity || {},
+      paperCount,
+      resultCount,
+      savedPath: acqJson?.saved_pdf_path || runJson?.exported_save_dir || null,
+      sourceStatuses: runJson?.source_status || runJson?.source_statuses || {}
+    };
+    runSummaryCache.set(dir, { sig, entry });
+    return entry;
+  });
 }
 
 function formatBibtexKey(paper, idx = 1) {
@@ -3063,7 +3257,8 @@ async function claimBrowserPdf(input = {}) {
   };
 }
 
-function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroMatches = {}) {
+function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroMatches = {}, sharedCtx = null) {
+  const ctx = sharedCtx || createEnrichContext(state);
   const nodeMap = new Map();
   const aliasToNodeId = new Map();
   const nodeSourcesMap = new Map();
@@ -3209,7 +3404,7 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
   for (const rMeta of (recentRuns || []).slice(0, 15)) {
     const rPapers = readJsonSafe(join(RUNS_DIR, basename(rMeta.runId), "papers.json"), []);
     if (Array.isArray(rPapers)) {
-      const enriched = enrichPapersList(rPapers.slice(0, 15), state, zoteroMatches);
+      const enriched = enrichPapersList(rPapers.slice(0, 15), state, zoteroMatches, null, ctx);
       for (const ep of enriched) {
         const k = normalizeGraphNodeId(ep.paper_key);
         if (!knownSeedPapers.has(k)) knownSeedPapers.set(k, ep);
@@ -3341,7 +3536,7 @@ function buildRelationshipGraph(activeBundle, recentRuns, basket, state, zoteroM
         );
       if (!centerNodeId) centerNodeId = seedNid;
 
-      const rPapers = enrichPapersList((Array.isArray(rPapersRaw) ? rPapersRaw : []).slice(0, 12), state, zoteroMatches);
+      const rPapers = enrichPapersList((Array.isArray(rPapersRaw) ? rPapersRaw : []).slice(0, 12), state, zoteroMatches, null, ctx);
       for (const p of rPapers) {
         const relType = rMeta.query?.relation || "references";
         const role =
@@ -5269,6 +5464,7 @@ async function manageDoc2mdAction(input = {}) {
 async function getFullPanelState(activeRunId = null) {
   const state = loadState();
   const eff = getEffectiveConfig();
+  const enrichCtx = createEnrichContext(state);
   const recentRuns = listRecentRuns(35);
   const targetRunId = activeRunId || state.lastRunId || recentRuns[0]?.runId || null;
 
@@ -5279,7 +5475,7 @@ async function getFullPanelState(activeRunId = null) {
       const rawPapers = readJsonSafe(join(RUNS_DIR, basename(targetRunId), "papers.json"), []);
       const combinedForProbe = [...(Array.isArray(rawPapers) ? rawPapers : []), ...(state.basket || [])];
       zoteroProbe = await probeLocalZotero(combinedForProbe);
-      activeBundle = loadRunBundle(targetRunId, zoteroProbe.matches);
+      activeBundle = loadRunBundle(targetRunId, zoteroProbe.matches, enrichCtx);
       eff.status.zotero_local = {
         online: zoteroProbe.zoteroOnline,
         url: eff.settings.zoteroUrl
@@ -5295,13 +5491,14 @@ async function getFullPanelState(activeRunId = null) {
     };
   }
 
-  const enrichedBasket = enrichPapersList(state.basket || [], state, zoteroProbe.matches);
+  const enrichedBasket = enrichPapersList(state.basket || [], state, zoteroProbe.matches, null, enrichCtx);
   const graphData = buildRelationshipGraph(
     activeBundle,
     recentRuns,
     enrichedBasket,
     state,
-    zoteroProbe.matches
+    zoteroProbe.matches,
+    enrichCtx
   );
 
   const runById = new Map(recentRuns.map((r) => [r.runId, r]));
@@ -7943,7 +8140,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.9.1"
+          version: "1.9.2"
         }
       }
     };

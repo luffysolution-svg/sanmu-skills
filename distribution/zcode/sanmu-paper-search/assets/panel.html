@@ -259,6 +259,54 @@
       font-weight: 600;
       color: var(--text-secondary);
     }
+    .field-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .api-link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid rgba(9, 105, 218, 0.28);
+      border-radius: 99px;
+      padding: 1px 8px;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .api-link-btn:hover {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: var(--accent);
+    }
+    .api-input-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      width: 100%;
+    }
+    .api-input-group input {
+      flex: 1;
+      min-width: 0;
+    }
+    .api-vis-btn {
+      flex-shrink: 0;
+      padding: 5px 8px;
+      font-size: 11.5px;
+    }
+    .api-vis-btn.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
     input[type="text"],
     input[type="password"],
     input[type="number"],
@@ -863,7 +911,7 @@
     <div class="topbar">
       <div class="brand">
         <h1 class="brand-title">三木文献检索</h1>
-        <span class="brand-sub">v1.9.1</span>
+        <span class="brand-sub">v1.9.2</span>
       </div>
       <div class="status-strip" id="statusStrip">
         <span class="pill info" id="btnToggleConfig">⚙ 设置与API</span>
@@ -895,54 +943,105 @@
     <!-- Collapsible API & Preferences Config Panel (Deduplicated & Inline Status) -->
     <div id="configPanel" class="card hidden">
       <div class="card-header">
-        <h3 class="card-title">⚙ 数据源 API、本机 Zotero 与下载目录设置（已配系统环境变量无需重复输入）</h3>
+        <h3 class="card-title">⚙ 数据源 API、本机 Zotero 与下载目录设置（点击「🔗 获取Key ↗」跳转官方控制台，粘贴后默认加密展示，可点「👁 预览」核对）</h3>
         <button class="btn sm" id="btnCloseConfig">收起</button>
       </div>
       <div class="form-grid">
         <div class="form-row">
           <div class="field">
-            <label>SciVerse API Key (全文语义RAG / 原文切片与原图 / Paper Schema) <span id="badgeSciverseKey" class="pill static"></span></label>
-            <input type="password" id="cfgSciverseKey" placeholder="填入 sci_... 覆盖，留空保持原配置" />
+            <label class="field-label-row">
+              <span>SciVerse API Key (全文语义RAG / 原文切片与原图 / Paper Schema) <span id="badgeSciverseKey" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://sciverse.space" title="点击在浏览器中打开 SciVerse 控制台 (https://sciverse.space) 创建并复制 API Key">🔗 获取Key ↗</button>
+            </label>
+            <div class="api-input-group">
+              <input type="password" class="api-secret-input" id="cfgSciverseKey" data-default-placeholder="粘贴或输入 sci_... 密钥（默认加密展示）" placeholder="粘贴或输入 sci_... 密钥（默认加密展示）" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn sm api-vis-btn" data-target="cfgSciverseKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
+            </div>
           </div>
           <div class="field">
-            <label>AI4Scholar API Key (S2 / 谷歌学术 / 专利 / PubMed / 科研绘图) <span id="badgeAi4scholarKey" class="pill static"></span></label>
-            <input type="password" id="cfgAi4scholarKey" placeholder="填入 sk-user-... 覆盖，留空保持原配置" />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="field">
-            <label>easyScholar Secret Key (期刊分区 / IF / CCF / 预警) <span id="badgeEasyscholarKey" class="pill static"></span></label>
-            <input type="password" id="cfgEasyscholarKey" placeholder="填入开放接口 SecretKey 覆盖，留空保持原配置" />
-          </div>
-          <div class="field">
-            <label>联系邮箱 (Polite Pool 加速 + Unpaywall) <span id="badgePoliteEmail" class="pill static"></span></label>
-            <input type="text" id="cfgPoliteEmail" placeholder="例如 researcher@university.edu" />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="field">
-            <label>Serper API Key (Google Scholar / 专利备选) <span id="badgeSerperKey" class="pill static"></span></label>
-            <input type="password" id="cfgSerperKey" placeholder="填入新 Key 覆盖，留空保持原配置" />
-          </div>
-          <div class="field">
-            <label>Exa API Key (AI 自然语言语义搜论文) <span id="badgeExaKey" class="pill static"></span></label>
-            <input type="password" id="cfgExaKey" placeholder="填入新 Key 覆盖，留空保持原配置" />
+            <label class="field-label-row">
+              <span>AI4Scholar API Key (S2 / 谷歌学术 / 专利 / PubMed / 科研绘图) <span id="badgeAi4scholarKey" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://ai4scholar.net" title="点击在浏览器中打开 AI4Scholar 控制台 (https://ai4scholar.net) 创建并复制 API Key">🔗 获取Key ↗</button>
+            </label>
+            <div class="api-input-group">
+              <input type="password" class="api-secret-input" id="cfgAi4scholarKey" data-default-placeholder="粘贴或输入 sk-user-... 密钥（默认加密展示）" placeholder="粘贴或输入 sk-user-... 密钥（默认加密展示）" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn sm api-vis-btn" data-target="cfgAi4scholarKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
+            </div>
           </div>
         </div>
         <div class="form-row">
           <div class="field">
-            <label>Semantic Scholar API Key (1 RPS 独立配额) <span id="badgeS2Key" class="pill static"></span></label>
-            <input type="password" id="cfgS2Key" placeholder="填入新 Key 覆盖，留空保持原配置" />
+            <label class="field-label-row">
+              <span>easyScholar Secret Key (期刊分区 / IF / CCF / 预警) <span id="badgeEasyscholarKey" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://www.easyscholar.cc" title="点击在浏览器中打开 easyScholar 开放接口页 (https://www.easyscholar.cc) 获取 SecretKey">🔗 获取Key ↗</button>
+            </label>
+            <div class="api-input-group">
+              <input type="password" class="api-secret-input" id="cfgEasyscholarKey" data-default-placeholder="粘贴或输入开放接口 SecretKey（默认加密展示）" placeholder="粘贴或输入开放接口 SecretKey（默认加密展示）" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn sm api-vis-btn" data-target="cfgEasyscholarKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
+            </div>
           </div>
           <div class="field">
-            <label>OpenAlex API Key (可选) <span id="badgeOpenalexKey" class="pill static"></span></label>
-            <input type="password" id="cfgOpenalexKey" placeholder="填入新 Key 覆盖，留空保持原配置" />
+            <label class="field-label-row">
+              <span>联系邮箱 (Polite Pool 加速 + Unpaywall) <span id="badgePoliteEmail" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://unpaywall.org/products/api" title="填入个人常用邮箱即可免注册进入 OpenAlex / Crossref / Unpaywall 礼貌加速池">🔗 礼貌池说明 ↗</button>
+            </label>
+            <input type="text" id="cfgPoliteEmail" data-default-placeholder="例如 researcher@university.edu（免注册，填常用邮箱即可）" placeholder="例如 researcher@university.edu（免注册，填常用邮箱即可）" />
           </div>
         </div>
         <div class="form-row">
           <div class="field">
-            <label>MinerU API Token (文档解析 PDF/PPTX/教材转 Markdown) <span id="badgeMineruToken" class="pill static"></span></label>
-            <input type="password" id="cfgMineruToken" placeholder="填入 MinerU Token 覆盖，留空保持原配置" />
+            <label class="field-label-row">
+              <span>Serper API Key (Google Scholar / 专利备选) <span id="badgeSerperKey" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://serper.dev/api-key" title="点击在浏览器中打开 Serper 控制台 (https://serper.dev/api-key) 获取 API Key">🔗 获取Key ↗</button>
+            </label>
+            <div class="api-input-group">
+              <input type="password" class="api-secret-input" id="cfgSerperKey" data-default-placeholder="粘贴或输入 Serper API Key（默认加密展示）" placeholder="粘贴或输入 Serper API Key（默认加密展示）" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn sm api-vis-btn" data-target="cfgSerperKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label-row">
+              <span>Exa API Key (AI 自然语言语义搜论文) <span id="badgeExaKey" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://dashboard.exa.ai/api-keys" title="点击在浏览器中打开 Exa AI 控制台 (https://dashboard.exa.ai/api-keys) 获取 API Key">🔗 获取Key ↗</button>
+            </label>
+            <div class="api-input-group">
+              <input type="password" class="api-secret-input" id="cfgExaKey" data-default-placeholder="粘贴或输入 Exa API Key（默认加密展示）" placeholder="粘贴或输入 Exa API Key（默认加密展示）" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn sm api-vis-btn" data-target="cfgExaKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label class="field-label-row">
+              <span>Semantic Scholar API Key (1 RPS 独立配额) <span id="badgeS2Key" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://www.semanticscholar.org/product/api#api-key-form" title="点击在浏览器中打开 Semantic Scholar 官方 API Key 免费申请页">🔗 申请Key ↗</button>
+            </label>
+            <div class="api-input-group">
+              <input type="password" class="api-secret-input" id="cfgS2Key" data-default-placeholder="粘贴或输入 S2 API Key（默认加密展示）" placeholder="粘贴或输入 S2 API Key（默认加密展示）" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn sm api-vis-btn" data-target="cfgS2Key" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label-row">
+              <span>OpenAlex API Key (可选 · 免费高配额) <span id="badgeOpenalexKey" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://openalex.org/settings/api" title="点击在浏览器中打开 OpenAlex 账号设置页 (https://openalex.org/settings/api) 免费获取 API Key">🔗 获取Key ↗</button>
+            </label>
+            <div class="api-input-group">
+              <input type="password" class="api-secret-input" id="cfgOpenalexKey" data-default-placeholder="粘贴或输入 OpenAlex API Key（默认加密展示）" placeholder="粘贴或输入 OpenAlex API Key（默认加密展示）" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn sm api-vis-btn" data-target="cfgOpenalexKey" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label class="field-label-row">
+              <span>MinerU API Token (文档解析 PDF/PPTX/教材转 Markdown) <span id="badgeMineruToken" class="pill static"></span></span>
+              <button type="button" class="api-link-btn api-get-link-btn" data-url="https://mineru.net/apiManage/token" title="点击在浏览器中打开 MinerU Token 管理页 (https://mineru.net/apiManage/token) 免费创建 Token">🔗 获取Token ↗</button>
+            </label>
+            <div class="api-input-group">
+              <input type="password" class="api-secret-input" id="cfgMineruToken" data-default-placeholder="粘贴或输入 MinerU Token（默认加密展示）" placeholder="粘贴或输入 MinerU Token（默认加密展示）" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn sm api-vis-btn" data-target="cfgMineruToken" title="点击切换明文预览 / 加密隐藏（默认加密显示）">👁 预览</button>
+            </div>
           </div>
           <div class="field">
             <label>📝 文档解析默认存放目录（支持工作区相对路径或本地绝对路径）</label>
@@ -1050,7 +1149,10 @@
             <div class="form-grid">
               <div id="serperKeyHint" class="notice warn hidden">
                 <span id="serperKeyHintText">当前检索通道需要配置 API Key。</span>
-                <button class="btn sm" id="btnJumpConfigFromSerper">去填写 Key</button>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <button type="button" class="btn sm" id="btnGetExtKeyLink" data-url="https://sciverse.space">🔗 获取此通道 Key ↗</button>
+                  <button type="button" class="btn sm primary" id="btnJumpConfigFromSerper">⚙ 去填写 Key</button>
+                </div>
               </div>
               <div class="form-row">
                 <div class="field">
@@ -1541,6 +1643,7 @@
             <div id="doc2mdMineruHint" class="notice warn hidden">
               <span style="flex:1; font-size:11.5px;">⚠ 当前未检测到 MINERU_API_TOKEN 配置。云端高精度公式/双栏 OCR 需要配置 Token，或者您可以切换为免 Token 的本地原生提取模式：</span>
               <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" class="btn sm" id="btnGetMineruTokenLink" data-url="https://mineru.net/apiManage/token">🔗 免费获取 MinerU Token ↗</button>
                 <button type="button" class="btn sm primary" id="btnJumpConfigFromDoc2md">⚙ 去填写 MinerU Token</button>
                 <button type="button" class="btn sm" id="btnSwitchLocalFastEngine">⚡ 切换为本地原生直提</button>
               </div>
@@ -1886,7 +1989,7 @@
           try {
             const res = await sendRpcRequest("ui/initialize", {
               appCapabilities: {},
-              appInfo: { name: "sanmu-paper-search", version: "1.9.1" },
+              appInfo: { name: "sanmu-paper-search", version: "1.9.2" },
               protocolVersion: "2026-01-26"
             }, 10000);
             if (res?.hostContext) applyHostContext(res.hostContext);
@@ -3394,7 +3497,12 @@
           }
         }
 
+        const extKeyLinkBtn = document.getElementById("btnGetExtKeyLink");
         if (val.startsWith("sciverse:")) {
+          if (extKeyLinkBtn) {
+            extKeyLinkBtn.dataset.url = "https://sciverse.space";
+            extKeyLinkBtn.textContent = "🔗 获取 SciVerse Key ↗";
+          }
           if (val === "sciverse:semantic-search") {
             queryInput.placeholder = "输入自然语言科研问题（中英文均可），如：How do single-atom Ni cocatalysts enhance H2 evolution on g-C3N4?";
           } else if (val === "sciverse:meta-search") {
@@ -3413,6 +3521,10 @@
             hintBox.classList.add("hidden");
           }
         } else if (val.startsWith("ai4s:")) {
+          if (extKeyLinkBtn) {
+            extKeyLinkBtn.dataset.url = "https://ai4scholar.net";
+            extKeyLinkBtn.textContent = "🔗 获取 AI4Scholar Key ↗";
+          }
           if (val === "ai4s:patents") {
             queryInput.placeholder = "例如: single atom catalyst photocatalyst hydrogen";
           } else if (val === "ai4s:pubmed-search") {
@@ -3429,6 +3541,10 @@
             hintBox.classList.add("hidden");
           }
         } else if (val.startsWith("serper:")) {
+          if (extKeyLinkBtn) {
+            extKeyLinkBtn.dataset.url = "https://serper.dev/api-key";
+            extKeyLinkBtn.textContent = "🔗 获取 Serper Key ↗";
+          }
           if (val === "serper:patents") {
             queryInput.placeholder = "例如: nickel oxide single atom photocatalyst hydrogen";
           } else {
@@ -3441,6 +3557,10 @@
             hintBox.classList.add("hidden");
           }
         } else if (val.startsWith("exa:")) {
+          if (extKeyLinkBtn) {
+            extKeyLinkBtn.dataset.url = "https://dashboard.exa.ai/api-keys";
+            extKeyLinkBtn.textContent = "🔗 获取 Exa Key ↗";
+          }
           queryInput.placeholder = "支持直接用自然语言或中文描述，如：NiOx单原子助催化剂光催化析氢的近三年研究";
           if (!cs.exa_api_key?.configured) {
             hintText.textContent = "使用 Exa AI 语义检索需先配置 Exa API Key。";
@@ -3451,7 +3571,78 @@
         }
       }
 
+      const API_KEY_ITEMS = [
+        { key: "sciverse_api_key", label: "SciVerse", badgeId: "badgeSciverseKey", inputId: "cfgSciverseKey", url: "https://sciverse.space" },
+        { key: "ai4scholar_api_key", label: "AI4Scholar", badgeId: "badgeAi4scholarKey", inputId: "cfgAi4scholarKey", url: "https://ai4scholar.net" },
+        { key: "mineru_api_token", label: "MinerU", badgeId: "badgeMineruToken", inputId: "cfgMineruToken", url: "https://mineru.net/apiManage/token" },
+        { key: "easyscholar_secret_key", label: "easyScholar", badgeId: "badgeEasyscholarKey", inputId: "cfgEasyscholarKey", url: "https://www.easyscholar.cc" },
+        { key: "polite_email", label: "礼貌邮箱", badgeId: "badgePoliteEmail", inputId: "cfgPoliteEmail", url: "https://unpaywall.org/products/api", isEmail: true },
+        { key: "serper_api_key", label: "Serper", badgeId: "badgeSerperKey", inputId: "cfgSerperKey", url: "https://serper.dev/api-key" },
+        { key: "exa_api_key", label: "Exa", badgeId: "badgeExaKey", inputId: "cfgExaKey", url: "https://dashboard.exa.ai/api-keys" },
+        { key: "semantic_scholar_api_key", label: "S2 Key", badgeId: "badgeS2Key", inputId: "cfgS2Key", url: "https://www.semanticscholar.org/product/api#api-key-form" },
+        { key: "openalex_api_key", label: "OpenAlex Key", badgeId: "badgeOpenalexKey", inputId: "cfgOpenalexKey", url: "https://openalex.org/settings/api" }
+      ];
+
+      function cleanPastedSecretValue(raw, stripAllWhitespace = false) {
+        if (typeof raw !== "string") return "";
+        let s = raw.trim().replace(/^["']+|["']+$/g, "").trim();
+        s = s.replace(/^Bearer\s+/i, "").trim();
+        if (stripAllWhitespace) {
+          s = s.replace(/\s+/g, "");
+        }
+        return s;
+      }
+
+      function setApiInputVisibility(inputEl, btnEl, showPlain) {
+        if (!inputEl) return false;
+        const nextType = showPlain ? "text" : "password";
+        inputEl.type = nextType;
+        inputEl.setAttribute("type", nextType);
+        if (btnEl) {
+          btnEl.classList.toggle("active", Boolean(showPlain));
+          btnEl.textContent = showPlain ? "🙈 隐藏" : "👁 预览";
+          btnEl.title = showPlain ? "点击恢复加密隐藏展示" : "点击切换明文预览 / 加密隐藏（默认加密显示）";
+        }
+        return Boolean(showPlain);
+      }
+
+      function toggleApiInputVisibility(targetId) {
+        const inputEl = document.getElementById(targetId);
+        if (!inputEl) return false;
+        const btnEl = document.querySelector(`.api-vis-btn[data-target="${targetId}"]`);
+        const curType = inputEl.getAttribute("type") || inputEl.type || "password";
+        const showPlain = curType === "password";
+        setApiInputVisibility(inputEl, btnEl, showPlain);
+        if (showPlain && !inputEl.value) {
+          const itemMeta = API_KEY_ITEMS.find((it) => it.inputId === targetId);
+          const st = itemMeta ? state.panelData?.configStatus?.[itemMeta.key] : null;
+          if (st?.configured) {
+            const srcMap = { panel: "面板自定义已生效", userConfig: "插件设置已生效", systemEnv: "系统环境变量已生效" };
+            showBanner(
+              `🔒 ${itemMeta.label} 当前已生效密钥脱敏摘要：${st.masked || "••••••••"}（来源：${srcMap[st.source] || st.source}）。您新粘贴或输入的密钥现将以明文预览展示。`,
+              "info"
+            );
+          }
+        }
+        return showPlain;
+      }
+
+      function resetAllApiInputsToMasked() {
+        document.querySelectorAll(".api-secret-input").forEach((inputEl) => {
+          const btnEl = document.querySelector(`.api-vis-btn[data-target="${inputEl.id}"]`);
+          setApiInputVisibility(inputEl, btnEl, false);
+        });
+      }
+
       document.getElementById("qExtChannel").addEventListener("change", updateExtChannelHint);
+      onAction(document.getElementById("btnGetExtKeyLink"), "click", async (e) => {
+        const url = e.currentTarget?.dataset?.url;
+        if (url) await openExternalUrl(url);
+      });
+      onAction(document.getElementById("btnGetMineruTokenLink"), "click", async (e) => {
+        const url = e.currentTarget?.dataset?.url || "https://mineru.net/apiManage/token";
+        await openExternalUrl(url);
+      });
       document.getElementById("btnJumpConfigFromSerper").addEventListener("click", () => {
         document.getElementById("configPanel").classList.remove("hidden");
         const val = document.getElementById("qExtChannel").value;
@@ -3466,17 +3657,7 @@
         const strip = document.getElementById("statusStrip");
         const pyOk = cs.python_runtime?.configured !== false;
 
-        const keyItems = [
-          { key: "sciverse_api_key", label: "SciVerse", badgeId: "badgeSciverseKey", inputId: "cfgSciverseKey" },
-          { key: "ai4scholar_api_key", label: "AI4Scholar", badgeId: "badgeAi4scholarKey", inputId: "cfgAi4scholarKey" },
-          { key: "mineru_api_token", label: "MinerU", badgeId: "badgeMineruToken", inputId: "cfgMineruToken" },
-          { key: "easyscholar_secret_key", label: "easyScholar", badgeId: "badgeEasyscholarKey", inputId: "cfgEasyscholarKey" },
-          { key: "polite_email", label: "礼貌邮箱", badgeId: "badgePoliteEmail", inputId: "cfgPoliteEmail" },
-          { key: "serper_api_key", label: "Serper", badgeId: "badgeSerperKey", inputId: "cfgSerperKey" },
-          { key: "exa_api_key", label: "Exa", badgeId: "badgeExaKey", inputId: "cfgExaKey" },
-          { key: "semantic_scholar_api_key", label: "S2 Key", badgeId: "badgeS2Key", inputId: "cfgS2Key" },
-          { key: "openalex_api_key", label: "OpenAlex Key", badgeId: "badgeOpenalexKey", inputId: "cfgOpenalexKey" }
-        ];
+        const keyItems = API_KEY_ITEMS;
         const configuredCount = keyItems.filter((it) => cs[it.key]?.configured).length;
 
         const zOnline = Boolean(cs.zotero_local?.online);
@@ -3489,7 +3670,10 @@
 
         strip.querySelectorAll("[data-cfg-pill], #btnToggleConfig").forEach((el) => {
           el.addEventListener("click", () => {
-            document.getElementById("configPanel").classList.toggle("hidden");
+            const cfgPanel = document.getElementById("configPanel");
+            const willHide = !cfgPanel.classList.contains("hidden");
+            cfgPanel.classList.toggle("hidden");
+            if (willHide) resetAllApiInputsToMasked();
           });
         });
 
@@ -3503,8 +3687,16 @@
             badgeEl.className = `pill static ${st.configured ? "ok" : ""}`;
             badgeEl.textContent = st.configured ? `✓ ${srcMap[st.source] || "已就绪"}` : "未配置";
           }
-          if (inputEl && st.configured && st.source === "systemEnv" && !inputEl.value) {
-            inputEl.placeholder = "✅ 已由系统环境变量配置（无需重复填写，填入新值可覆盖）";
+          if (inputEl && !it.isEmail) {
+            const defaultPh =
+              inputEl.dataset?.defaultPlaceholder ||
+              inputEl.getAttribute("data-default-placeholder") ||
+              "粘贴或输入密钥（默认加密展示）";
+            const nextPh = st.configured
+              ? `✅ 已配置 (${st.masked || "••••••••"} · ${srcMap[st.source] || "已就绪"}) — 粘贴新值可覆盖`
+              : defaultPh;
+            inputEl.placeholder = nextPh;
+            inputEl.setAttribute("placeholder", nextPh);
           }
         }
         const zBadge = document.getElementById("badgeZoteroLocal");
@@ -5017,9 +5209,21 @@
             state.resultSort = e.target.value || "default";
             refreshFilteredMainPapers();
           });
+          let kwFilterTimer = null;
           contentEl.querySelector("#resultKeywordInput")?.addEventListener("input", (e) => {
             state.resultKeyword = e.target.value || "";
-            refreshFilteredMainPapers();
+            if (kwFilterTimer) {
+              clearTimeout(kwFilterTimer);
+              kwFilterTimer = null;
+            }
+            if (papers.length > 25) {
+              kwFilterTimer = setTimeout(() => {
+                kwFilterTimer = null;
+                refreshFilteredMainPapers();
+              }, 80);
+            } else {
+              refreshFilteredMainPapers();
+            }
           });
           contentEl.querySelector("#chkSelectAllPapers")?.addEventListener("change", (e) => {
             const visiblePapers = filterAndSortPapers(papers);
@@ -7453,23 +7657,76 @@
 
       document.getElementById("btnCloseConfig").addEventListener("click", () => {
         document.getElementById("configPanel").classList.add("hidden");
+        resetAllApiInputsToMasked();
+      });
+
+      document.querySelectorAll(".api-get-link-btn").forEach((btn) => {
+        onAction(btn, "click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const url = btn.dataset?.url || btn.getAttribute("data-url");
+          if (url) await openExternalUrl(url);
+        });
+      });
+
+      document.querySelectorAll(".api-vis-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const targetId = btn.dataset?.target || btn.getAttribute("data-target");
+          if (targetId) toggleApiInputVisibility(targetId);
+        });
+      });
+
+      document.querySelectorAll(".api-secret-input").forEach((inp) => {
+        inp.addEventListener("paste", (e) => {
+          const pasted = e.clipboardData?.getData?.("text");
+          if (typeof pasted === "string" && pasted) {
+            e.preventDefault();
+            inp.value = cleanPastedSecretValue(pasted, inp.id === "cfgEasyscholarKey");
+          }
+        });
+        inp.addEventListener("change", () => {
+          if (inp.value) {
+            inp.value = cleanPastedSecretValue(inp.value, inp.id === "cfgEasyscholarKey");
+          }
+        });
       });
 
       onAction(document.getElementById("btnSaveConfig"), "click", async (e) => {
         const exportSubdir = getChosenSaveDir();
         const doc2mdSubdir = document.getElementById("cfgDoc2mdSubdirInput")?.value?.trim() || getChosenDoc2mdSaveDir();
+        const sciverseVal = cleanPastedSecretValue(document.getElementById("cfgSciverseKey").value);
+        const ai4scholarVal = cleanPastedSecretValue(document.getElementById("cfgAi4scholarKey").value);
+        const mineruVal = cleanPastedSecretValue(document.getElementById("cfgMineruToken")?.value || "");
+        const easyscholarVal = cleanPastedSecretValue(document.getElementById("cfgEasyscholarKey").value, true);
+        const openalexVal = cleanPastedSecretValue(document.getElementById("cfgOpenalexKey").value);
+        const s2Val = cleanPastedSecretValue(document.getElementById("cfgS2Key").value);
+        const exaVal = cleanPastedSecretValue(document.getElementById("cfgExaKey").value);
+        const serperVal = cleanPastedSecretValue(document.getElementById("cfgSerperKey").value);
+
+        document.getElementById("cfgSciverseKey").value = sciverseVal;
+        document.getElementById("cfgAi4scholarKey").value = ai4scholarVal;
+        if (document.getElementById("cfgMineruToken")) document.getElementById("cfgMineruToken").value = mineruVal;
+        document.getElementById("cfgEasyscholarKey").value = easyscholarVal;
+        document.getElementById("cfgOpenalexKey").value = openalexVal;
+        document.getElementById("cfgS2Key").value = s2Val;
+        document.getElementById("cfgExaKey").value = exaVal;
+        document.getElementById("cfgSerperKey").value = serperVal;
+
+        resetAllApiInputsToMasked();
         await callTool(
           "save_config",
           {
             politeEmail: document.getElementById("cfgPoliteEmail").value,
-            sciverseApiKey: document.getElementById("cfgSciverseKey").value,
-            ai4scholarApiKey: document.getElementById("cfgAi4scholarKey").value,
-            mineruApiToken: document.getElementById("cfgMineruToken")?.value || "",
-            easyscholarSecretKey: document.getElementById("cfgEasyscholarKey").value,
-            openalexApiKey: document.getElementById("cfgOpenalexKey").value,
-            s2ApiKey: document.getElementById("cfgS2Key").value,
-            exaApiKey: document.getElementById("cfgExaKey").value,
-            serperApiKey: document.getElementById("cfgSerperKey").value,
+            sciverseApiKey: sciverseVal,
+            ai4scholarApiKey: ai4scholarVal,
+            mineruApiToken: mineruVal,
+            easyscholarSecretKey: easyscholarVal,
+            openalexApiKey: openalexVal,
+            s2ApiKey: s2Val,
+            exaApiKey: exaVal,
+            serperApiKey: serperVal,
             zoteroUrl: document.getElementById("cfgZoteroUrl").value,
             exportSubdir,
             doc2mdSubdir
@@ -7477,19 +7734,11 @@
           "正在保存配置...",
           e.currentTarget
         );
-        document.getElementById("cfgSciverseKey").value = "";
-        document.getElementById("cfgAi4scholarKey").value = "";
-        if (document.getElementById("cfgMineruToken")) document.getElementById("cfgMineruToken").value = "";
-        document.getElementById("cfgEasyscholarKey").value = "";
-        document.getElementById("cfgOpenalexKey").value = "";
-        document.getElementById("cfgS2Key").value = "";
-        document.getElementById("cfgExaKey").value = "";
-        document.getElementById("cfgSerperKey").value = "";
         if (document.getElementById("doc2mdSaveDirInput") && doc2mdSubdir) {
           document.getElementById("doc2mdSaveDirInput").value = doc2mdSubdir;
           updateDoc2mdOutputPreview();
         }
-        showBanner("✅ 设置已保存并立即生效！", "success");
+        showBanner("✅ 设置已保存并立即生效（API 密钥已默认加密隐藏，可点击「👁 预览」核对）！", "success");
       });
 
       onAction(document.getElementById("btnClearSavedKeys"), "click", async (e) => {
@@ -7499,6 +7748,10 @@
           "正在重置面板自定义 Key...",
           e.currentTarget
         );
+        document.querySelectorAll(".api-secret-input").forEach((inp) => {
+          inp.value = "";
+        });
+        resetAllApiInputsToMasked();
         showBanner("已清空面板内覆盖的 Key，恢复使用系统环境变量配置。", "success");
       });
 

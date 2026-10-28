@@ -99,8 +99,12 @@ test("MCP offline regressions", async (t) => {
     assert.equal(initial.structuredContent.settings.zoteroUrl, env.USER_CONFIG_ZOTERO_URL);
     assert.equal(initial.structuredContent.settings.exportSubdir, "inherited-export");
     assert.equal(initial.structuredContent.configStatus.exa_api_key.source, "userConfig");
-    const saved = await call("save_config", { exaApiKey: "FAKE_UNIT_PANEL_KEY", politeEmail: "panel@example.test" });
+    assert.equal(initial.structuredContent.configStatus.exa_api_key.portalUrl, "https://dashboard.exa.ai/api-keys");
+    assert.equal(initial.structuredContent.configStatus.sciverse_api_key.portalUrl, "https://sciverse.space");
+    assert.equal(initial.structuredContent.configStatus.mineru_api_token.portalUrl, "https://mineru.net/apiManage/token");
+    const saved = await call("save_config", { exaApiKey: "  Bearer FAKE_UNIT_PANEL_KEY \n", politeEmail: "panel@example.test" });
     assert.equal(saved.structuredContent.configStatus.exa_api_key.source, "panel");
+    assert.equal(saved.structuredContent.configStatus.exa_api_key.masked, "FAK••••••EY");
     assert.equal(JSON.stringify(saved).includes("FAKE_UNIT_PANEL_KEY"), false);
     const doctor = await call("doctor_status");
     assert.equal(doctor.structuredContent.doctorReport.doctor.emails.OPENALEX_EMAIL, "panel@example.test");

@@ -38,6 +38,9 @@ class Element extends Events {
     this.style = { setProperty(key, value) { this[key] = value; } };
     this.className = attrs.class || '';
     this.id = attrs.id || '';
+    this.type = attrs.type || '';
+    this.placeholder = attrs.placeholder || '';
+    this.title = attrs.title || '';
     this._value = attrs.value;
     this.checked = Object.hasOwn(attrs, 'checked');
     this.disabled = Object.hasOwn(attrs, 'disabled');
@@ -160,7 +163,7 @@ export function makePanel({ bootstrap = false, clipboard, resizeObserver = true 
   let nextTimer = 0;
   let nextFrame = 0;
   let observerDisconnected = false;
-  const exports = 'state, graphSim, pendingRpc, ensureInitialized, callTool, sendRpcRequest, normalizeDirectId, isDirectPaperIdentifier, safeWebUrl, openExternalUrl, updatePanelData, renderPaperCardHtml, renderRawResultCardHtml, renderActiveRun, renderSessionNavBar, bindPaperListEvents, inspectPaper, inspectRawResultItem, executeUndoZoteroImport, canUndoZoteroImport, computeTimelineTargets, clientToGraphWorld, renderRelationshipGraph, renderGraphIntelligencePanel, renderBasket, filterAndSortPapers, computePaperRecommendScore, buildDeepReadHandoffPrompt, triggerDeepReadHandoff, prefillDoc2mdFromPaper, prefillDoc2mdFromZoteroItem, renderDoc2mdTab, switchTab, openDetailView, closeDetailView, copyTextToClipboard, sendToChat, sendPromptToChat';
+  const exports = 'state, graphSim, pendingRpc, ensureInitialized, callTool, sendRpcRequest, normalizeDirectId, isDirectPaperIdentifier, safeWebUrl, openExternalUrl, updatePanelData, renderPaperCardHtml, renderRawResultCardHtml, renderActiveRun, renderSessionNavBar, bindPaperListEvents, inspectPaper, inspectRawResultItem, executeUndoZoteroImport, canUndoZoteroImport, computeTimelineTargets, clientToGraphWorld, renderRelationshipGraph, renderGraphIntelligencePanel, renderBasket, filterAndSortPapers, computePaperRecommendScore, buildDeepReadHandoffPrompt, triggerDeepReadHandoff, prefillDoc2mdFromPaper, prefillDoc2mdFromZoteroItem, renderDoc2mdTab, switchTab, openDetailView, closeDetailView, copyTextToClipboard, sendToChat, sendPromptToChat, toggleApiInputVisibility, resetAllApiInputsToMasked, cleanPastedSecretValue';
   let script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   script = script.replace('callTool("open_panel", {}).catch(() => {});', `globalThis.panel = { ${exports} }; ${bootstrap ? 'callTool("open_panel", {}).catch(() => {});' : ''}`);
   const context = vm.createContext({
