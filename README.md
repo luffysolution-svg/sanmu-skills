@@ -59,12 +59,12 @@
 #### 1. 物理力导向星系图谱动态交互演示
 > 基于 Obsidian 物理力场引擎构建，支持鼠标拖拽碰撞、弹性回弹、节点悬停实时预览文献题录元数据。
 
-![力导向星系图谱交互演示](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-57-59.gif)
+![力导向星系图谱交互演示](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-57-59_opt.gif)
 
 #### 2. 年份演进时间轴动态交互演示
 > 按发表年份横向展开文献脉络，纵向标定被引权重与层级，鼠标滑动实时高亮施引与参考文献流向。
 
-![年份演进时间轴交互演示](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-03.gif)
+![年份演进时间轴交互演示](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-03_opt.gif)
 
 #### 3. 力导向星系静态全景与核心情报
 > 中心种子文献辐射展开，自动发现识别「共被引基石文献」与「桥梁文献」，提供图谱核心情报统计。

@@ -59,12 +59,12 @@ The three skills can be used separately or chained: **search** → get the PDF /
 #### 1. Live Force-Directed Star-Cluster Graph (GIF Demo)
 > Built on Obsidian-grade physics simulation, supporting drag collisions, elastic bounce, and hover previews for instant paper metadata.
 
-![Force-directed graph interaction demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-57-59.gif)
+![Force-directed graph interaction demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-57-59_opt.gif)
 
 #### 2. Year Evolution Timeline (GIF Demo)
 > Expands paper lineage horizontally across publication years, scaling by citation weight vertically, with real-time citation-flow highlighting.
 
-![Year evolution timeline demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-03.gif)
+![Year evolution timeline demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-03_opt.gif)
 
 #### 3. Force-Directed Galaxy Overview & Key Intelligence
 > Radiates outward from seed papers, automatically detecting "Co-cited Hubs" and "Bridge Papers" with core topological intelligence statistics.
