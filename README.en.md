@@ -51,7 +51,7 @@ The three skills can be used separately or chained: **search** → get the PDF /
 
 ## Installation
 
-Version 1.10.2 packages **three complete skills, a portable CLI, 24 MCP tools, and a browser workbench**. Requirements: Node.js ≥22.20 and Python ≥3.10; Git is needed for Git installation. DeepSeek Harness additionally requires Node.js ≥24.9.
+Version 1.10.3 packages **three complete skills, a portable CLI and 24 MCP tools**, with the complete ZCode workbench embedded through native DeepSeek Harness entry points and a browser workbench for terminal hosts. Requirements: Node.js ≥22.20 and Python ≥3.10; Git is needed for Git installation. DSH Desktop 0.2.1-rc.3 is supported with its Electron Node.js 22.20.0 runtime.
 
 ### Installation channels
 
@@ -61,7 +61,7 @@ Version 1.10.2 packages **three complete skills, a portable CLI, 24 MCP tools, a
 | **Claude Code** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
 | **Codex** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
 | **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | Three skills + CLI + native MCP + browser workbench |
-| **DeepSeek Harness** | Desktop UI (Plugins → Add Plugin) or CLI | Three skills + CLI + MCP + browser workbench |
+| **DeepSeek Harness** | Existing Desktop Plugins → Add Plugin, using a GitHub specifier or full TGZ URL | Three skills + CLI + MCP + complete embedded workbench |
 | **ZCode** | Plugin marketplace or Release plugin bundle, see below | Collection plugin / side-panel search plugin |
 | **Tencent SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | Individual skills |
 | **WorkBuddy** | Search for "三木" in the client under 专家·技能·连接器 → 技能 (Experts · Skills · Connectors → Skills) | Individual skills |
@@ -78,16 +78,16 @@ Send the following to the AI coding assistant you are using:
 Please install and configure Sanmu's sanmu-skills collection:
 https://github.com/luffysolution-svg/sanmu-skills
 
-1. Check Node >=22.20, Python >=3.10 and Git; DSH requires Node >=24.9.
+1. Check Node >=22.20, Python >=3.10 and Git; DSH Desktop 0.2.1-rc.3 supports Electron Node 22.20.0.
    Check existing installations for local modifications. Choose the current host's complete package:
    Claude: claude plugin install sanmu-skills --marketplace luffysolution-svg/sanmu-skills
    Codex: codex plugin marketplace add luffysolution-svg/sanmu-skills && codex plugin add sanmu-skills@sanmu-skills
    Pi >=1.4: pi install git:github.com/luffysolution-svg/sanmu-skills
-   DSH >=0.2.1-rc.1: Add via Desktop Plugins UI (github:luffysolution-svg/sanmu-skills) or run dsh plugin --profile desktop add github:luffysolution-svg/sanmu-skills
-   (CLI defaults to the desktop profile; specify custom profile if needed)
+   DSH Desktop: use the existing Plugins → Add Plugin UI with github:luffysolution-svg/sanmu-skills or the complete Release TGZ URL.
+   Manage the reserved desktop profile in the Desktop UI; CLI is for other existing profiles. Open the complete embedded workbench from the conversation header or right-sidebar + menu.
 2. Locate the installed root and run node "<installed-root>/scripts/sanmu.mjs" doctor.
    Use setup to prepare private Python/KaTeX dependencies in advance; document conversion can prepare them automatically.
-3. Use MCP open_panel to open the complete workbench. On terminal hosts it returns a local browser URL.
+3. In DSH, open Sanmu Paper Search in the conversation header or right-sidebar + menu. On terminal hosts, use open_panel or sanmu panel for the browser workbench.
 4. Check credential presence without displaying values. Free search can start without keys.
    Cloud OCR requires MINERU_API_TOKEN; paid providers require their own account and quota.
    Zotero writes require local authorization in Zotero 8+.
@@ -142,37 +142,38 @@ Pi ≥1.4 uses its native `registerMcpServer` API. No third-party MCP bridge is 
 
 ### DeepSeek Harness (DSH)
 
-Supports DSH **≥0.2.1-rc.1** (current official release is `0.2.1-rc.3`) with Node.js ≥24.9.
+Supports **DSH Desktop 0.2.1-rc.3**, including its **Electron Node.js 22.20.0** runtime. Standalone Node.js must be **≥22.20**; document conversion also needs Python ≥3.10.
 
-#### Method 1: DSH Desktop GUI (Recommended)
+#### Desktop installation
 
-1. Open DeepSeek Harness Desktop, navigate to **Plugins** in the left sidebar.
-2. Click **Add Plugin** in the top right.
-3. Paste the GitHub repo specifier into the prompt:
-   ```text
-   github:luffysolution-svg/sanmu-skills
-   ```
-   *(or the full repository URL `https://github.com/luffysolution-svg/sanmu-skills.git`)*
-4. Confirm installation. DSH will fetch the bundle, verify dependencies, and activate the plugin.
+In the existing DSH Desktop application, open **Plugins → Add Plugin** and enter the GitHub specifier:
 
-#### Method 2: CLI Installation
-
-Use the DSH CLI to install into the default `desktop` profile (or your custom profile):
-
-```bash
-# Install directly from GitHub
-dsh plugin --profile desktop add github:luffysolution-svg/sanmu-skills
-
-# Or link a local repository for development
-dsh plugin --profile desktop add link:<absolute-path-to-repo>
+```text
+github:luffysolution-svg/sanmu-skills
 ```
 
-#### Verification and Capabilities
+You can also enter the complete TGZ download URL from [GitHub Release](https://github.com/luffysolution-svg/sanmu-skills/releases/latest), for example:
 
-- **Automatic Skills Mounting**: All three skills (`sanmu-paper-search`, `sanmu-doc2md`, `sanmu-paper-reader`) are discovered and loaded into the DSH skills registry.
-- **MCP Tools & Workbench**: 24 research MCP tools are exposed under `mcp__sanmu-paper-search__*`. Use `open_panel` or run `sanmu panel` to open the interactive browser workbench.
-- **Redaction-Safe Browser Access**: When the agent outputs panel URLs, clients like DSH or Codex automatically redact tokens to `?token=[REDACTED]`. The workbench includes loopback-safe authentication, allowing direct access in your browser without 401 authorization errors.
-- **Host Dependencies**: The optional `@deepseek-ai/dsh-mcp-client` and `@deepseek-ai/dsh-skill-filesystem` peer dependencies are provided by the DSH host runtime. A profile MCP process shares its initial workspace; pass explicit `saveDir` for other workspaces, or set `SANMU_WORKSPACE_ROOT` before starting it.
+```text
+https://github.com/luffysolution-svg/sanmu-skills/releases/download/v1.10.3/sanmu-skills-1.10.3.tgz
+```
+
+Confirm installation and enable `sanmu-skills`. Manage the reserved `desktop` profile through this UI; the ordinary `dsh` CLI does not manage that profile. For an existing profile with another name, use:
+
+```bash
+dsh plugin --profile <existing-non-desktop-profile> add github:luffysolution-svg/sanmu-skills
+```
+
+#### Open and use the workbench
+
+- Click **Sanmu Paper Search** in the **conversation header**, or select it from the **right sidebar's “+” menu**.
+- The workbench reuses the complete existing ZCode panel, preserving its layout, styles and interaction logic: search, paper details and inline drawers, collection, batch history, API settings, Zotero, document conversion and every operation provided by the **24 existing MCP tools**.
+- The citation graph keeps its live force-directed layout, node dragging and hover interactions, co-citation and bridge-paper analysis, and year timeline. DSH supplies the theme and locale; “Send to AI” targets the current conversation.
+- All three complete skills are mounted for the agent: `sanmu-paper-search`, `sanmu-doc2md` and `sanmu-paper-reader`.
+- The complete workbench ships with the collection. No separate sidebar plugin is needed; keep the older `dsh-plugin-sanmu-sidebar` disabled to avoid duplicate entries.
+- The host supplies `@deepseek-ai/dsh-mcp-client` and `@deepseek-ai/dsh-skill-filesystem`. Pass an explicit `saveDir` when saving to another workspace, or set `SANMU_WORKSPACE_ROOT` before startup.
+
+Terminal hosts and manual use can still run `node "<installed-root>/scripts/sanmu.mjs" panel` for the browser workbench. Open the complete local URL returned by that command to establish a session; run it again if the URL or its token is missing.
 
 ### ZCode
 

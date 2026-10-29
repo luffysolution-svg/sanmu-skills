@@ -15,6 +15,8 @@ def main():
     parser.add_argument("archive", type=Path)
     parser.add_argument("--runtime", required=True, type=Path)
     args = parser.parse_args()
+    args.archive = args.archive.resolve()
+    args.runtime = args.runtime.resolve()
     with tempfile.TemporaryDirectory(prefix="sanmu-artifact-") as temporary:
         sandbox = Path(temporary)
         package = sandbox / "三木 package"

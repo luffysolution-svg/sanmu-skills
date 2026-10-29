@@ -6074,15 +6074,17 @@ const TOOLS = [
     },
     execute: async (input) => {
       const panelState = await getFullPanelState(input?.runId);
-      const portableHost = resolveEnvPath(process.env.SANMU_HOST) && process.env.SANMU_HOST !== "zcode";
+      const nativeHarness = process.env.SANMU_HOST === "dsh";
+      const portableHost = resolveEnvPath(process.env.SANMU_HOST) && !["zcode", "dsh"].includes(process.env.SANMU_HOST);
       const panel = portableHost && process.env.SANMU_PANEL_WORKER !== "1" ? await ensureBrowserPanel() : null;
       return {
         text: panel
           ? `三木科研工作台已就绪，请在本机浏览器打开：${panel.url}\n${panelState.activeRun ? summarizeRunForModel(panelState.activeRun) : "可使用完整检索、关系图谱、收藏篮、API 配置和文档解析功能。"}`
           : panelState.activeRun
             ? summarizeRunForModel(panelState.activeRun)
-            : "三木文献检索工作台已就绪。可选择文献源、配置 API 或直接发起检索。",
-        structured: { ...panelState, ...(panel ? { panelUrl: panel.url } : {}) }
+            : nativeHarness ? "三木文献检索已就绪。点击当前对话标题栏的「三木文献检索」，或从右侧栏的添加页打开工作台。"
+              : "三木文献检索工作台已就绪。可选择文献源、配置 API 或直接发起检索。",
+        structured: { ...panelState, ...(nativeHarness ? { nativePanel: { kind: "sanmu-paper-search", title: "三木文献检索" } } : {}), ...(panel ? { panelUrl: panel.url } : {}) }
       };
     }
   },
@@ -8669,7 +8671,7 @@ async function handleRequest(message) {
         },
         serverInfo: {
           name: "sanmu-paper-search",
-          version: "1.10.2"
+          version: "1.10.3"
         }
       }
     };

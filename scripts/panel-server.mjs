@@ -465,38 +465,21 @@ export async function startPanelServer({
     const [name, ...rest] = part.trim().split("=");
     return name === cookieName && safeEqual(rest.join("="), cookieSecret);
   });
-  function isAllowedOrigin(orig) {
-    if (!orig || orig === "null") return true;
-    if (orig === origin) return true;
-    try {
-      const u = new URL(orig);
-      if (["dsh-app:", "vscode-webview:", "file:"].includes(u.protocol)) return true;
-      if (["127.0.0.1", "localhost"].includes(u.hostname)) return true;
-    } catch {}
-    return false;
-  }
   function respond(request, response, status, body = "", contentType = "text/plain; charset=utf-8") {
     if (response.destroyed || response.writableEnded) return;
-    const reqOrigin = request.headers.origin;
-    const headers = {
+    response.writeHead(status, {
       "Content-Type": contentType, "Content-Length": Buffer.byteLength(body),
       "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data: blob: https: http:; font-src 'self' data:; frame-src 'self'; frame-ancestors 'self' * dsh-app: vscode-webview: http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'; object-src 'none'"
-    };
-    if (reqOrigin && isAllowedOrigin(reqOrigin)) {
-      headers["Access-Control-Allow-Origin"] = reqOrigin;
-      headers["Access-Control-Allow-Credentials"] = "true";
-      headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With";
-      headers["Access-Control-Allow-Methods"] = "GET, POST, HEAD, OPTIONS";
-    }
-    response.writeHead(status, headers);
+      "X-Frame-Options": "SAMEORIGIN",
+      "Content-Security-Policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob: https: http:; font-src 'self' data:; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"
+    });
     response.end(request.method === "HEAD" ? undefined : body);
   }
   async function dispatch(method, params = {}) {
     if (!isObject(params)) throw rpcError(-32602, "RPC params must be an object");
     if (method === "ui/initialize") return {
       protocolVersion: "2026-01-26",
-      hostInfo: { name: "sanmu-browser", version: "1.10.2" },
+      hostInfo: { name: "sanmu-browser", version: "1.10.3" },
       hostCapabilities: { serverTools: {}, openLinks: {} },
       hostContext: { theme: "light", locale: "zh-CN", displayMode: "standalone" }
     };
@@ -526,11 +509,8 @@ export async function startPanelServer({
       throw httpError(403, "Invalid Host");
     }
     if (countHeader(request, "origin") > 1 ||
-        (request.headers.origin !== undefined && !isAllowedOrigin(request.headers.origin))) {
+        (request.headers.origin !== undefined && request.headers.origin !== origin)) {
       throw httpError(403, "Invalid Origin");
-    }
-    if (request.method === "OPTIONS") {
-      return respond(request, response, 204);
     }
     if (!request.url.startsWith("/") || request.url.startsWith("//") || request.url.includes("\\")) {
       throw httpError(400, "Invalid request target");
@@ -541,29 +521,11 @@ export async function startPanelServer({
         if (faviconBuffer) return respond(request, response, 200, faviconBuffer, "image/x-icon");
         return respond(request, response, 204);
       }
-      const remote = request.socket?.remoteAddress;
-      const isLoopback = !remote || ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(remote);
-      const isIframe = request.headers["sec-fetch-dest"] === "iframe";
-      const hasAnyTokenParam = url.searchParams.has("token") || url.searchParams.has("auth") || url.searchParams.has("sid");
-      const tokens = [
-        ...url.searchParams.getAll("token"),
-        ...url.searchParams.getAll("auth"),
-        ...url.searchParams.getAll("sid")
-      ];
-      const validToken = tokens.some((t) => safeEqual(t, launchToken));
-      const hasRedactedToken = tokens.some((t) => t === "[REDACTED]" || !t.trim() || t.toLowerCase() === "redacted");
-      const authorizeLoopback = isLoopback && (hasRedactedToken || isIframe || hasAnyTokenParam || process.env.SANMU_ALLOW_ANONYMOUS_LOOPBACK === "1");
-      const authorized = validToken || authorizeLoopback || authenticated(request);
-
-      if (tokens.length && !validToken && !authorizeLoopback) {
-        throw httpError(403, "Invalid launch token");
-      }
-      if (!authorized) {
-        throw httpError(401, "请使用 sanmu panel 提供的完整本地链接打开面板，或访问 http://127.0.0.1:" + url.port + "/?token=[REDACTED] 进入。");
-      }
-      if (validToken || authorizeLoopback) {
-        response.setHeader("Set-Cookie", `${cookieName}=${cookieSecret}; HttpOnly; SameSite=Strict; Path=/`);
-      }
+      const tokens = url.searchParams.getAll("token");
+      const launched = tokens.length === 1 && safeEqual(tokens[0], launchToken);
+      if (tokens.length && !launched) throw httpError(403, "Invalid launch token");
+      if (!launched && !authenticated(request)) throw httpError(401, "请使用 sanmu panel 提供的完整本地链接打开面板。");
+      if (launched) response.setHeader("Set-Cookie", `${cookieName}=${cookieSecret}; HttpOnly; SameSite=Strict; Path=/`);
       const frameId = url.pathname === "/host" ? "sanmu-panel-frame" : undefined;
       let page = html;
       if (frameId) page = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>三木文献检索</title><style>html,body{height:100%;margin:0}iframe{display:block;width:100%;height:100%;border:0}</style></head><body><iframe id="sanmu-panel-frame" title="Sanmu Paper Search" src="/panel"></iframe></body></html>';
@@ -571,8 +533,9 @@ export async function startPanelServer({
       return respond(request, response, 200, injectBridge(page, { frameId, rpcTimeoutMs }), "text/html; charset=utf-8");
     }
     if (request.method !== "POST" || url.pathname !== "/rpc") throw httpError(405, "Method not allowed");
-    if (request.headers.origin !== undefined && !isAllowedOrigin(request.headers.origin)) {
-      throw httpError(403, "RPC requires an allowed origin");
+    if (request.headers.origin !== origin ||
+        (request.headers["sec-fetch-site"] !== undefined && request.headers["sec-fetch-site"] !== "same-origin")) {
+      throw httpError(403, "RPC requires a same-origin request");
     }
     if (!authenticated(request)) throw httpError(401, "Missing or invalid panel session");
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] || "")) {
@@ -629,7 +592,7 @@ export async function startPanelServer({
   server.once("close", () => { if (!closed) void close(); });
   try {
     const initialization = await client.request("initialize", {
-      protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "sanmu-browser", version: "1.10.2" }
+      protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "sanmu-browser", version: "1.10.3" }
     }, Math.min(rpcTimeoutMs, 30000));
     client.notify("notifications/initialized");
     toolsResult = { tools: [] };

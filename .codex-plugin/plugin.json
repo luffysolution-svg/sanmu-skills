@@ -1,6 +1,6 @@
 {
   "name": "sanmu-skills",
-  "version": "1.10.2",
+  "version": "1.10.3",
   "description": "Three complete research skills with a portable CLI, MCP tools, and a browser workbench.",
   "skills": "./skills",
   "mcpServers": "./.codex-plugin/mcp-env.json",

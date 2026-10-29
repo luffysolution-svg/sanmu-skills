@@ -27,7 +27,8 @@ ROOT_HOST_FILES = (
     "plugin.json", "mcp.json", ".mcp.json", ".claude-plugin/plugin.json",
     ".claude-plugin/marketplace.json", ".codex-plugin/plugin.json", ".codex-plugin/mcp-env.json",
     ".agents/plugins/marketplace.json", ".zcode-plugin/plugin.json", "marketplace.json", "package.json", "cordis.patch.yml",
-    *ROOT_RUNTIME_FILES, "scripts/mcp-server.mjs", *ROOT_ASSET_FILES, "extensions/pi.ts",
+    *ROOT_RUNTIME_FILES, "scripts/mcp-server.mjs", "scripts/dsh-client.js", "locale/en.json", "locale/zh.json",
+    *ROOT_ASSET_FILES, "extensions/pi.ts",
 )
 ZCODE_SHELL_DIR = "distribution/zcode/sanmu-paper-search"
 CANONICAL_RUNTIME_FILES = tuple(f"{ZCODE_SHELL_DIR}/{path}" for path in (
@@ -54,6 +55,9 @@ ZCODE_SHELL_FILES = (
     "commands/help.md",
     "scripts/mcp-server.mjs",
     "scripts/dsh-plugin.mjs",
+    "scripts/dsh-client.js",
+    "locale/en.json",
+    "locale/zh.json",
     "README.md",
 )
 FRONTMATTER_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
@@ -157,9 +161,15 @@ def local_path(value, label):
     return path
 
 
-def require_path(value, files, label, directory=False):
+def require_path(value, files, label, directory=False, pattern=False):
     path = local_path(value, label)
-    if not (any(name.startswith(path + "/") for name in files) if directory else path in files):
+    if directory:
+        present = any(name.startswith(path + "/") for name in files)
+    elif pattern and "*" in path:
+        present = any(fnmatchcase(name, path) for name in files)
+    else:
+        present = path in files
+    if not present:
         raise ValueError(f"Missing packaged path in {label}: {value}")
     return path
 
@@ -199,11 +209,42 @@ def validate_mcp(config, files, label, variable, entrypoint, cli=False):
 
 def validate_patch(root, path, files):
     text = (root / path).read_text(encoding="utf-8")
-    adapters = re.findall(r'(?m)^\s*(?:-\s*)?name:\s*[\"\']?([^\s\"\']+\.mjs)[\"\']?\s*$', text)
-    if not adapters:
-        raise ValueError(f"Missing DeepSeek adapter path: {path}")
-    for adapter in adapters:
-        require_path(adapter, files, path)
+    entries = re.findall(r'(?m)^\s*(?:-\s*)?name:\s*[\"\']?([^\s\"\']+)[\"\']?\s*$', text)
+    if not entries:
+        raise ValueError(f"Missing DeepSeek plugin entry: {path}")
+    package = read_json(root / "package.json")
+    for entry in entries:
+        if entry == package.get("name"):
+            adapter = require_path(package.get("main"), files, f"{path} package main")
+        elif entry.startswith("./"):
+            adapter = require_path(entry, files, path)
+        else:
+            raise ValueError(f"DeepSeek patch must reference its own package or a packaged adapter: {path}: {entry}")
+        source = root / adapter
+        if source.is_symlink() or not source.is_file():
+            raise ValueError(f"Missing or invalid DeepSeek adapter file: {path}: {adapter}")
+
+
+def validate_client(root, package, files, label):
+    client = package.get("dsh", {}).get("client", {})
+    expected_inject = {"@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-locale",
+                       "@deepseek-ai/dsh-api-remotes"}
+    if (client.get("platform") != "web" or client.get("immediately") is not True
+            or set(client.get("inject", [])) != expected_inject):
+        raise ValueError(f"Invalid native DeepSeek client manifest: {label}")
+    exports = package.get("exports", {})
+    for key, expected in (("./client", "scripts/dsh-client.js"), ("./icon", "assets/icon.svg"),
+                          ("./locale/*.json", "locale/*.json")):
+        target = require_path(exports.get(key), files, f"{label} {key}", pattern=True)
+        if target != expected:
+            raise ValueError(f"Unexpected native DeepSeek resource export: {label}: {key}")
+    for target in exports.values():
+        require_path(target, files, f"{label} exports", pattern=True)
+    for language in ("en", "zh"):
+        path = require_path(f"locale/{language}.json", files, f"{label} metadata")
+        metadata = read_json(root / path).get("meta", {})
+        if any(not isinstance(metadata.get(key), str) or not metadata[key].strip() for key in ("title", "description")):
+            raise ValueError(f"Missing localized DeepSeek display metadata: {label}: {language}")
 
 
 def zcode_sources(files):
@@ -263,8 +304,7 @@ def validate_hosts(root, release, files):
         raise ValueError("Root package.json must expose the sanmu CLI")
     require_path(package["bin"]["sanmu"], files, "package.json bin")
     require_path(package.get("main"), files, "package.json main")
-    for target in package.get("exports", {}).values():
-        require_path(target, files, "package.json exports")
+    validate_client(root, package, files, "package.json")
     pi = package.get("pi", {})
     if pi.get("skills") != ["./skills"] or pi.get("extensions") != ["./extensions/pi.ts"]:
         raise ValueError("Root package.json Pi paths must expose all three skills and the extension")
@@ -362,6 +402,7 @@ def validate(root=ROOT):
         validate_mcp(plugin, zcode_files, path, "CLAUDE_PLUGIN_ROOT", "scripts/mcp-server.mjs")
     package = read_json(zcode_shell_root / "package.json")
     require_path(package.get("main"), zcode_files, "ZCode package.json main")
+    validate_client(zcode_shell_root, package, zcode_files, "ZCode package.json")
     patch = package.get("dsh", {}).get("bundle", {}).get("patch")
     if require_path(patch, zcode_files, "ZCode package.json dsh.bundle.patch") != "cordis.patch.yml":
         raise ValueError("Unexpected DeepSeek patch path: ZCode package.json")

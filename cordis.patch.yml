@@ -1,4 +1,4 @@
-# One package-relative entry owns MCP and the three packaged skill providers.
+# Mount the package so DSH discovers its Host, native Client and display resources.
 - insert:
     - id: sanmu-skills
-      name: "./distribution/zcode/sanmu-paper-search/scripts/dsh-plugin.mjs"
+      name: 'sanmu-skills'

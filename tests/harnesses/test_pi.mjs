@@ -11,9 +11,10 @@ import test from "node:test";
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 const extensionPath = join(repoRoot, "extensions", "pi.ts");
 const skillNames = ["sanmu-doc2md", "sanmu-paper-reader", "sanmu-paper-search"];
+const releaseManifest = JSON.parse(await readFile(join(repoRoot, "distribution", "manifest.json"), "utf8"));
 const packageManifest = {
-  name: "sanmu-skills",
-  version: "1.10.2",
+  name: releaseManifest.name,
+  version: releaseManifest.version,
   type: "module",
   pi: { extensions: ["./extensions/pi.ts"], skills: ["./skills"] },
 };

@@ -1,8 +1,8 @@
 # 三木文献检索 (sanmu-paper-search) ZCode 插件
 
-**三木科研工具 v1.10.2** 包含完整的 `sanmu-paper-search`、`sanmu-doc2md`、`sanmu-paper-reader`，以及统一 CLI 与 24 个 MCP 工具。ZCode 使用原生常驻侧栏；Claude Code、Codex、Pi、DeepSeek Harness 的完整合集通过 `open_panel` 或 `sanmu panel` 打开浏览器工作台，精读指令可复制回当前对话。四宿主安装命令见[合集说明](../../../README.md#安装)。
+**三木科研工具 v1.10.3** 包含完整的 `sanmu-paper-search`、`sanmu-doc2md`、`sanmu-paper-reader`，以及统一 CLI 与 24 个 MCP 工具。ZCode 使用原生常驻侧栏；DSH 0.2.1-rc.3 通过对话头「三木文献检索」或右栏「+」打开直接复用此完整 ZCode 面板的工作台，保留原有 DOM、CSS、交互逻辑、文献详情、全部 API、实时力导向图谱和年份时间轴，无需独立侧栏插件，旧 `dsh-plugin-sanmu-sidebar` 应保持禁用。Claude Code、Codex、Pi 通过 `open_panel` 或 `sanmu panel` 打开浏览器工作台，精读指令可复制回当前对话。四宿主安装命令见[合集说明](../../../README.md#安装)。
 
-ZCode 桌面端使用“插件市场 → 添加 → 添加插件市场”添加仓库市场，或给解压的 ZCode 归档配置本地市场，再点击安装/更新。插件包包含全部三个技能；首次文档解析自动在私有数据目录准备 Python 依赖与 KaTeX。需 Node.js ≥22.20、Python ≥3.10；MinerU 与付费检索仍需用户配置凭证，Zotero 写入需要桌面端授权。
+ZCode 桌面端使用“插件市场 → 添加 → 添加插件市场”添加仓库市场，或给解压的 ZCode 归档配置本地市场，再点击安装/更新。插件包包含全部三个技能；首次文档解析自动在私有数据目录准备 Python 依赖与 KaTeX。需 Node.js ≥22.20、Python ≥3.10；DSH 兼容 Electron 内置 Node.js 22.20.0；MinerU 与付费检索仍需用户配置凭证，Zotero 写入需要桌面端授权。
 
 核心特性如下：
 

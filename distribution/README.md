@@ -25,7 +25,7 @@
 
 ## 版本与打包
 
-版本号记录在 `manifest.json`，同时改根目录 `plugin.json`、`.claude-plugin/plugin.json` 和 ZCode 外壳 `.zcode-plugin/plugin.json`，以及服务端、面板内的版本标识；这些版本必须一致（`check` 会校验）。ZCode 外壳文件必须完整且被 Git 跟踪，缺失时构建失败。技能名称保持不变；腾讯 `slug` 默认与技能同名，首次发布前确认没有被占用。
+版本号记录在 `manifest.json` 的 `version` 和 `workbuddyVersion`，同时更新根目录与 ZCode 外壳的 `package.json`、各宿主 `plugin.json`、带版本的市场清单，以及 CLI、服务端、面板内的版本标识。宿主测试从发布 manifest 读取版本，避免每次发布修改固定断言；`check` 校验各 manifest、市场和服务端/面板的一致性。ZCode 外壳文件必须完整且被 Git 跟踪，缺失时构建失败。技能名称保持不变；腾讯 `slug` 默认与技能同名，首次发布前确认没有被占用。
 
 从仓库根目录执行，只需要 Python 3.10+ 和 Git：
 
@@ -40,7 +40,7 @@ python distribution/build.py build --out dist/<版本>
 - **只打包 Git 已跟踪的文件**。新加的运行文件要先 `git add` 再构建，否则会报缺失，而不是悄悄漏包。
 - **技能包只收运行所需的文件**：根目录的 `SKILL.md`、README、LICENSE、requirements，以及 `scripts/`、`references/`、`assets/`。测试、样例、开发文档和 ROADMAP 留在仓库；嵌套的测试、缓存、`_selftest.py`、凭证或本地依赖混进运行目录时，检查直接失败。
 - **不覆盖已有输出**。输出目录已存在会拒绝构建，重新验证请换一个新目录。
-- **静态检查**：校验标准 Agent Skills frontmatter、三处版本号，以及 `SKILL.md` 和 `references/` 里的本地 Markdown 链接、反引号中的 `references/*.md` 路径。链接目标必须存在且被打进同一个技能包；在线链接、代码块里的示例和 Obsidian 双链不检查。
+- **静态检查**：校验标准 Agent Skills frontmatter、宿主版本与导出资源，以及 `SKILL.md` 和 `references/` 里的本地 Markdown 链接、反引号中的 `references/*.md` 路径。链接目标必须存在且被打进同一个技能包；在线链接、代码块里的示例和 Obsidian 双链不检查。
 - **体积预算**：`manifest.json` 的 `packageBudget` 是本项目自定的上限，合集运行文件不超过 200 个、解压后不超过 5 MiB。腾讯网页上传的硬限制是单包 200 个文件、10 MB，这里沿用同样的文件数，体积留出余量。`check` 打印合集和各技能的文件数与字节数，`build` 打印每个 ZIP 的文件数、解压前后大小。
 
 ## 仓库开发布局
@@ -68,11 +68,11 @@ node --test tests/zcode-paper-search/test_mcp_server.mjs tests/zcode-paper-searc
 
 | 文件 | 用途 |
 | --- | --- |
-| `sanmu-skills-<版本>.zip` | 完整合集：三技能、Claude/Codex 市场清单、Pi 扩展、DSH bundle、CLI、MCP 与浏览器工作台 |
+| `sanmu-skills-<版本>.zip` | 完整合集：三技能、Claude/Codex 市场清单、Pi 扩展、DSH 完整工作台、CLI、MCP 与浏览器工作台 |
 | `skillhub/<技能名>/` | 交给 `skillhub publish` 的目录 |
 | `skillhub/<技能名>-<版本>.zip` | 与上面目录内容一致的归档，根部是 `SKILL.md` |
 | `workbuddy/<技能名>-<版本>.zip` | WorkBuddy 技能包，根部是 `SKILL.md` |
-| `zcode/sanmu-paper-search-zcode-plugin-<版本>.zip` | ZCode 桌面端「三木文献检索」侧栏插件包（由 `distribution/zcode/` 外壳与 `skills/sanmu-paper-search/` 自动同源组装） |
+| `zcode/sanmu-paper-search-zcode-plugin-<版本>.zip` | ZCode 桌面端「三木文献检索」侧栏插件包（由 `distribution/zcode/` 外壳与三技能源码自动同源组装） |
 | `npm/sanmu-skills-<版本>.tgz` | Pi / DSH / npm 安装器接受的标准 `package/` tarball，与完整合集同源 |
 | `SHA256SUMS` | 以上 8 个 ZIP 与 1 个 TGZ 的 SHA-256，LF 换行 |
 
@@ -87,14 +87,24 @@ SkillHub 展示名写在 `manifest.json` 的 `displayName`；WorkBuddy 使用独
 
 ## 完整插件与宿主验收
 
-完整包以根 `package.json` 的 `files` 和构建白名单共同约束运行文件，包含全部三个技能。Claude 使用 `.mcp.json`，Codex 使用标准 `mcp.json` 及 `.codex-plugin/mcp-env.json` 环境变量覆盖；Pi 扩展调用原生 `registerMcpServer`；DSH 的 `cordis.patch.yml` 注册 MCP 和技能 provider。依赖装在私有数据目录，`doctor` 不执行安装。终端宿主可通过 `open_panel` 或 `sanmu panel` 使用浏览器工作台，精读指令通过复制回到对话。
+完整包以根 `package.json` 的 `files` 和构建白名单共同约束运行文件，包含全部三个技能。Claude 使用 `.mcp.json`，Codex 使用标准 `mcp.json` 及 `.codex-plugin/mcp-env.json` 环境变量覆盖；Pi 扩展调用原生 `registerMcpServer`。DSH 的 `cordis.patch.yml` 按包名注册：合集为 `sanmu-skills`，独立外壳为 `sanmu-paper-search`，使宿主能同时发现 Host、Client、图标和中英文显示信息。两个包分别导出 `./client`、`./icon`、`./locale/*.json`，并携带各自的 `scripts/dsh-client.js`、`locale/en.json`、`locale/zh.json`。构建保留两个客户端各自的模块 ID，独立外壳不被根客户端覆盖。
+
+DSH 0.2.1-rc.3 支持 Electron 内置 Node.js 22.20.0，也支持普通 Node.js ≥22.20。安装后从对话头「三木文献检索」或右栏「+」进入完整工作台，直接复用随包的 ZCode 面板原文，保留全部 24 个 MCP 工具、文献详情、内联抽屉、API 设置、实时力导向引文图谱与年份时间轴；无需独立侧栏插件，旧 `dsh-plugin-sanmu-sidebar` 保持禁用。依赖装在私有数据目录，`doctor` 不执行安装。其他终端宿主可通过 `open_panel` 或 `sanmu panel` 使用浏览器工作台；使用实际返回的完整启动链接建立会话，精读指令通过复制回到对话。
 
 ```bash
 node --test tests/harnesses/*.mjs
 SANMU_TEST_HOSTS=1 python tests/harnesses/test_marketplace_hosts.py
 ```
 
-宿主测试使用隔离配置，不改当前用户安装。Pi / DSH 官方运行时不存在时，相应集成测试会明确跳过；发布验收须单独提供已安装的官方运行时。通过通用插件市场安装不等于官方目录收录，npm tarball 不代表已发布 npm 包。
+宿主测试使用隔离配置，不改当前用户安装。
+
+DSH 的原生 React 容器默认通过现有同源认证连接，GET Host 只读资源 `/sanmu-paper-search/workbench`，获取随包 `assets/panel.html` 的完整原文和版本，再以 `srcDoc` 文档复用原 DOM、CSS 和交互逻辑。`/sanmu` 的 `panel/read` 可作为回退或测试入口。受控 `postMessage` 将 `tools/call` 送入同一宿主策略桥接，将 `ui/message` 送入当前会话，并同步初始化信息、主题和语言环境。这个加载路径复用 DSH 现有连接，无需另建 HTTP 服务、端口、浏览器启动令牌或跨源 CORS 放行。
+
+分发回归检查合集 ZIP、TGZ、ZCode ZIP 中客户端、模块 ID、图标和中英文元数据齐全，核对根包与独立包的面板内容和源码逐字节一致，保留力导向物理引擎与时间轴，并检查客户端无固定回环地址、启动令牌或 CORS 服务依赖。
+
+Pi / DSH 官方运行时不存在时，相应集成测试会明确跳过；发布验收须单独提供已安装的官方运行时，并在真实桌面端确认 24 个 MCP 工具已注册，逐项检查对话头入口、右栏、完整面板、文献详情、力导向图谱、时间轴和工具操作。
+
+通过通用插件市场安装不等于官方目录收录，npm tarball 不代表已发布 npm 包。
 
 ## Claude Code 与 Codex
 
@@ -111,7 +121,7 @@ Codex 的仓库市场是 `.agents/plugins/marketplace.json`，以本地来源 `.
 
 `deepseek/index.json` 遵守官方 format 1，Git 来源固定为实际含完整包的 40 位提交。先提交功能代码，再运行 `python distribution/deepseek/generate_index.py --commit <完整提交SHA>` 生成索引并提交；版本必须取该提交的 `package.json`。索引是发布元数据，不进入技能或 npm 运行包，避免自引用提交问题。
 
-在 DSH 中，插件可通过桌面端「插件 → 添加插件」输入 GitHub 仓库标识（`github:luffysolution-svg/sanmu-skills`）直接安装，或通过 CLI 命令 `dsh plugin --profile desktop add ...` 安装；`deepseek/index.json` 作为 format 1 索引发布元数据。Pi 使用 `pi install` 原生包入口，`pi-package` 关键字为目录提供元数据，不能把提供关键字称为已被官方收录。
+DSH 桌面端通过现有「插件 → 添加插件」输入 GitHub 仓库标识（`github:luffysolution-svg/sanmu-skills`）或完整 TGZ 下载地址安装。保留的 `desktop` profile 由桌面端管理；普通 CLI 仅用于其他已有 profile，例如 `dsh plugin --profile <已有的非desktop-profile名> add github:luffysolution-svg/sanmu-skills`。`deepseek/index.json` 作为 format 1 索引发布元数据。Pi 使用 `pi install` 原生包入口，`pi-package` 关键字为目录提供元数据，不能把提供关键字称为已被官方收录。
 
 ## GitHub Release
 
@@ -155,7 +165,7 @@ skillhub publish ./dist/<版本>/skillhub/sanmu-paper-search --dry-run
 - 技能包的必填字段按[官方技能文档](https://open.workbuddy.cn/docs/skill)：`description`、`description_zh`、`description_en`、`version`、`author`。展示名虽未标必填，但缺失时实际会解析失败，所以也一并写入。
 - 付费资产名称只支持中文、英文字母、数字、`-` 和 `_`，不能含空格或间隔号。构建时校验中英文展示名；当前中文名为“三木学术文档转Markdown”“三木文献精读”“三木文献检索”。后台展示名从包内 `display_name` 解析且只读，改名后需重新上传 ZIP。
 - 本次三个付费技能均从“创建”入口重新建立，WorkBuddy 标识为 `sanmu-doc2md-paid`、`sanmu-paper-reader-paid`、`sanmu-paper-search-paid`，原已发布记录保持下架。实测旧免费记录的“更新版本”页不提供付费选项，而创建时沿用旧标识会提示技能已存在；渠道独立标识避免冲突，源码及 SkillHub 标识保持不变。
-- `workbuddyVersion` 当前为 `1.9.1`，与合集版本 `1.9.1` 保持一致。未设置时沿用合集版本。更新已有记录时，平台要求包内版本严格大于当前最新版本。
+- `workbuddyVersion` 与 `manifest.json` 的合集版本保持一致，构建检查会拒绝不一致的值。未设置时沿用合集版本。更新已有记录时，平台要求包内版本严格大于当前最新版本。
 - 三个新技能统一选择“按月付费”，金额为 `3` 元/月。价格在后台设置，ZIP 不携带定价；保存后核对确认页的“按月付费·3元/月”，再提交审核。
 - 解析失败时，先对照官方文档的“技能基础结构”排查；仍无法定位，可发邮件到 openworkbuddy@tencent.com。
 

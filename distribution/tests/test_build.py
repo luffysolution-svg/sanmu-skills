@@ -205,6 +205,117 @@ class DistributionTests(unittest.TestCase):
                     for name in ("plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "package.json"):
                         self.assertEqual(json.loads(entries[name])["version"], release["version"])
 
+    def test_native_clients_and_display_metadata_survive_complete_archives(self):
+        release = build.read_json(build.ROOT / "distribution/manifest.json")
+        with tempfile.TemporaryDirectory() as temporary:
+            archives = build.build(Path(temporary) / "out")
+            for archive in archives:
+                if archive.parent.name in {"skillhub", "workbuddy"}:
+                    continue
+                with self.subTest(archive=archive.name):
+                    entries = self.archive_entries(archive)
+                    package = json.loads(entries["package.json"])
+                    shell = archive.parent.name == "zcode"
+                    source = build.ROOT / build.ZCODE_SHELL_DIR if shell else build.ROOT
+                    self.assertEqual(package["version"], release["version"])
+                    self.assertEqual(package["name"], "sanmu-paper-search" if shell else release["name"])
+                    self.assertIn(f"name: '{package['name']}'", entries["cordis.patch.yml"].decode("utf-8"))
+                    self.assertEqual(package["exports"]["./client"], "./scripts/dsh-client.js")
+                    self.assertEqual(package["exports"]["./icon"], "./assets/icon.svg")
+                    self.assertEqual(package["exports"]["./locale/*.json"], "./locale/*.json")
+                    self.assertEqual(package["dsh"]["client"]["platform"], "web")
+                    self.assertTrue(package["dsh"]["client"]["immediately"])
+                    client = entries["scripts/dsh-client.js"].decode("utf-8")
+                    self.assertIn("window.__ModuleLoader__.load", client)
+                    self.assertRegex(client, rf"\bid:\s*['\"]{package['name']}['\"]")
+                    self.assertIn("srcDoc", client)
+                    self.assertIn("/sanmu-paper-search/workbench", client)
+                    self.assertNotRegex(client, r"https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?")
+                    self.assertNotRegex(client, r"[?&]token=|\b55497\b|SANMU_ALLOW_ANONYMOUS_LOOPBACK")
+                    for transport in ("startPanelServer", "node:http", "Access-Control-Allow-Origin"):
+                        self.assertNotIn(transport, client)
+                    self.assertNotIn("@deepseek-ai/dsh-ui", client)
+                    self.assertEqual(entries["scripts/dsh-client.js"], (source / "scripts/dsh-client.js").read_bytes())
+                    for language in ("en", "zh"):
+                        name = f"locale/{language}.json"
+                        self.assertEqual(entries[name], (source / name).read_bytes())
+                        metadata = json.loads(entries[name])["meta"]
+                        self.assertTrue(metadata["title"].strip())
+                        self.assertTrue(metadata["description"].strip())
+                    self.assertIn(b"<svg", entries["assets/icon.svg"])
+
+    def test_complete_workbench_panels_remain_byte_identical_in_archives(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archives = build.build(Path(temporary) / "out")
+            for archive in archives:
+                if archive.parent.name in {"skillhub", "workbuddy"}:
+                    continue
+                entries = self.archive_entries(archive)
+                shell = archive.parent.name == "zcode"
+                source = build.ROOT / build.ZCODE_SHELL_DIR if shell else build.ROOT
+                panels = {"assets/panel.html": source / "assets/panel.html"}
+                if not shell:
+                    canonical_panel = f"{build.ZCODE_SHELL_DIR}/assets/panel.html"
+                    panels[canonical_panel] = build.ROOT / canonical_panel
+                for packed, original in panels.items():
+                    with self.subTest(archive=archive.name, panel=packed):
+                        self.assertTrue(entries[packed] == original.read_bytes(), f"Complete panel changed: {archive.name}: {packed}")
+                        panel = entries[packed].decode("utf-8")
+                        for feature in ('data-layout="force"', "stepGraphPhysics", "graphTimelineChronicle", "renderTimelineChronicle"):
+                            self.assertIn(feature, panel, f"Missing complete workbench feature: {feature}")
+
+    def test_export_patterns_require_packaged_matches_and_stay_inside_package(self):
+        files = ["locale/en.json", "locale/zh.json"]
+        self.assertEqual(build.require_path("./locale/*.json", files, "exports", pattern=True), "locale/*.json")
+        for value in ("./missing/*.json", "../locale/*.json"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                build.require_path(value, files, "exports", pattern=True)
+
+    def test_package_named_patch_requires_its_main_and_rejects_missing_relative_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            adapter = root / "scripts/host.mjs"
+            adapter.parent.mkdir()
+            adapter.write_text("export function apply() {}\n", encoding="utf-8")
+            for name in ("sanmu-skills", "sanmu-paper-search"):
+                with self.subTest(package=name):
+                    package = {"name": name, "main": "./scripts/host.mjs"}
+                    (root / "package.json").write_text(json.dumps(package), encoding="utf-8")
+                    patch = root / "cordis.patch.yml"
+                    patch.write_text(f"- insert:\n    - name: '{name}'\n", encoding="utf-8")
+                    build.validate_patch(root, patch.name, ["scripts/host.mjs"])
+                    with self.assertRaisesRegex(ValueError, "Missing packaged path"):
+                        build.validate_patch(root, patch.name, [])
+                    adapter.unlink()
+                    with self.assertRaisesRegex(ValueError, "Missing or invalid DeepSeek adapter file"):
+                        build.validate_patch(root, patch.name, ["scripts/host.mjs"])
+                    adapter.write_text("export function apply() {}\n", encoding="utf-8")
+                    patch.write_text('- insert:\n    - name: "./missing.mjs"\n', encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "Missing packaged path"):
+                        build.validate_patch(root, patch.name, ["scripts/host.mjs"])
+
+    def test_native_runtime_inputs_must_exist_and_be_tracked(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fixture(root)
+            paths = ["scripts/dsh-client.js", "locale/en.json", "locale/zh.json", "assets/icon.svg", "assets/panel.html",
+                     f"{build.ZCODE_SHELL_DIR}/scripts/dsh-client.js", f"{build.ZCODE_SHELL_DIR}/locale/en.json",
+                     f"{build.ZCODE_SHELL_DIR}/locale/zh.json", f"{build.ZCODE_SHELL_DIR}/scripts/dsh-plugin.mjs",
+                     f"{build.ZCODE_SHELL_DIR}/assets/panel.html"]
+            for name in paths:
+                with self.subTest(path=name):
+                    path = root / name
+                    path.resolve().relative_to(root.resolve())
+                    data = path.read_bytes()
+                    path.unlink()
+                    with self.assertRaisesRegex(ValueError, "not a regular file|Missing or invalid ZCode"):
+                        build.validate(root)
+                    path.write_bytes(data)
+                    subprocess.run(["git", "-C", str(root), "update-index", "--force-remove", "--", name], check=True)
+                    with self.assertRaisesRegex(ValueError, "must be tracked"):
+                        build.validate(root)
+                    subprocess.run(["git", "-C", str(root), "add", "--", name], check=True)
+
     def fixture(self, root):
         _, files = build.validate()
         extra = ["distribution/manifest.json"]
@@ -303,7 +414,11 @@ class DistributionTests(unittest.TestCase):
                 ("package.json", lambda data: data["pi"].update({"extensions": ["./extensions/missing.ts"]})),
                 ("package.json", lambda data: data["dsh"]["bundle"].update({"patch": "./missing.yml"})),
                 ("package.json", lambda data: data.update({"files": ["scripts", "skills"]})),
+                ("package.json", lambda data: data["exports"].update({"./client": "./scripts/missing.js"})),
+                ("package.json", lambda data: data["exports"].update({"./locale/*.json": "./missing/*.json"})),
+                ("package.json", lambda data: data["dsh"]["client"].update({"platform": "desktop"})),
                 (f"{build.ZCODE_SHELL_DIR}/package.json", lambda data: data.update({"main": "./missing.mjs"})),
+                (f"{build.ZCODE_SHELL_DIR}/package.json", lambda data: data["exports"].pop("./client")),
             ]
             for name, mutate in mutations:
                 with self.subTest(path=name, mutation=mutate):

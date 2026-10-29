@@ -1,4 +1,4 @@
-# Built standalone shell: the same adapter mounts MCP and all three skills.
+# The expanded shell exports its own Host, native Client and display resources.
 - insert:
     - id: sanmu-skills
-      name: "./scripts/dsh-plugin.mjs"
+      name: 'sanmu-paper-search'

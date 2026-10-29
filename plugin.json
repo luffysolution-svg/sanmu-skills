@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "sanmu-skills",
-  "version": "1.10.2",
+  "version": "1.10.3",
   "displayName": "三木文献检索",
   "description": "Academic document conversion, evidence-grounded paper reading, and literature discovery with three complete skills, a portable CLI, MCP tools, and a browser workbench.",
   "icon": "./assets/icon.png",

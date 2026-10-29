@@ -20,6 +20,8 @@ def main():
     committed = subprocess.check_output(["git", "-C", str(ROOT), "show", args.commit + ":package.json"], text=True, encoding="utf-8")
     package = json.loads(committed)
     for path in ("scripts/sanmu.mjs", "scripts/runtime.mjs", "scripts/panel-server.mjs", "scripts/zotero-tools.mjs",
+                 "scripts/dsh-client.js", "assets/panel.html", "assets/icon.svg", "locale/en.json", "locale/zh.json", "cordis.patch.yml",
+                 "distribution/zcode/sanmu-paper-search/scripts/dsh-plugin.mjs",
                  "skills/sanmu-doc2md/SKILL.md", "skills/sanmu-paper-reader/SKILL.md", "skills/sanmu-paper-search/SKILL.md"):
         subprocess.run(["git", "-C", str(ROOT), "cat-file", "-e", args.commit + ":" + path], check=True)
     document = {
@@ -28,8 +30,8 @@ def main():
         "description": {"en": "Research skills, literature tools and document conversion.", "zh": "文献检索、文档转换与证据精读，完整技能与 MCP 同包安装。"},
         "plugins": [{
             "name": package["name"],
-            "title": {"en": "Sanmu Research", "zh": "三木文献检索与科研工具"},
-            "description": {"en": package["description"], "zh": "三技能、统一 CLI、24 个 MCP 工具与浏览器工作台；含检索、OA/SI、关系图谱、Zotero 与 Markdown 文档解析。"},
+            "title": {"en": "Sanmu Paper Search", "zh": "三木文献检索"},
+            "description": {"en": package["description"], "zh": "三技能、24 个 MCP 工具与完整科研工作台；含原生侧栏、检索、OA/SI、力导向图谱与时间轴、Zotero 和 Markdown 文档解析。"},
             "author": "Sanmu (Wu Sen)",
             "homepage": package["homepage"],
             "repository": {"url": "https://github.com/luffysolution-svg/sanmu-skills"},

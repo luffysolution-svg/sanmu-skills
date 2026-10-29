@@ -439,23 +439,24 @@ test("MCP offline regressions", async (t) => {
     const row = { id: idMatch?.[1]?.trim(), name: nameMatch?.[1]?.trim() };
     const hostEnv = { DSH_HOME: join(root, 'dsh-home'), DSH_WORKSPACE_ROOT: workspace,
       USER_CONFIG_EXA_API_KEY: 'FAKE_DSH_EXA_KEY', USER_CONFIG_SCIVERSE_API_KEY: 'FAKE_DSH_SCIVERSE_KEY', USER_CONFIG_POLITE_EMAIL: 'dsh@example.test' };
-    let config = row.config;
-    if (row.name.startsWith('./')) {
-      const adapter = resolve(here, '../../distribution/zcode/sanmu-paper-search', row.name);
-      const localAdapter = join(plugin, 'scripts/dsh-plugin.mjs');
-      copyFileSync(adapter, localAdapter);
-      copyFileSync(serverPath, join(plugin, 'scripts/mcp-server.mjs'));
-      const module = await import(pathToFileURL(localAdapter).href);
-      config = module.createMcpConfig(hostEnv);
-    }
+    assert.equal(row.name, 'sanmu-paper-search');
+    const shell = resolve(here, '../../distribution/zcode/sanmu-paper-search');
+    const adapter = resolve(shell, JSON.parse(readFileSync(join(shell, 'package.json'), 'utf8')).main);
+    const localAdapter = join(plugin, 'scripts/dsh-plugin.mjs');
+    copyFileSync(adapter, localAdapter);
+    copyFileSync(serverPath, join(plugin, 'scripts/mcp-server.mjs'));
+    const module = await import(pathToFileURL(localAdapter).href);
+    const config = module.createMcpConfig(hostEnv);
     const childEnv = Object.fromEntries(Object.keys(process.env).filter(k => /API_KEY|USER_CONFIG|ZCODE_|CLAUDE_|DSH_/.test(k)).map(k => [k, '']));
-    const client = startMcpServer(config.args[0], { env: { ...childEnv, ...config.env, SANMU_PANEL_WORKER: "1" }, cwd: config.cwd || workspace });
+    const client = startMcpServer(config.args[0], { env: { ...childEnv, ...config.env }, cwd: config.cwd || workspace });
     try {
       await client.request('initialize');
       const panel = await client.call('open_panel');
       assert.equal(panel.isError, undefined);
       assert.equal(panel.structuredContent.settings.workspaceRoot, workspace);
       assert.equal(panel.structuredContent.settings.runsDir, join(hostEnv.DSH_HOME, 'plugin-data/sanmu-paper-search/runs'));
+      assert.equal(panel.structuredContent.nativePanel.kind, 'sanmu-paper-search');
+      assert.equal(panel.structuredContent.panelUrl, undefined);
       assert.equal(panel.structuredContent.configStatus.exa_api_key.configured, true);
       assert.equal(JSON.stringify(panel).includes('FAKE_DSH_EXA_KEY'), false);
       const doctor = await client.call('doctor_status');
