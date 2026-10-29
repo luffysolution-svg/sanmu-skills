@@ -51,29 +51,27 @@ The three skills can be used separately or chained: **search** → get the PDF /
 
 ## Visual Tour
 
-### Core Dynamic Demos: Interactive Citation Graph & Timeline
-
-> Built on Obsidian-grade physics simulation, supporting drag collisions, elastic bounce, and hover previews for instant paper metadata; publication years expand horizontally and citation tiers scale vertically.
-
-#### 1. Live Force-Directed Star-Cluster Graph (GIF Demo)
-![Force-directed graph interaction demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-57-59.gif)
-
-#### 2. Year Evolution Timeline (GIF Demo)
-![Year evolution timeline demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-03.gif)
-
-### Detailed Real-World Previews (Click to Expand)
-
-> Click any category below to expand high-resolution screenshots (30 previews covering graph, search, doc2md, reader, and host integration):
+> Click any category below to expand high-resolution screenshots and interactive animations (32 previews covering graph, search, doc2md, reader, and host integration):
 
 <details>
 <summary><b>🌌 Citation Graph & Timeline Analysis</b> <i>— View galaxy overview, 20-year lineage & bridge papers</i></summary>
 
-#### 1. Force-Directed Galaxy Overview & Key Intelligence
+#### 1. Live Force-Directed Star-Cluster Graph (GIF Demo)
+> Built on Obsidian-grade physics simulation, supporting drag collisions, elastic bounce, and hover previews for instant paper metadata.
+
+![Force-directed graph interaction demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-57-59.gif)
+
+#### 2. Year Evolution Timeline (GIF Demo)
+> Expands paper lineage horizontally across publication years, scaling by citation weight vertically, with real-time citation-flow highlighting.
+
+![Year evolution timeline demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-03.gif)
+
+#### 3. Force-Directed Galaxy Overview & Key Intelligence
 > Radiates outward from seed papers, automatically detecting "Co-cited Hubs" and "Bridge Papers" with core topological intelligence statistics.
 
 ![Citation graph overview](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-46-24.png)
 
-#### 2. Evolution Timeline Panoramic Views
+#### 4. Evolution Timeline Panoramic Views
 > Visualizes 20 years of research lineage from 2004 to 2023, tracking technology evolution and seminal works over time.
 
 ![Year timeline view](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-46-46.png)
