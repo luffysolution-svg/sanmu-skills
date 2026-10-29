@@ -13,7 +13,7 @@
 
 **简体中文** · [English](README.en.md)
 
-[技能一览](#技能一览) · [安装](#安装) · [使用](#使用) · [参与贡献](#参与贡献)
+[技能一览](#技能一览) · [效果图览](#效果图览) · [安装](#安装) · [使用](#使用) · [参与贡献](#参与贡献)
 
 </div>
 
@@ -48,6 +48,197 @@
 - **引文扩展与作者消歧**：参考文献、施引文献、相似论文分开记录；同名作者用稳定 ID 与课题方向锚定。
 - **全文、原文切片与 SI**：Europe PMC 免 Key 获取 JATS 全文和补充材料原图包并核验撤稿与勘误；SciVerse 按 Unicode 码点偏移读取原文 Markdown 并提取正文高清原图。
 - **如实报告**：成功、零结果、截断、失败分开记录，不把“没查到”说成“不存在”。
+
+## 效果图览
+
+> 点击下方模块展开查看高清实机截图与交互演示动图（共 32 张全景展示，涵盖图谱、检索、解析、精读及各宿主实机界面）：
+
+<details>
+<summary><b>🌌 关系图谱与引文演进网络（交互式物理力导向引擎）</b> <i>— 点击展开查看力导向图谱与年份时间轴实机动图</i></summary>
+
+#### 1. 物理力导向星系图谱动态交互演示
+> 基于 Obsidian 物理力场引擎构建，支持鼠标拖拽碰撞、弹性回弹、节点悬停实时预览文献题录元数据。
+
+![力导向星系图谱交互演示](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-57-59.gif)
+
+#### 2. 年份演进时间轴动态交互演示
+> 按发表年份横向展开文献脉络，纵向标定被引权重与层级，鼠标滑动实时高亮施引与参考文献流向。
+
+![年份演进时间轴交互演示](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-03.gif)
+
+#### 3. 力导向星系静态全景与核心情报
+> 中心种子文献辐射展开，自动发现识别「共被引基石文献」与「桥梁文献」，提供图谱核心情报统计。
+
+![引文与共著者关系图谱全景](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-46-24.png)
+
+#### 4. 年份演进时间轴全景视图
+> 清晰呈现 2004 至 2023 年跨度 20 年的引文脉络演进，直观把控课题技术发展历史。
+
+![年份演进时间轴图谱](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-46-46.png)
+
+![引文网络全景与桥梁文献标记](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-57.png)
+
+</details>
+
+<details>
+<summary><b>🔍 多源学术文献检索与原位引文追溯（sanmu-paper-search）</b> <i>— 点击展开查看检索通道、原位抽屉与批次分析</i></summary>
+
+#### 1. 14+ 项拓展检索通道
+> 支持 SciVerse 全文语义 RAG、谷歌学术、全球专利、PubMed、Semantic Scholar 全文片段及 Exa AI 语义检索。
+
+![多源拓展检索通道](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-47-36.png)
+
+#### 2. 多源题录精确核验
+> 跨 OpenAlex、Semantic Scholar、Crossref 实时校验真实题录，自动探测开放获取 (OA) 全文与可下载 PDF。
+
+![多源精确核验](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-49-17.png)
+
+#### 3. 检索结果卡片与中科院分区标注
+> 集成 easyScholar 权威等级（中科院 1/2 区 TOP、JCR Q1、IF、预警标注）、AI 智能要点 (TLDR)、随手批注与课题标签。
+
+![检索结果与分区标注](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-47-17.png)
+
+#### 4. 原位展开施引文献（最新追踪抽屉）
+> 点击「施引」直接在当前卡片内联展开最新施引工作，不跳转页面、不丢失当前检索上下文，并自动同步至关系图谱。
+
+![原位展开施引文献](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-49-37.png)
+
+#### 5. 原位展开参考文献（向前溯源抽屉）
+> 点击「参考文献」原位向前溯源基石文献，支持一键跨源补齐摘要、直接加入收藏篮或存入 Zotero。
+
+![原位展开参考文献](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-53-45.png)
+
+#### 6. 搜索历史记录与批次进阶分析
+> 完整记录每次检索与追溯批次，支持勾选多条历史记录执行「去重合并 (Merge)」或「前后对比 (Diff)」。
+
+![历史批次与合并对比](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-49-50.png)
+
+</details>
+
+<details>
+<summary><b>📝 学术文档解析为 Obsidian 知识库（sanmu-doc2md）</b> <i>— 点击展开查看长篇教材切片、公式还原与顶刊入库</i></summary>
+
+#### 1. 从本机 Zotero 文库直接点选文档
+> 自动读取本地 Zotero 分类目录与条目，带入完整题录元数据与本地 PDF/SI 附件，一键发起高精度解析。
+
+![Zotero分类文档挑选](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-50-34.png)
+
+#### 2. 多种学术装配模式
+> 支持科研论文双链装配、课件 slides 讲义重构、长篇教材 book 智能切片与章节重组。
+
+![解析装配模式](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-50-50.png)
+
+#### 3. 教材切片解析实机展示：《材料科学基础》
+> 自动按章节拆分为独立笔记，提取晶体缺陷等高清矢量插图，形成整洁的 Obsidian 树状知识库。
+
+![教材解析-材料科学基础](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-10-14.png)
+
+#### 4. 高难数学物理公式 100% 渲染：《物理化学》统计热力学
+> 连乘、连加、微观状态数等复杂公式完美转为标准 LaTeX，全量通过 KaTeX 校验，无乱码伪影。
+
+![教材解析-物理化学公式](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-11-31.png)
+
+#### 5. 工科高清工程图纸保留：《化工制图》
+> 完美保留机械制图正投影等复杂几何图纸与全套标准数据表，支持 3 倍高清原图裁切。
+
+![教材解析-化工制图工程图](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-12-05.png)
+
+#### 6. 自动生成的知识库目录导航
+> 自动生成包含书目信息、章节索引、插图统计与公式编译通过率的完整知识库导航页。
+
+![教材解析-知识库导航索引](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-12-38.png)
+
+#### 7. 顶刊论文解析入库效果：《Nature Machine Intelligence》
+> 自动生成 Obsidian Properties 结构化题录、双向链接 SI 补充材料笔记，正文排版工整优雅。
+
+![顶刊论文解析入库](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-15-09.png)
+
+</details>
+
+<details>
+<summary><b>📖 证据链文献精读与深度报告（sanmu-paper-reader）</b> <i>— 点击展开查看精读长文、机理图表与页码溯源</i></summary>
+
+#### 1. 对标同行评审标准的深度精读长文报告
+> 自动补齐核心题录、催化机理剖析、光催化析氢速率严格 Benchmark 对比及对当前课题的直接启发。
+
+![文献深度精读报告](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-02-06.png)
+
+#### 2. Obsidian 结构化精读长笔记与方法链拆解
+> 包含微调 LLM 概念抽取、时序图神经网络架构、Mermaid 方法链流程图与严格的实验验证假设。
+
+![Obsidian文献精读长笔记](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-16-47.png)
+
+#### 3. 图文折叠对照与物理页码考证
+> 自动插入折叠 Callout 原图对照，每一个关键结论均核验对应的正文页码或无印刷页码物理页。
+
+![精读图文对照与页码考证](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-16-59.png)
+
+</details>
+
+<details>
+<summary><b>🎨 科研绘图、矢量化与自动引文（AI4Scholar 科研工具箱）</b> <i>— 点击展开查看科研绘图与顶刊风格预设</i></summary>
+
+#### 1. AI4Scholar 科研模式矩阵
+> 支持智能科研绘图、文生图、风格迁移、指令改图、位图转矢量 PDF+可编辑 PPTX、纯矢量 SVG、专家审图与学术段落自动引文。
+
+![科研绘图模式矩阵](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-47-51.png)
+
+#### 2. 学术专业风格预设与参数微调
+> 支持 16:9 / 1:1 等画幅与 2K 高清，内置 Nature 顶刊风、BioRender 生物医学风、催化机理示意图、3D 纳米材料渲染等预设。
+
+![绘图风格与参数配置](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-48-12.png)
+
+</details>
+
+<details>
+<summary><b>🖥️ 多宿主原生接入与配置工作台（DeepSeek Harness / ZCode / Zotero）</b> <i>— 点击展开查看客户端实机安装与设置中心</i></summary>
+
+#### 1. DeepSeek Harness 桌面端：添加插件
+> 在 DSH 桌面端直接输入 `github:luffysolution-svg/sanmu-skills` 即可一键拉取安装。
+
+![DSH桌面端添加插件](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-03-09.png)
+
+#### 2. DeepSeek Harness 桌面端：插件启用
+> 安装后在插件列表中开启「三木文献检索」，随合集自动装配 3 个技能与 24 个 MCP 工具。
+
+![DSH插件启用状态](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-03-50.png)
+
+#### 3. DeepSeek Harness 桌面端：常驻侧栏入口
+> 右侧栏一键调出 1:1 还原的完整科研工作台，无需配置额外端口。
+
+![DSH右侧栏工作台入口](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-02-34.png)
+
+#### 4. ZCode 桌面端：添加插件市场
+> 在 ZCode 插件市场点击「添加」填入仓库标识快速接入。
+
+![ZCode添加插件市场](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-05-58.png)
+
+#### 5. ZCode 桌面端：个人插件管理
+> 市场中即点即用，支持版本无缝更新与状态查看。
+
+![ZCode个人插件列表](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-06-23.png)
+
+#### 6. ZCode 桌面端：原生工作台与对话协同
+> 左侧 AI 智能对话，右侧常驻三木工作台，图谱、检索、Zotero 状态实时互通。
+
+![ZCode右侧栏工作台](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-07-16.png)
+
+#### 7. Zotero 本地 API 授权
+> 严格遵循安全规范，调用本地接口时弹出官方授权提示，保障文献数据安全。
+
+![Zotero本地API授权](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-54-10.png)
+
+#### 8. 同步存入 Zotero 文库与标签
+> 一键将题录、分区标签及随手批注同步写回 Zotero 对应分类。
+
+![同步存入Zotero文库](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-54-59.png)
+
+#### 9. 全源 API 凭据、Zotero 与存储统一设置中心
+> 9 种学术与 AI 数据源 Key、Zotero 服务地址及下载目录一站式可视化配置与自检。
+
+![API与工作台设置中心](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-08-21.png)
+
+</details>
 
 ## 安装
 
@@ -152,22 +343,11 @@ github:luffysolution-svg/sanmu-skills
 https://github.com/luffysolution-svg/sanmu-skills/releases/download/v1.10.3/sanmu-skills-1.10.3.tgz
 ```
 
-安装确认后启用 `sanmu-skills`。桌面端保留的 `desktop` profile 通过这个界面管理，普通 `dsh` CLI 不管理该 profile。已有的其他 profile 可使用：
+安装确认后启用 `sanmu-skills`，即可直接在对话头部或右侧栏打开完整工作台。桌面端保留的 `desktop` profile 通过这个界面管理，普通 `dsh` CLI 不管理该 profile。已有的其他 profile 可使用：
 
 ```bash
 dsh plugin --profile <已有的非desktop-profile名> add github:luffysolution-svg/sanmu-skills
 ```
-
-#### 打开与使用
-
-- 点击**对话头部的「三木文献检索」**，或在**右侧栏「+」**中选择同名工作台。
-- 工作台直接复用现有 ZCode 完整面板，保留相同的布局、样式和交互逻辑，包括检索、文献详情与内联抽屉、收藏篮、历史批次、API 设置、Zotero、文档解析及现有 **24 个 MCP 工具**的全部操作。
-- 引文图谱保留实时力导向布局、节点拖拽与悬停、共被引和桥梁文献分析、年份时间轴。主题与语言环境由 DSH 同步，「交给 AI」发送到当前会话。
-- 三个完整技能同时挂载，Agent 可继续使用 `sanmu-paper-search`、`sanmu-doc2md`、`sanmu-paper-reader`。
-- 完整工作台随合集一起安装，无需另装侧栏插件。曾安装的 `dsh-plugin-sanmu-sidebar` 应保持禁用，避免重复入口。
-- `@deepseek-ai/dsh-mcp-client` 和 `@deepseek-ai/dsh-skill-filesystem` 由宿主提供。跨工作区保存时可显式指定 `saveDir`，或在启动前设置 `SANMU_WORKSPACE_ROOT`。
-
-终端宿主和手动使用仍可运行 `node "<安装根>/scripts/sanmu.mjs" panel` 打开浏览器工作台。使用命令实际返回的完整本地链接建立会话；地址或令牌缺失时重新运行命令获取链接。
 
 ### ZCode
 

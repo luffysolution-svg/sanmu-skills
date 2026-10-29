@@ -13,7 +13,7 @@ Document conversion · paper reading · literature search: working methods from 
 
 [简体中文](README.md) · **English**
 
-[Skills](#skills) · [Installation](#installation) · [Usage](#usage) · [Contributing](#contributing)
+[Skills](#skills) · [Visual Tour](#visual-tour) · [Installation](#installation) · [Usage](#usage) · [Contributing](#contributing)
 
 </div>
 
@@ -48,6 +48,197 @@ The three skills can be used separately or chained: **search** → get the PDF /
 - **Citation expansion and author disambiguation**: references, citing papers and similar papers are recorded separately; authors with the same name are pinned with stable IDs and topic filters.
 - **Full text, excerpts and SI**: Europe PMC provides JATS full text and supplementary original-figure bundles without a key and checks retractions and errata; SciVerse reads original Markdown slices by Unicode code-point offset and downloads high-resolution figures.
 - **Honest reporting**: success, zero results, truncation and failure are recorded separately; "nothing found" is never reported as "does not exist".
+
+## Visual Tour
+
+> Click any module below to expand high-resolution screenshots and interactive animations (32 previews covering graph, search, doc2md, reader, and host integration):
+
+<details>
+<summary><b>🌌 Interactive Citation Graph & Evolution Timeline</b> <i>— Click to expand physics force-directed graph & timeline animations</i></summary>
+
+#### 1. Live Force-Directed Star-Cluster Graph (GIF Demo)
+> Built on Obsidian-grade physics simulation, supporting drag collisions, elastic bounce, and hover previews for instant paper metadata.
+
+![Force-directed graph interaction demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-57-59.gif)
+
+#### 2. Year Evolution Timeline (GIF Demo)
+> Expands paper lineage horizontally across publication years, scaling by citation weight vertically, with real-time citation-flow highlighting.
+
+![Year evolution timeline demo](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-03.gif)
+
+#### 3. Force-Directed Galaxy Overview & Key Intelligence
+> Radiates outward from seed papers, automatically detecting "Co-cited Hubs" and "Bridge Papers" with core topological intelligence statistics.
+
+![Citation graph overview](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-46-24.png)
+
+#### 4. Evolution Timeline Panoramic Views
+> Visualizes 20 years of research lineage from 2004 to 2023, tracking technology evolution and seminal works over time.
+
+![Year timeline view](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-46-46.png)
+
+![Citation network and bridge papers](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-59-57.png)
+
+</details>
+
+<details>
+<summary><b>🔍 Multi-Source Literature Search & In-Place Citation Chasing (sanmu-paper-search)</b> <i>— Click to expand search channels, inline drawers & diff</i></summary>
+
+#### 1. 14+ Extended Scholarly Search Channels
+> Supports SciVerse full-text semantic RAG, Google Scholar, Google Patents, PubMed, Semantic Scholar snippets, and Exa AI semantic search.
+
+![Search channels](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-47-36.png)
+
+#### 2. Multi-Source Exact Verification
+> Cross-verifies paper identity across OpenAlex, Semantic Scholar, and Crossref, detecting Open Access (OA) full-text and downloadable PDFs.
+
+![Exact verification](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-49-17.png)
+
+#### 3. Paper Cards with Venue Ranks & AI Summaries
+> Displays CAS/JCR Q1, Impact Factor, warning status, AI TLDR summaries, inline notes, and topic tags.
+
+![Search results and ranks](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-47-17.png)
+
+#### 4. Inline Citing Papers Drawer (Forward Tracking)
+> Clicking "Citations" expands citing papers directly within the current card without navigating away or losing query context.
+
+![Inline citing papers drawer](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-49-37.png)
+
+#### 5. Inline References Drawer (Backward Chasing)
+> Clicking "References" traces backward to foundation works in place, supporting one-click abstract enrichment and Zotero sync.
+
+![Inline references drawer](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-53-45.png)
+
+#### 6. Search History & Advanced Batch Operations
+> Keeps a full record of previous search runs; supports multi-run deduplicated Merge and historical Diff comparisons.
+
+![Search history and batch merge](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-49-50.png)
+
+</details>
+
+<details>
+<summary><b>📝 Academic Document Parsing to Obsidian Knowledge Base (sanmu-doc2md)</b> <i>— Click to expand textbook slicing & formula rendering</i></summary>
+
+#### 1. Direct Document Selection from Local Zotero Collections
+> Browses Zotero collections directly, importing complete metadata and local PDF/SI attachments into the conversion pipeline.
+
+![Zotero item selection](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-50-34.png)
+
+#### 2. Specialized Packaging Modes
+> Supports research papers with two-way SI links, course slides restructuring, and long textbook chunked slicing by chapter.
+
+![Assembly modes](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-50-50.png)
+
+#### 3. Textbook Slicing in Action: Materials Science Fundamentals
+> Splits long volumes into clean chapter notes with high-resolution crystal defect schematics inside Obsidian.
+
+![Textbook parsing - materials science](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-10-14.png)
+
+#### 4. Flawless LaTeX Math Rendering: Physical Chemistry Statistical Thermodynamics
+> Complex mathematical formulas compile with a 100% KaTeX pass rate without artifacts or corrupt symbols.
+
+![Formula rendering - physical chemistry](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-11-31.png)
+
+#### 5. High-Resolution Engineering Drawings: Chemical Engineering Graphics
+> Preserves intricate technical diagrams, projection drawings, and standard data tables with 3x resolution crops.
+
+![Engineering drawings](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-12-05.png)
+
+#### 6. Auto-Generated Knowledge Base Navigation Index
+> Builds structured navigation pages containing book details, chapter tables of contents, and figure indices.
+
+![Navigation index](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-12-38.png)
+
+#### 7. Top-Journal Paper Integration: Nature Machine Intelligence
+> Generates structured Obsidian properties, bidirectional links to supplementary material, and elegant typography.
+
+![Top journal integration](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-15-09.png)
+
+</details>
+
+<details>
+<summary><b>📖 Evidence-Grounded Paper Reading & Deep Reports (sanmu-paper-reader)</b> <i>— Click to expand review reports, mechanism charts & citations</i></summary>
+
+#### 1. Peer-Review-Grade Deep Reading Reports
+> Generates comprehensive analyses including core metadata, catalyst morphology, hydrogen evolution benchmarks, and research insights.
+
+![Deep reading report](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-02-06.png)
+
+#### 2. Structured Obsidian Reading Notes & Method Chains
+> Integrates fine-tuned LLM concept extraction, graph neural network flows, Mermaid pipelines, and testable hypotheses.
+
+![Structured reading notes](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-16-47.png)
+
+#### 3. Collapsible Figure-Text Alignment & Source Page Verification
+> Embeds collapsible callouts comparing conclusions directly with source figures and verifies unprinted physical page numbers.
+
+![Figure-text alignment](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-16-59.png)
+
+</details>
+
+<details>
+<summary><b>🎨 Scientific Drawing, Vectorization & Auto-Citations (AI4Scholar Toolbox)</b> <i>— Click to expand scientific drawing & styles</i></summary>
+
+#### 1. AI4Scholar Scientific Capability Matrix
+> Features smart diagram generation, style transfer, prompt edits, bitmap-to-vector PDF/PPTX, SVG output, diagram review, and auto-citation matching.
+
+![Scientific drawing matrix](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-47-51.png)
+
+#### 2. Journal Style Presets & Parameter Tuning
+> Supports 16:9 / 1:1 aspect ratios, 2K resolution, and built-in presets including Nature style, BioRender style, catalytic mechanisms, and 3D nanomaterials.
+
+![Drawing styles and settings](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-48-12.png)
+
+</details>
+
+<details>
+<summary><b>🖥️ Native Cross-Host Workbench & Settings (DeepSeek Harness / ZCode / Zotero)</b> <i>— Click to expand client setup & unified settings</i></summary>
+
+#### 1. DeepSeek Harness Desktop: Add Plugin
+> Enter `github:luffysolution-svg/sanmu-skills` in DSH to install directly.
+
+![DSH Add Plugin](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-03-09.png)
+
+#### 2. DeepSeek Harness Desktop: Enable Plugin
+> Toggle on "Sanmu Paper Search" in the plugin list to mount all 3 skills and 24 MCP tools.
+
+![DSH Enable Plugin](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-03-50.png)
+
+#### 3. DeepSeek Harness Desktop: Permanent Sidebar Entry
+> Open the 1:1 complete research workbench directly from the right sidebar without opening external ports.
+
+![DSH Sidebar Entry](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-02-34.png)
+
+#### 4. ZCode Desktop: Add Plugin Marketplace
+> Add the repository in the ZCode Plugin Marketplace with a single click.
+
+![ZCode Add Marketplace](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-05-58.png)
+
+#### 5. ZCode Desktop: Plugin Management
+> Manage and update installed plugins effortlessly from your personal library.
+
+![ZCode Plugin List](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-06-23.png)
+
+#### 6. ZCode Desktop: Native Workbench & Chat Synergy
+> Chat with AI models on the left while interacting with the visual graph, literature search, and Zotero on the right.
+
+![ZCode Workbench Synergy](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-07-16.png)
+
+#### 7. Zotero Local API Authorization
+> Follows secure local API protocols, requesting official user authorization to keep literature libraries safe.
+
+![Zotero Authorization](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-54-10.png)
+
+#### 8. Sync into Zotero Library & Tags
+> Syncs paper metadata, journal ranks, and personal annotations directly into target Zotero collections.
+
+![Zotero Sync](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_12-54-59.png)
+
+#### 9. Unified API Credentials & Settings Center
+> Configures 9 scholarly/AI API keys, Zotero endpoints, and local storage paths in one visual panel with diagnostics.
+
+![Settings Center](https://obsidian-image-bed-1379524953.cos.ap-guangzhou.myqcloud.com/Obsidian/PixPin_2026-10-29_13-08-21.png)
+
+</details>
 
 ## Installation
 
@@ -158,22 +349,11 @@ You can also enter the complete TGZ download URL from [GitHub Release](https://g
 https://github.com/luffysolution-svg/sanmu-skills/releases/download/v1.10.3/sanmu-skills-1.10.3.tgz
 ```
 
-Confirm installation and enable `sanmu-skills`. Manage the reserved `desktop` profile through this UI; the ordinary `dsh` CLI does not manage that profile. For an existing profile with another name, use:
+Confirm installation and enable `sanmu-skills` to open the complete workbench directly from the conversation header or right sidebar. Manage the reserved `desktop` profile through this UI; the ordinary `dsh` CLI does not manage that profile. For an existing profile with another name, use:
 
 ```bash
 dsh plugin --profile <existing-non-desktop-profile> add github:luffysolution-svg/sanmu-skills
 ```
-
-#### Open and use the workbench
-
-- Click **Sanmu Paper Search** in the **conversation header**, or select it from the **right sidebar's “+” menu**.
-- The workbench reuses the complete existing ZCode panel, preserving its layout, styles and interaction logic: search, paper details and inline drawers, collection, batch history, API settings, Zotero, document conversion and every operation provided by the **24 existing MCP tools**.
-- The citation graph keeps its live force-directed layout, node dragging and hover interactions, co-citation and bridge-paper analysis, and year timeline. DSH supplies the theme and locale; “Send to AI” targets the current conversation.
-- All three complete skills are mounted for the agent: `sanmu-paper-search`, `sanmu-doc2md` and `sanmu-paper-reader`.
-- The complete workbench ships with the collection. No separate sidebar plugin is needed; keep the older `dsh-plugin-sanmu-sidebar` disabled to avoid duplicate entries.
-- The host supplies `@deepseek-ai/dsh-mcp-client` and `@deepseek-ai/dsh-skill-filesystem`. Pass an explicit `saveDir` when saving to another workspace, or set `SANMU_WORKSPACE_ROOT` before startup.
-
-Terminal hosts and manual use can still run `node "<installed-root>/scripts/sanmu.mjs" panel` for the browser workbench. Open the complete local URL returned by that command to establish a session; run it again if the URL or its token is missing.
 
 ### ZCode
 
