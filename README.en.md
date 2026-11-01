@@ -248,11 +248,11 @@ Version 1.10.3 packages **three complete skills, a portable CLI and 24 MCP tools
 
 | Channel | How to install | Contents |
 | --- | --- | --- |
-| **npx skills** (general) | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g` | Three skills, can be selected individually |
+| **npm / npx skills** (general) | Global install (`npm i -g skills`) or run directly via `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy` | Three skills, can be selected individually |
 | **Claude Code** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
 | **Codex** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
 | **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | Three skills + CLI + native MCP + browser workbench |
-| **DeepSeek Harness** | Existing Desktop Plugins → Add Plugin, using a GitHub specifier or full TGZ URL | Three skills + CLI + MCP + complete embedded workbench |
+| **DeepSeek Harness** | Search "三木文献检索" in plugin market for one-click install/update, or add via GitHub specifier / TGZ URL | Three skills + CLI + MCP + complete embedded workbench |
 | **ZCode** | Plugin marketplace or Release plugin bundle, see below | Collection plugin / side-panel search plugin |
 | **Tencent SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | Individual skills |
 | **WorkBuddy** | Search for "三木" in the client under 专家·技能·连接器 → 技能 (Experts · Skills · Connectors → Skills) | Individual skills |
@@ -282,7 +282,8 @@ https://github.com/luffysolution-svg/sanmu-skills
 4. Check credential presence without displaying values. Free search can start without keys.
    Cloud OCR requires MINERU_API_TOKEN; paid providers require their own account and quota.
    Zotero writes require local authorization in Zotero 8+.
-5. If the host supports only skills, use npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy,
+5. If the host supports only skills, use npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+   (or skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy if skills CLI is installed via npm install -g skills),
    and explain that this installs standalone skills, not the complete MCP/browser workbench.
 6. Report the installed location, checks, workbench entry and remaining user configuration.
 ```
@@ -291,19 +292,29 @@ Full installation instructions for each skill: [doc2md](skills/sanmu-doc2md/READ
 
 ### Command line
 
+Available via the [skills installer](https://github.com/vercel-labs/skills) as a globally installed npm CLI or directly via npx:
+
 ```bash
-# The whole collection
+# Option A: Install skills CLI globally via npm (recommended for regular Agent skill users)
+npm install -g skills
+skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+
+# Option B: Run directly via npx without global installation
 npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
 
-# A single skill
-npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
+# A single skill (e.g., doc2md)
+skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
+# Or via npx: npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 
 # List and update
-npx skills add luffysolution-svg/sanmu-skills --list
-npx skills update
+skills add luffysolution-svg/sanmu-skills --list
+skills update
+
+# Clone repository manually
+git clone https://github.com/luffysolution-svg/sanmu-skills.git
 ```
 
-Requires Git and a Node.js version supported by the [skills installer](https://github.com/vercel-labs/skills).
+Requires Git and a Node.js version supported by the [skills installer](https://github.com/vercel-labs/skills). Standalone skills only install SKILL instructions and scripts. Prepare private dependencies per skill guide: [doc2md](skills/sanmu-doc2md/README.en.md#installation) · [reader](skills/sanmu-paper-reader/README.en.md#installation) · [search](skills/sanmu-paper-search/README.en.md#installation).
 
 ### Claude Code
 
@@ -337,7 +348,7 @@ Supports **DSH Desktop 0.2.1-rc.3**, including its **Electron Node.js 22.20.0** 
 
 #### Desktop installation
 
-In the existing DSH Desktop application, open **Plugins → Add Plugin** and enter the GitHub specifier:
+You can search for "三木文献检索" or `sanmu-skills` in the DSH plugin market for one-click installation and automatic updates. Alternatively, in the DSH Desktop application, open **Plugins → Add Plugin** and enter the GitHub specifier:
 
 ```text
 github:luffysolution-svg/sanmu-skills
@@ -352,6 +363,9 @@ https://github.com/luffysolution-svg/sanmu-skills/releases/download/v1.10.3/sanm
 Confirm installation and enable `sanmu-skills` to open the complete workbench directly from the conversation header or right sidebar. Manage the reserved `desktop` profile through this UI; the ordinary `dsh` CLI does not manage that profile. For an existing profile with another name, use:
 
 ```bash
+# Direct marketplace/repo add
+dsh plugin --profile <existing-non-desktop-profile> add luffysolution-svg/sanmu-skills
+# Or via GitHub specifier
 dsh plugin --profile <existing-non-desktop-profile> add github:luffysolution-svg/sanmu-skills
 ```
 

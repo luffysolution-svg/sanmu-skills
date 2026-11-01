@@ -251,9 +251,9 @@
 | **Claude Code** | 一步安装，见下文 | 3 技能 + CLI + MCP + 浏览器工作台 |
 | **Codex** | 添加仓库市场后安装，可复制为一行 | 3 技能 + CLI + MCP + 浏览器工作台 |
 | **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | 3 技能 + CLI + 原生 MCP + 浏览器工作台 |
-| **DeepSeek Harness** | 现有桌面端【插件 → 添加插件】，输入 GitHub 标识或完整 TGZ 地址 | 3 技能 + CLI + MCP + 完整工作台 |
+| **DeepSeek Harness** | 插件市场搜索「三木文献检索」一键安装更新，或桌面端【插件 → 添加插件】输入 GitHub 标识 / TGZ 地址 | 3 技能 + CLI + MCP + 完整工作台 |
 | **ZCode** | 桌面端插件市场 UI 或 Release 插件 ZIP | 3 技能 + MCP + 常驻侧栏工作台 |
-| **npx skills**（通用） | `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy` | 技能说明与各技能脚本，可单选；不含完整宿主 MCP 安装 |
+| **npm / npx skills**（通用） | 全局 `npm i -g skills` 后执行 `skills add` 或免安装直接 `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy` | 技能说明与各技能脚本，可单选；不含完整宿主 MCP 安装 |
 | **腾讯 SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | 单个技能 |
 | **WorkBuddy** | 客户端【专家·技能·连接器 → 技能】中搜索“三木” | 单个技能 |
 | **skills.sh / SkillsMP** | [合集页面](https://skills.sh/luffysolution-svg/sanmu-skills)，使用 npx 命令安装 | 技能说明与各技能脚本 |
@@ -286,6 +286,8 @@ https://github.com/luffysolution-svg/sanmu-skills
    Zotero 写入需 Zotero 8+ 的本机授权，不直接写数据库。
 4. 如果当前助手只支持技能目录，则用：
    npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+   或已全局安装 skills CLI（npm install -g skills）时使用：
+   skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
    并明确这只安装 SKILL 和各技能脚本，依赖按各技能指南准备，不是完整 MCP/工作台安装。
 5. 告诉我安装位置、doctor 结果、如何打开工作台，以及还需要我配置什么。
 ```
@@ -331,7 +333,7 @@ pi install git:github.com/luffysolution-svg/sanmu-skills
 
 #### 桌面端安装
 
-在现有 DSH 桌面端打开 **插件（Plugins）→ 添加插件（Add Plugin）**，输入 GitHub 标识：
+可直接在 DSH 插件市场搜索「三木文献检索」或 `sanmu-skills` 一键安装并支持自动更新；或在现有 DSH 桌面端打开 **插件（Plugins）→ 添加插件（Add Plugin）**，输入 GitHub 标识：
 
 ```text
 github:luffysolution-svg/sanmu-skills
@@ -346,6 +348,9 @@ https://github.com/luffysolution-svg/sanmu-skills/releases/download/v1.10.3/sanm
 安装确认后启用 `sanmu-skills`，即可直接在对话头部或右侧栏打开完整工作台。桌面端保留的 `desktop` profile 通过这个界面管理，普通 `dsh` CLI 不管理该 profile。已有的其他 profile 可使用：
 
 ```bash
+# 市场/仓库直接添加
+dsh plugin --profile <已有的非desktop-profile名> add luffysolution-svg/sanmu-skills
+# 或指定 GitHub 标识
 dsh plugin --profile <已有的非desktop-profile名> add github:luffysolution-svg/sanmu-skills
 ```
 
@@ -355,22 +360,29 @@ dsh plugin --profile <已有的非desktop-profile名> add github:luffysolution-s
 
 ### 只安装技能 / 手动安装
 
+可通过 [skills 安装器](https://github.com/vercel-labs/skills)的 npm 全局工具或 npx 免安装运行：
+
 ```bash
-# 整个技能合集（SKILL 和各技能脚本）
+# 方式 A：通过 npm 全局安装 skills CLI（推荐经常使用 Agent 技能的用户）
+npm install -g skills
+skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+
+# 方式 B：免全局安装，直接通过 npx 运行
 npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
 
-# 只装一个
-npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
+# 只装一个（以 doc2md 为例）
+skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
+# 或免安装：npx skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
 
 # 查看与更新
-npx skills add luffysolution-svg/sanmu-skills --list
-npx skills update
+skills add luffysolution-svg/sanmu-skills --list
+skills update
 
 # 手动获取源码
 git clone https://github.com/luffysolution-svg/sanmu-skills.git
 ```
 
-npx 需要 Git 和满足 [skills 安装器](https://github.com/vercel-labs/skills)要求的 Node.js；它只安装 SKILL 与各技能脚本。手动安装时，把 `skills/` 下需要的技能目录完整复制或链接到助手的技能目录，例如 `~/.agents/skills/sanmu-doc2md`。这两种方式的 Python 第三方库、KaTeX 和可选功能按各技能指南准备：[doc2md](skills/sanmu-doc2md/README.md#安装) · [reader](skills/sanmu-paper-reader/README.md#安装) · [search](skills/sanmu-paper-search/README.md#安装)。
+npm / npx 安装方式均需要 Git 和 Node.js 环境；它只安装 SKILL 与各技能脚本。手动安装时，把 `skills/` 下需要的技能目录完整复制或链接到助手的技能目录，例如 `~/.agents/skills/sanmu-doc2md`。这两种方式的 Python 第三方库、KaTeX 和可选功能按各技能指南准备：[doc2md](skills/sanmu-doc2md/README.md#安装) · [reader](skills/sanmu-paper-reader/README.md#安装) · [search](skills/sanmu-paper-search/README.md#安装)。
 
 ### 完整包的运行环境与配置
 
