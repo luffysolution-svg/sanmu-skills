@@ -248,7 +248,7 @@ Version 1.10.3 packages **three complete skills, a portable CLI and 24 MCP tools
 
 | Channel | How to install | Contents |
 | --- | --- | --- |
-| **npm / npx skills** (general) | Global install (`npm i -g skills`) or run directly via `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy` | Three skills, can be selected individually |
+| **npm / npx skills** (general) | Global install (`npm i -g skills`) or run directly via `npx skills add luffysolution-svg/sanmu-skills --all -g --copy` | Three skills, can be selected individually |
 | **Claude Code** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
 | **Codex** | Repository marketplace, see below | Three skills + CLI + MCP + browser workbench |
 | **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | Three skills + CLI + native MCP + browser workbench |
@@ -282,8 +282,8 @@ https://github.com/luffysolution-svg/sanmu-skills
 4. Check credential presence without displaying values. Free search can start without keys.
    Cloud OCR requires MINERU_API_TOKEN; paid providers require their own account and quota.
    Zotero writes require local authorization in Zotero 8+.
-5. If the host supports only skills, use npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
-   (or skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy if skills CLI is installed via npm install -g skills),
+5. If the host supports only skills, use npx skills add luffysolution-svg/sanmu-skills --all -g --copy
+   (or skills add luffysolution-svg/sanmu-skills --all -g --copy if skills CLI is installed via npm install -g skills),
    and explain that this installs standalone skills, not the complete MCP/browser workbench.
 6. Report the installed location, checks, workbench entry and remaining user configuration.
 ```
@@ -297,10 +297,10 @@ Available via the [skills installer](https://github.com/vercel-labs/skills) as a
 ```bash
 # Option A: Install skills CLI globally via npm (recommended for regular Agent skill users)
 npm install -g skills
-skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+skills add luffysolution-svg/sanmu-skills --all -g --copy
 
 # Option B: Run directly via npx without global installation
-npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+npx skills add luffysolution-svg/sanmu-skills --all -g --copy
 
 # A single skill (e.g., doc2md)
 skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g

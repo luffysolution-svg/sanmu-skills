@@ -253,7 +253,7 @@
 | **Pi ≥1.4** | `pi install git:github.com/luffysolution-svg/sanmu-skills` | 3 技能 + CLI + 原生 MCP + 浏览器工作台 |
 | **DeepSeek Harness** | 插件市场搜索「三木文献检索」一键安装更新，或桌面端【插件 → 添加插件】输入 GitHub 标识 / TGZ 地址 | 3 技能 + CLI + MCP + 完整工作台 |
 | **ZCode** | 桌面端插件市场 UI 或 Release 插件 ZIP | 3 技能 + MCP + 常驻侧栏工作台 |
-| **npm / npx skills**（通用） | 全局 `npm i -g skills` 后执行 `skills add` 或免安装直接 `npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy` | 技能说明与各技能脚本，可单选；不含完整宿主 MCP 安装 |
+| **npm / npx skills**（通用） | 全局 `npm i -g skills` 后执行 `skills add` 或免安装直接 `npx skills add luffysolution-svg/sanmu-skills --all -g --copy` | 技能说明与各技能脚本，可单选；不含完整宿主 MCP 安装 |
 | **腾讯 SkillHub** | [doc2md](https://skillhub.cn/skills/sanmu-doc2md) · [reader](https://skillhub.cn/skills/sanmu-paper-reader) · [search](https://skillhub.cn/skills/sanmu-paper-search) | 单个技能 |
 | **WorkBuddy** | 客户端【专家·技能·连接器 → 技能】中搜索“三木” | 单个技能 |
 | **skills.sh / SkillsMP** | [合集页面](https://skills.sh/luffysolution-svg/sanmu-skills)，使用 npx 命令安装 | 技能说明与各技能脚本 |
@@ -284,10 +284,10 @@ https://github.com/luffysolution-svg/sanmu-skills
 3. 免费检索可先不用 Key。付费 API Key 和 MINERU_API_TOKEN 由我在工作台设置或宿主 userenv 中填写；
    只检查是否配置，不显示值。MinerU Token 可到 https://mineru.net 申请。
    Zotero 写入需 Zotero 8+ 的本机授权，不直接写数据库。
-4. 如果当前助手只支持技能目录，则用：
-   npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+4. 如果当前助手只支持技能目录，则用（通用参数 --all）：
+   npx skills add luffysolution-svg/sanmu-skills --all -g --copy
    或已全局安装 skills CLI（npm install -g skills）时使用：
-   skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+   skills add luffysolution-svg/sanmu-skills --all -g --copy
    并明确这只安装 SKILL 和各技能脚本，依赖按各技能指南准备，不是完整 MCP/工作台安装。
 5. 告诉我安装位置、doctor 结果、如何打开工作台，以及还需要我配置什么。
 ```
@@ -365,10 +365,10 @@ dsh plugin --profile <已有的非desktop-profile名> add github:luffysolution-s
 ```bash
 # 方式 A：通过 npm 全局安装 skills CLI（推荐经常使用 Agent 技能的用户）
 npm install -g skills
-skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+skills add luffysolution-svg/sanmu-skills --all -g --copy
 
 # 方式 B：免全局安装，直接通过 npx 运行
-npx skills add luffysolution-svg/sanmu-skills --skill '*' -g --copy
+npx skills add luffysolution-svg/sanmu-skills --all -g --copy
 
 # 只装一个（以 doc2md 为例）
 skills add luffysolution-svg/sanmu-skills --skill sanmu-doc2md -g
